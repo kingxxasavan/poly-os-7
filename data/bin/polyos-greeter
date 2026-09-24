@@ -1,0 +1,23 @@
+#!/usr/bin/python3
+"""LightDM greeter entry point. Runs the PolyOS login screen and, if it fails to start,
+hands over to lightdm-gtk-greeter so people can always sign in."""
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+_checkout = Path(__file__).resolve().parents[2]
+lib = str(_checkout) if (_checkout / "polyos" / "__init__.py").is_file() else "/usr/lib/polyos"
+env = dict(os.environ, PYTHONPATH=lib + os.pathsep + os.environ.get("PYTHONPATH", ""))
+
+# LightDM talks to its greeter over two inherited file descriptors.
+fds = [int(os.environ[k]) for k in ("LIGHTDM_TO_SERVER_FD", "LIGHTDM_FROM_SERVER_FD")
+       if os.environ.get(k, "").isdigit()]
+started = time.monotonic()
+rc = subprocess.call([sys.executable, "-m", "polyos.greeter"], env=env, pass_fds=fds)
+if rc != 0 and time.monotonic() - started < 30 and shutil.which("lightdm-gtk-greeter"):
+    print(f"polyos-greeter: PolyOS login screen exited with {rc}; using lightdm-gtk-greeter", file=sys.stderr)
+    os.execvp("lightdm-gtk-greeter", ["lightdm-gtk-greeter"])
+sys.exit(rc)

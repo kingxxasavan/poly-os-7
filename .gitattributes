@@ -1,0 +1,8 @@
+# Everything that ends up on Debian must keep LF line endings.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.deb binary
+*.iso binary
+*.jpg binary
+*.ttf binary

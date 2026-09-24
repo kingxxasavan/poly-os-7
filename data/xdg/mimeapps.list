@@ -1,0 +1,4 @@
+# Defaults for the PolyOS session (found through XDG_CONFIG_DIRS). Users can override these
+# in ~/.config/mimeapps.list or with "Open With" in their apps.
+[Default Applications]
+inode/directory=polyos-files.desktop;thunar.desktop;

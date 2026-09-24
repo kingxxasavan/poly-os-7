@@ -1,0 +1,348 @@
+"""Loopback HTTP bridge between the web UI surfaces and the backend.
+
+Security model: the server binds to 127.0.0.1 only, rejects foreign Host headers
+(DNS rebinding), and every API/icon/wallpaper request must carry a random per-session
+token. In the real shell the token reaches the pages through a WebKit user script, so
+it is never served over HTTP; it is only embedded in HTML in dev mode (mock backend).
+"""
+
+from __future__ import annotations
+
+import hmac
+import json
+import logging
+import queue
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlsplit
+
+from .backend import OPEN_APPS, POWER_ACTIONS, RUN_TARGETS
+from .core import IMAGE_TYPES, ApiError
+
+log = logging.getLogger("polyos.server")
+
+MAX_BODY = 64 * 1024
+CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json",
+    ".woff2": "font/woff2",
+    ".ico": "image/x-icon",
+    ".ttf": "font/ttf",
+    **IMAGE_TYPES,
+}
+CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+       "script-src 'self'{extra}; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'")
+DEV_ONLY = {"dev.html", "js/dev.js", "css/dev.css"}
+# Everything the login screen's UI may call; the greeter's server answers nothing else.
+GREETER_API = frozenset({"/api/state", "/api/events", "/api/greeter/state", "/api/greeter/login",
+                         "/api/greeter/power", "/wallpaper/current"})
+
+
+def _str(body: dict, key: str, max_len: int = 512) -> str:
+    value = body.get(key)
+    if not isinstance(value, str) or not value or len(value) > max_len:
+        raise ApiError(f"'{key}' must be a non-empty string")
+    return value
+
+
+def _opt_int(body: dict, key: str) -> int | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ApiError(f"'{key}' must be a number")
+    return int(value)
+
+
+def _int(body: dict, key: str) -> int:
+    value = _opt_int(body, key)
+    if value is None:
+        raise ApiError(f"'{key}' is required")
+    return value
+
+
+def _opt_bool(body: dict, key: str) -> bool | None:
+    value = body.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise ApiError(f"'{key}' must be true or false")
+    return value
+
+
+def _choice(body: dict, key: str, choices) -> str:
+    value = _str(body, key)
+    if value not in choices:
+        raise ApiError(f"'{key}' must be one of: {', '.join(choices)}")
+    return value
+
+
+def _opt_str(body: dict, key: str) -> str | None:
+    return None if body.get(key) in (None, "") else _str(body, key)
+
+
+def _str_list(body: dict, key: str, max_items: int = 1000) -> list[str]:
+    value = body.get(key)
+    if not isinstance(value, list) or not value or len(value) > max_items or             not all(isinstance(v, str) and 0 < len(v) <= 4096 for v in value):
+        raise ApiError(f"'{key}' must be a list of paths")
+    return value
+
+
+def _q(query: dict, key: str) -> str | None:
+    return query.get(key, [None])[0]
+
+
+GET_API = {
+    "/api/state": lambda be, q: be.state(),
+    "/api/wifi": lambda be, q: be.wifi_list(),
+    "/api/wallpapers": lambda be, q: be.wallpapers(),
+    "/api/sysinfo": lambda be, q: be.sysinfo(),
+    "/api/files/places": lambda be, q: be.files.places() | {"trashCount": be.files.trash_count()},
+    "/api/files/list": lambda be, q: (be.files.trash_list() if _q(q, "path") == "trash:///"
+                                      else be.files.list(_q(q, "path"), _q(q, "hidden") == "1")),
+    "/api/files/search": lambda be, q: be.files.search(_q(q, "path"), _q(q, "q") or "", _q(q, "hidden") == "1"),
+    "/api/files/info": lambda be, q: be.files.info(_q(q, "path") or ""),
+    "/api/greeter/state": lambda be, q: be.greeter_state(),
+    "/api/vara/history": lambda be, q: {"history": be.vara.history},
+    "/api/vara/config": lambda be, q: be.vara.config.public(),
+}
+
+
+def _password(body: dict) -> str:
+    value = body.get("password", "")
+    if not isinstance(value, str) or len(value) > 1024:
+        raise ApiError("'password' must be a string")
+    return value
+
+POST_API = {
+    "/api/launch": lambda be, b: be.launch(_str(b, "id")),
+    "/api/window": lambda be, b: be.window_action(
+        _int(b, "xid"), _choice(b, "action", ("activate", "minimize", "close", "toggle"))),
+    "/api/volume": lambda be, b: be.set_volume(
+        level=_opt_int(b, "level"), delta=_opt_int(b, "delta"),
+        muted=_opt_bool(b, "muted"), toggle_mute=bool(_opt_bool(b, "toggleMute"))),
+    "/api/brightness": lambda be, b: be.set_brightness(level=_opt_int(b, "level"), delta=_opt_int(b, "delta")),
+    "/api/wifi/connect": lambda be, b: be.wifi_connect(_str(b, "ssid", 64), _opt_str(b, "password")),
+    "/api/wifi/forget": lambda be, b: be.wifi_forget(_str(b, "ssid", 64)),
+    "/api/wifi/enabled": lambda be, b: be.wifi_enable(bool(_opt_bool(b, "enabled"))),
+    "/api/power": lambda be, b: be.power(_choice(b, "action", POWER_ACTIONS)),
+    "/api/settings": lambda be, b: be.update_settings(b),
+    "/api/popup": lambda be, b: be.popup_request(
+        b.get("view"), anchor_x=_opt_int(b, "anchorX"), data=b.get("data"), height=_opt_int(b, "height")),
+    "/api/popup/closed": lambda be, b: be.popup_closed(),
+    "/api/open": lambda be, b: be.open_app(_choice(b, "app", OPEN_APPS), _opt_str(b, "page")),
+    "/api/run": lambda be, b: be.run_default(_choice(b, "what", RUN_TARGETS)),
+    "/api/run-command": lambda be, b: be.run_command(_str(b, "command", 1024)),
+    "/api/pick-wallpaper": lambda be, b: be.pick_wallpaper(),
+    "/api/files/mkdir": lambda be, b: be.files_mkdir(_str(b, "parent", 4096), _str(b, "name", 255)),
+    "/api/files/new-file": lambda be, b: be.files_new_file(_str(b, "parent", 4096), _str(b, "name", 255)),
+    "/api/files/rename": lambda be, b: be.files_rename(_str(b, "path", 4096), _str(b, "name", 255)),
+    "/api/files/copy": lambda be, b: be.files_transfer(_str_list(b, "sources"), _str(b, "dest", 4096), move=False),
+    "/api/files/move": lambda be, b: be.files_transfer(_str_list(b, "sources"), _str(b, "dest", 4096), move=True),
+    "/api/files/trash": lambda be, b: be.files_trash(_str_list(b, "paths")),
+    "/api/files/restore": lambda be, b: be.files_restore(_str_list(b, "names")),
+    "/api/files/empty-trash": lambda be, b: be.files_empty_trash(),
+    "/api/files/open": lambda be, b: be.open_path(_str(b, "path", 4096)),
+    "/api/files/terminal": lambda be, b: be.terminal_at(_str(b, "path", 4096)),
+    "/api/shell/restart": lambda be, b: be.restart_shell(),
+    "/api/setup/done": lambda be, b: be.finish_setup(),
+    "/api/vara/chat": lambda be, b: be.vara.chat(be, _str(b, "message", 4000)),
+    "/api/vara/reset": lambda be, b: be.vara.reset(),
+    "/api/vara/config": lambda be, b: be.vara.config.update(
+        _opt_str(b, "endpoint"), _opt_str(b, "model"), b.get("apiKey") if isinstance(b.get("apiKey"), str) else None),
+    "/api/vara/test": lambda be, b: be.vara_test(),
+    "/api/greeter/login": lambda be, b: be.greeter_login(_str(b, "user", 64), _password(b), _opt_str(b, "session")),
+    "/api/greeter/power": lambda be, b: be.greeter_power(_choice(b, "action", ("shutdown", "restart", "suspend"))),
+}
+
+
+class _HTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+class Server:
+    def __init__(self, backend, ui_dir: Path, token: str, dev: bool = False, port: int = 0,
+                 allow: set[str] | None = None):
+        self.backend = backend
+        self.allow = allow  # when set, the only protected paths this server answers (the login screen)
+        self.ui_dir = Path(ui_dir).resolve()
+        self.token = token
+        self.dev = dev
+        self.stopping = threading.Event()
+        self.httpd = _HTTPServer(("127.0.0.1", port), _Handler)
+        self.httpd.app = self
+        self.port = self.httpd.server_address[1]
+        self.base_url = f"http://127.0.0.1:{self.port}"
+        self.allowed_hosts = {f"127.0.0.1:{self.port}", f"localhost:{self.port}"}
+
+    def start(self) -> None:
+        threading.Thread(target=self.httpd.serve_forever, name="polyos-http", daemon=True).start()
+        log.info("UI server on %s", self.base_url)
+
+    def stop(self) -> None:
+        self.stopping.set()
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+    def authorized(self, *candidates: str | None) -> bool:
+        expected = self.token.encode()
+        return any(c and hmac.compare_digest(c.encode(), expected) for c in candidates)
+
+
+class _Handler(BaseHTTPRequestHandler):
+    server_version = "PolyOS"
+    sys_version = ""
+
+    def log_message(self, fmt, *args):
+        log.debug("%s " + fmt, self.address_string(), *args)
+
+    @property
+    def app(self) -> Server:
+        return self.server.app
+
+    def do_GET(self):
+        self._handle("GET")
+
+    def do_POST(self):
+        self._handle("POST")
+
+    def _handle(self, method: str) -> None:
+        try:
+            if self.headers.get("Host", "") not in self.app.allowed_hosts:
+                raise ApiError("forbidden", 403)
+            url = urlsplit(self.path)
+            path = unquote(url.path)
+            if path.startswith(("/api/", "/icon/", "/wallpaper/", "/files/")):
+                query_token = parse_qs(url.query).get("t", [None])[0]
+                if not self.app.authorized(self.headers.get("X-PolyOS-Token"), query_token):
+                    raise ApiError("unauthorized", 401)
+                if self.app.allow is not None and path not in self.app.allow:
+                    raise ApiError("not found", 404)
+                if method == "POST":
+                    return self._post_api(path)
+                return self._get_protected(path)
+            if method != "GET":
+                raise ApiError("method not allowed", 405)
+            return self._static(path)
+        except ApiError as exc:
+            self._json({"error": str(exc)}, exc.status)
+        except RuntimeError as exc:  # system errors carry user-facing messages
+            self._json({"error": str(exc)}, 500)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception:
+            log.exception("%s %s failed", method, self.path)
+            self._json({"error": "Internal error"}, 500)
+
+    # ---- routes ----------------------------------------------------------------------
+    def _get_protected(self, path: str) -> None:
+        be = self.app.backend
+        query = parse_qs(urlsplit(self.path).query)
+        if path == "/api/events":
+            return self._events()
+        if path in GET_API:
+            return self._json(GET_API[path](be, query))
+        if path == "/files/raw":
+            return self._file(be.file_raw(_q(query, "path") or ""), "no-cache")
+        if path.startswith("/icon/app/"):
+            data, ctype = be.app_icon(path[len("/icon/app/"):])
+            return self._bytes(data, ctype, "max-age=600")
+        if path.startswith("/icon/window/"):
+            try:
+                xid = int(path[len("/icon/window/"):])
+            except ValueError:
+                raise ApiError("bad window id") from None
+            data, ctype = be.window_icon(xid)
+            return self._bytes(data, ctype, "no-cache")
+        if path == "/wallpaper/current":
+            return self._file(be.wallpaper_path(), "no-cache")
+        if path.startswith("/wallpaper/builtin/"):
+            return self._file(be.builtin_wallpaper(path[len("/wallpaper/builtin/"):]), "max-age=3600")
+        raise ApiError("not found", 404)
+
+    def _post_api(self, path: str) -> None:
+        handler = POST_API.get(path)
+        if handler is None:
+            raise ApiError("not found", 404)
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_BODY:
+            raise ApiError("request too large", 413)
+        raw = self.rfile.read(length) if length else b""
+        try:
+            body = json.loads(raw) if raw else {}
+        except ValueError:
+            raise ApiError("invalid JSON") from None
+        if not isinstance(body, dict):
+            raise ApiError("expected a JSON object")
+        result = handler(self.app.backend, body)
+        self._json({"ok": True} if result is None else result)
+
+    def _events(self) -> None:
+        bus = self.app.backend.bus
+        q = bus.subscribe()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(b": connected\n\n")
+            self.wfile.flush()
+            while not self.app.stopping.is_set() and bus.is_subscribed(q):
+                try:
+                    chunk = b"data: " + q.get(timeout=15) + b"\n\n"
+                except queue.Empty:
+                    chunk = b": ping\n\n"  # also detects closed connections
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except OSError:
+            pass
+        finally:
+            bus.unsubscribe(q)
+
+    def _static(self, path: str) -> None:
+        if path == "/":
+            path = "/dev.html" if self.app.dev else "/index.html"
+        rel = path.lstrip("/")
+        target = (self.app.ui_dir / rel).resolve()
+        if (rel in DEV_ONLY and not self.app.dev) or not target.is_relative_to(self.app.ui_dir) \
+                or not target.is_file():
+            raise ApiError("not found", 404)
+        data = target.read_bytes()
+        headers = {}
+        if target.suffix == ".html":
+            if self.app.dev:
+                boot = f"<script>window.POLYOS={json.dumps({'token': self.app.token})};</script>"
+                data = data.replace(b"<!--POLYOS-BOOT-->", boot.encode())
+            headers["Content-Security-Policy"] = CSP.format(extra=" 'unsafe-inline'" if self.app.dev else "")
+        ctype = CONTENT_TYPES.get(target.suffix.lower(), "application/octet-stream")
+        self._bytes(data, ctype, "no-cache", headers)
+
+    # ---- responses ---------------------------------------------------------------------
+    def _file(self, path: Path | None, cache: str) -> None:
+        if path is None or not path.is_file():
+            raise ApiError("not found", 404)
+        ctype = IMAGE_TYPES.get(path.suffix.lower())
+        if ctype is None:
+            raise ApiError("unsupported file type", 415)
+        self._bytes(path.read_bytes(), ctype, cache)
+
+    def _bytes(self, data: bytes, ctype: str, cache: str, headers: dict | None = None, status: int = 200):
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", cache)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _json(self, obj, status: int = 200) -> None:
+        try:
+            self._bytes(json.dumps(obj).encode(), "application/json", "no-store", status=status)
+        except (BrokenPipeError, ConnectionResetError):
+            pass

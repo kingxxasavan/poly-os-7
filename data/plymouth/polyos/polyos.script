@@ -1,0 +1,78 @@
+# PolyOS boot splash (Plymouth script theme): a spinning pinwheel over charcoal with a
+# status line, like the PolyOS 7 "Finishing Up..." screen. Also asks for disk passwords.
+
+Window.SetBackgroundTopColor(0.09, 0.09, 0.10);
+Window.SetBackgroundBottomColor(0.04, 0.04, 0.05);
+
+center_x = Window.GetX() + Window.GetWidth() / 2;
+center_y = Window.GetY() + Window.GetHeight() / 2 - 30;
+
+logo.image = Image("logo.png");
+logo.sprite = Sprite();
+logo.sprite.SetZ(10);
+angle = 0;
+
+mode = Plymouth.GetMode();
+if (mode == "shutdown")
+  status_text = "Shutting down…";
+else if (mode == "reboot")
+  status_text = "Restarting…";
+else
+  status_text = "Starting PolyOS";
+
+status.sprite = Sprite();
+status.sprite.SetZ(10);
+
+fun show_status(text) {
+  status.image = Image.Text(text, 0.92, 0.92, 0.94, 1, "Sans 16");
+  status.sprite.SetImage(status.image);
+  status.sprite.SetPosition(center_x - status.image.GetWidth() / 2, center_y + logo.image.GetHeight() / 2 + 44, 10);
+}
+show_status(status_text);
+
+fun refresh_callback() {
+  angle += 0.035;
+  rotated = logo.image.Rotate(angle);
+  logo.sprite.SetImage(rotated);
+  logo.sprite.SetPosition(center_x - rotated.GetWidth() / 2, center_y - rotated.GetHeight() / 2, 10);
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+# ---- disk password prompt (encrypted installs) ------------------------------------------
+prompt.sprite = Sprite();
+bullets.sprite = Sprite();
+
+fun display_password(prompt_text, bullet_count) {
+  logo.sprite.SetOpacity(0.35);
+  status.sprite.SetOpacity(0);
+  text = prompt_text;
+  if (text == "") text = "Enter the password to unlock this disk";
+  prompt.image = Image.Text(text, 1, 1, 1, 1, "Sans 15");
+  prompt.sprite.SetImage(prompt.image);
+  prompt.sprite.SetPosition(center_x - prompt.image.GetWidth() / 2, center_y + 90, 20);
+  dots = "";
+  for (i = 0; i < bullet_count; i++) dots += "●";
+  bullets.image = Image.Text(dots + " ", 1, 1, 1, 1, "Sans 18");
+  bullets.sprite.SetImage(bullets.image);
+  bullets.sprite.SetPosition(center_x - bullets.image.GetWidth() / 2, center_y + 130, 20);
+}
+Plymouth.SetDisplayPasswordFunction(display_password);
+
+fun display_normal() {
+  logo.sprite.SetOpacity(1);
+  status.sprite.SetOpacity(1);
+  prompt.sprite.SetOpacity(0);
+  bullets.sprite.SetOpacity(0);
+}
+Plymouth.SetDisplayNormalFunction(display_normal);
+
+fun show_message(text) {
+  show_status(text);
+}
+Plymouth.SetMessageFunction(show_message);
+
+fun quit_callback() {
+  logo.sprite.SetOpacity(0);
+  status.sprite.SetOpacity(0);
+}
+Plymouth.SetQuitFunction(quit_callback);

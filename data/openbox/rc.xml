@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Openbox configuration for the PolyOS session.
+  polyos-session copies this to $XDG_RUNTIME_DIR/polyos/openbox-rc.xml and replaces
+  @PANEL_MARGIN@ with the taskbar height in device pixels. To customize, copy it to
+  ~/.config/polyos/openbox/rc.xml (placeholders there are filled in too).
+-->
+<openbox_config xmlns="http://openbox.org/3.4/rc" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <resistance>
+    <strength>10</strength>
+    <screen_edge_strength>20</screen_edge_strength>
+  </resistance>
+
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+    <focusLast>yes</focusLast>
+    <underMouse>no</underMouse>
+    <focusDelay>200</focusDelay>
+    <raiseOnFocus>no</raiseOnFocus>
+  </focus>
+
+  <placement>
+    <policy>Smart</policy>
+    <center>yes</center>
+    <monitor>Primary</monitor>
+    <primaryMonitor>1</primaryMonitor>
+  </placement>
+
+  <theme>
+    <name>PolyOS</name>
+    <titleLayout>LIMC</titleLayout>
+    <keepBorder>yes</keepBorder>
+    <animateIconify>yes</animateIconify>
+    <font place="ActiveWindow"><name>Poppins</name><size>10</size><weight>SemiBold</weight><slant>Normal</slant></font>
+    <font place="InactiveWindow"><name>Poppins</name><size>10</size><weight>SemiBold</weight><slant>Normal</slant></font>
+    <font place="MenuHeader"><name>Poppins</name><size>10</size><weight>SemiBold</weight><slant>Normal</slant></font>
+    <font place="MenuItem"><name>Inter</name><size>10</size><weight>Normal</weight><slant>Normal</slant></font>
+    <font place="ActiveOnScreenDisplay"><name>Poppins</name><size>10</size><weight>SemiBold</weight><slant>Normal</slant></font>
+    <font place="InactiveOnScreenDisplay"><name>Poppins</name><size>10</size><weight>SemiBold</weight><slant>Normal</slant></font>
+  </theme>
+
+  <desktops>
+    <number>1</number>
+    <firstdesk>1</firstdesk>
+    <names><name>Desktop</name></names>
+    <popupTime>0</popupTime>
+  </desktops>
+
+  <resize>
+    <drawContents>yes</drawContents>
+    <popupShow>Never</popupShow>
+  </resize>
+
+  <!-- Space kept free for the PolyOS taskbar when windows are maximized. -->
+  <margins>
+    <top>0</top>
+    <bottom>@PANEL_MARGIN@</bottom>
+    <left>0</left>
+    <right>0</right>
+  </margins>
+
+  <dock>
+    <position>TopLeft</position>
+    <noStrut>yes</noStrut>
+    <autoHide>yes</autoHide>
+  </dock>
+
+  <keyboard>
+    <chainQuitKey>C-g</chainQuitKey>
+
+    <!-- Start menu: tapping Super sends Alt+F1 through xcape -->
+    <keybind key="A-F1"><action name="Execute"><command>polyos-ctl start-menu</command></action></keybind>
+    <keybind key="W-space"><action name="Execute"><command>polyos-ctl start-menu</command></action></keybind>
+    <keybind key="W-a"><action name="Execute"><command>polyos-ctl popup quick</command></action></keybind>
+    <keybind key="W-s"><action name="Execute"><command>polyos-ctl popup launcher</command></action></keybind>
+    <keybind key="W-r"><action name="Execute"><command>polyos-ctl popup run</command></action></keybind>
+    <keybind key="W-v"><action name="Execute"><command>polyos-ctl popup vara</command></action></keybind>
+    <keybind key="XF86LaunchA"><action name="Execute"><command>polyos-ctl popup launcher</command></action></keybind>
+    <keybind key="W-i"><action name="Execute"><command>polyos-ctl open settings</command></action></keybind>
+    <keybind key="W-e"><action name="Execute"><command>polyos-ctl run files</command></action></keybind>
+    <keybind key="W-t"><action name="Execute"><command>polyos-ctl run terminal</command></action></keybind>
+    <keybind key="W-Return"><action name="Execute"><command>polyos-ctl run terminal</command></action></keybind>
+    <keybind key="C-A-t"><action name="Execute"><command>polyos-ctl run terminal</command></action></keybind>
+    <keybind key="W-b"><action name="Execute"><command>polyos-ctl run browser</command></action></keybind>
+    <keybind key="W-l"><action name="Execute"><command>polyos-ctl power lock</command></action></keybind>
+    <keybind key="Print"><action name="Execute"><command>xfce4-screenshooter -f</command></action></keybind>
+
+    <!-- Windows -->
+    <keybind key="A-F4"><action name="Close"/></keybind>
+    <keybind key="W-d"><action name="ToggleShowDesktop"/></keybind>
+    <keybind key="A-Tab">
+      <action name="NextWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action>
+    </keybind>
+    <keybind key="A-S-Tab">
+      <action name="PreviousWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action>
+    </keybind>
+    <keybind key="W-Up"><action name="Maximize"/></keybind>
+    <keybind key="W-Down">
+      <action name="If">
+        <maximized>yes</maximized>
+        <then><action name="Unmaximize"/></then>
+        <else><action name="Iconify"/></else>
+      </action>
+    </keybind>
+    <keybind key="W-Left">
+      <action name="UnmaximizeFull"/>
+      <action name="MoveResizeTo"><x>0</x><y>0</y><width>50%</width><height>100%</height></action>
+    </keybind>
+    <keybind key="W-Right">
+      <action name="UnmaximizeFull"/>
+      <action name="MoveResizeTo"><x>-0</x><y>0</y><width>50%</width><height>100%</height></action>
+    </keybind>
+
+    <!-- Hardware keys -->
+    <keybind key="XF86AudioRaiseVolume"><action name="Execute"><command>polyos-ctl volume up</command></action></keybind>
+    <keybind key="XF86AudioLowerVolume"><action name="Execute"><command>polyos-ctl volume down</command></action></keybind>
+    <keybind key="XF86AudioMute"><action name="Execute"><command>polyos-ctl volume mute</command></action></keybind>
+    <keybind key="XF86MonBrightnessUp"><action name="Execute"><command>polyos-ctl brightness up</command></action></keybind>
+    <keybind key="XF86MonBrightnessDown"><action name="Execute"><command>polyos-ctl brightness down</command></action></keybind>
+    <keybind key="XF86PowerOff"><action name="Execute"><command>polyos-ctl popup power</command></action></keybind>
+    <keybind key="XF86Sleep"><action name="Execute"><command>polyos-ctl power suspend</command></action></keybind>
+  </keyboard>
+
+  <mouse>
+    <dragThreshold>1</dragThreshold>
+    <doubleClickTime>400</doubleClickTime>
+    <screenEdgeWarpTime>0</screenEdgeWarpTime>
+    <screenEdgeWarpMouse>false</screenEdgeWarpMouse>
+
+    <context name="Frame">
+      <mousebind button="A-Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="A-Left" action="Drag"><action name="Move"/></mousebind>
+      <mousebind button="A-Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="A-Right" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+
+    <context name="Titlebar">
+      <mousebind button="Left" action="Drag"><action name="Move"/></mousebind>
+      <mousebind button="Left" action="DoubleClick"><action name="ToggleMaximize"/></mousebind>
+    </context>
+
+    <context name="Titlebar Top Right Bottom Left TLCorner TRCorner BRCorner BLCorner">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/><action name="Unshade"/></mousebind>
+      <mousebind button="Middle" action="Press"><action name="Lower"/><action name="FocusToBottom"/><action name="Unfocus"/></mousebind>
+      <mousebind button="Right" action="Press">
+        <action name="Focus"/><action name="Raise"/><action name="ShowMenu"><menu>client-menu</menu></action>
+      </mousebind>
+    </context>
+
+    <context name="Top"><mousebind button="Left" action="Drag"><action name="Resize"><edge>top</edge></action></mousebind></context>
+    <context name="Left"><mousebind button="Left" action="Drag"><action name="Resize"><edge>left</edge></action></mousebind></context>
+    <context name="Right"><mousebind button="Left" action="Drag"><action name="Resize"><edge>right</edge></action></mousebind></context>
+    <context name="Bottom"><mousebind button="Left" action="Drag"><action name="Resize"><edge>bottom</edge></action></mousebind></context>
+    <context name="TRCorner BRCorner TLCorner BLCorner">
+      <mousebind button="Left" action="Drag"><action name="Resize"/></mousebind>
+    </context>
+
+    <context name="Client">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Middle" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Right" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+    </context>
+
+    <context name="Icon">
+      <mousebind button="Left" action="Press">
+        <action name="Focus"/><action name="Raise"/><action name="ShowMenu"><menu>client-menu</menu></action>
+      </mousebind>
+    </context>
+    <context name="Iconify">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Left" action="Click"><action name="Iconify"/></mousebind>
+    </context>
+    <context name="Maximize">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Left" action="Click"><action name="ToggleMaximize"/></mousebind>
+    </context>
+    <context name="Close">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="Left" action="Click"><action name="Close"/></mousebind>
+    </context>
+    <!-- No Root/Desktop bindings: the PolyOS desktop surface handles its own clicks. -->
+  </mouse>
+
+  <applications>
+    <application class="PolyOS" name="polyos-desktop">
+      <decor>no</decor><layer>below</layer><desktop>all</desktop>
+      <skip_taskbar>yes</skip_taskbar><skip_pager>yes</skip_pager>
+    </application>
+    <application class="PolyOS" name="polyos-panel">
+      <decor>no</decor><focus>no</focus><layer>above</layer><desktop>all</desktop>
+      <skip_taskbar>yes</skip_taskbar><skip_pager>yes</skip_pager>
+    </application>
+    <application class="PolyOS" name="polyos-popup">
+      <decor>no</decor><focus>yes</focus><layer>above</layer><desktop>all</desktop>
+      <skip_taskbar>yes</skip_taskbar><skip_pager>yes</skip_pager>
+    </application>
+  </applications>
+</openbox_config>

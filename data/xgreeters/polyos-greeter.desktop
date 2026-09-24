@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=PolyOS
+Comment=The PolyOS login and lock screen
+Exec=polyos-greeter
+Type=Application
+X-Ubuntu-Gettext-Domain=lightdm

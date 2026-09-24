@@ -1,0 +1,11 @@
+#!/usr/bin/python3
+"""Entry point for polyos.shell (installed to /usr/bin; also runnable from a source checkout)."""
+import sys
+from pathlib import Path
+
+_checkout = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_checkout) if (_checkout / "polyos" / "__init__.py").is_file() else "/usr/lib/polyos")
+
+from polyos.shell import main  # noqa: E402
+
+sys.exit(main())

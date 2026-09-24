@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PolyOS Dev</title>
+  <!--POLYOS-BOOT-->
+  <link rel="stylesheet" href="/css/polyos.css">
+  <link rel="stylesheet" href="/css/dev.css">
+  <script type="module" src="/js/dev.js"></script>
+</head>
+<body>
+  <div id="screen">
+    <iframe id="desktop" title="Desktop" src="/index.html?surface=desktop"></iframe>
+    <div id="windows"></div>
+    <iframe id="panel" title="Taskbar" src="/index.html?surface=panel"></iframe>
+    <iframe id="popup" title="Popup" src="/index.html?surface=popup" hidden></iframe>
+    <div id="overlay" hidden></div>
+  </div>
+</body>
+</html>

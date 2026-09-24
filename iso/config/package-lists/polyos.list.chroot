@@ -1,0 +1,31 @@
+# Installed into the live image. polyos-desktop and polyos-shell come from
+# config/packages.chroot (copied there by `main.py iso`).
+polyos-desktop
+
+# Live system and graphical installer
+live-boot
+live-config
+live-config-systemd
+calamares
+calamares-settings-debian
+sudo
+user-setup
+locales
+keyboard-configuration
+
+# Boot splash
+plymouth
+plymouth-label
+
+# Hardware support
+firmware-linux-free
+firmware-linux-nonfree
+firmware-misc-nonfree
+firmware-iwlwifi
+firmware-realtek
+firmware-atheros
+firmware-brcm80211
+firmware-libertas
+firmware-sof-signed
+intel-microcode
+amd64-microcode

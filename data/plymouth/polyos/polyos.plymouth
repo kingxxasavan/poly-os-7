@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=PolyOS
+Description=The PolyOS boot splash: the pinwheel on charcoal, as in PolyOS 7
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/polyos
+ScriptFile=/usr/share/plymouth/themes/polyos/polyos.script

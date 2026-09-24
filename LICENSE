@@ -1,0 +1,17 @@
+PolyOS for Debian
+Copyright (C) 2026 The PolyOS Team
+
+SPDX-License-Identifier: GPL-3.0-or-later
+
+This program is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details:
+https://www.gnu.org/licenses/gpl-3.0.html
+
+PolyOS is based on the PolyOS Scratch project by AndrewInput and the PIXAPoLY team
+(https://scratch.mit.edu/users/PolyOS/). Material ported from the Scratch projects
+remains under CC BY-SA 2.0 with attribution.

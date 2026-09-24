@@ -1,0 +1,46 @@
+---
+# PolyOS branding for the Calamares installer (used by the live ISO).
+# @VERSION@ is filled in by `main.py iso`. Style keys are listed in both the Calamares 3.3
+# (trixie) and 3.2 (bookworm) spellings; each version ignores the other's.
+componentName:  polyos
+
+welcomeStyleCalamares:   false
+welcomeExpandingLogo:    true
+windowExpanding:         normal
+windowSize:              960px,640px
+windowPlacement:         center
+sidebar:                 widget
+navigation:              widget
+
+strings:
+    productName:         PolyOS
+    shortProductName:    PolyOS
+    version:             @VERSION@
+    shortVersion:        @VERSION@
+    versionedName:       PolyOS @VERSION@
+    shortVersionedName:  PolyOS @VERSION@
+    bootloaderEntryName: PolyOS
+    productUrl:          https://scratch.mit.edu/users/PolyOS/
+    supportUrl:          https://scratch.mit.edu/projects/1260782002/
+    knownIssuesUrl:      https://scratch.mit.edu/projects/1260782002/
+    releaseNotesUrl:     https://scratch.mit.edu/projects/1260782915/
+
+images:
+    productLogo:         "logo.png"
+    productIcon:         "logo.png"
+    productWelcome:      "welcome.png"
+
+slideshow:
+    - "slide1.png"
+    - "slide2.png"
+    - "slide3.png"
+
+style:
+    sidebarBackground:         "#151515"
+    sidebarText:               "#FFFFFF"
+    sidebarTextCurrent:        "#FFFFFF"
+    sidebarBackgroundCurrent:  "#678FD9"
+    SidebarBackground:         "#151515"
+    SidebarText:               "#FFFFFF"
+    SidebarTextSelect:         "#FFFFFF"
+    SidebarTextHighlight:      "#678FD9"

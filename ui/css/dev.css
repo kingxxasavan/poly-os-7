@@ -1,0 +1,46 @@
+/* Dev harness: composes the shell surfaces in one page and fakes app windows. */
+
+html, body { background: #000; }
+#screen { position: fixed; inset: 0; overflow: hidden; }
+#screen iframe { position: absolute; border: 0; background: transparent; color-scheme: dark; }
+#desktop { inset: 0; width: 100%; height: 100%; }
+#panel { left: var(--dock-m); right: var(--dock-m); bottom: var(--dock-m); width: calc(100% - 2 * var(--dock-m));
+  height: var(--dock-h); z-index: 30; border-radius: 26px; }
+#popup { z-index: 40; border-radius: 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
+#popup.fullscreen { z-index: 25; border-radius: 0; box-shadow: none; backdrop-filter: none; }
+#windows { position: absolute; inset: 0 0 var(--panel-h) 0; z-index: 10; pointer-events: none; }
+/* In the real session picom blurs behind the panel and popups; approximate it here. */
+#panel, #popup { backdrop-filter: blur(24px) saturate(1.4); }
+
+.mock-win {
+  position: absolute; display: flex; flex-direction: column; pointer-events: auto;
+  width: 760px; height: 480px; min-width: 320px; min-height: 200px;
+  border-radius: 14px; overflow: hidden; resize: both;
+  border: 1px solid #2a2a2c; background: #181818;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5);
+  animation: rise 0.2s var(--ease);
+}
+.mock-win.active { border-color: #33416a; }
+.mock-win:not(.active) .mock-title { color: #6f7a9c; }
+.mock-bar {
+  display: flex; align-items: center; gap: 10px; height: 38px; flex: none;
+  padding: 0 10px 0 14px; background: #151515; border-bottom: 1px solid #222224;
+}
+.mock-bar img { width: 18px; height: 18px; }
+.mock-title { flex: 1; font-family: var(--display); font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mock-btn { width: 24px; height: 24px; margin-left: 4px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.12);
+  color: #cfd6f0; display: grid; place-items: center; font-size: 14px; }
+.mock-btn:hover { background: var(--accent); color: #fff; }
+.mock-btn.close:hover { background: #e5484d; }
+.mock-body { flex: 1; min-height: 0; position: relative; }
+.mock-body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.mock-placeholder { display: grid; place-content: center; gap: 10px; height: 100%; text-align: center; color: #6f7a9c; font-size: 13px; }
+.mock-placeholder img { width: 72px; height: 72px; margin: 0 auto 6px; }
+.mock-placeholder b { color: #e9eeff; font-size: 16px; font-weight: 600; }
+#overlay {
+  position: absolute; inset: 0; z-index: 90; display: grid; place-content: center; gap: 14px;
+  background: rgba(3, 6, 14, 0.82); backdrop-filter: blur(10px); color: #e9eeff; text-align: center; font-size: 18px;
+  animation: fade 0.3s;
+}
+#overlay small { color: #6f7a9c; font-size: 13px; }
+#setup { inset: 0; width: 100%; height: 100%; z-index: 80; }

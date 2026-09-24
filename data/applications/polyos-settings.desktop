@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+GenericName=System Settings
+Comment=Personalize and configure PolyOS
+Exec=polyos-ctl open settings
+Icon=polyos-settings
+Terminal=false
+Categories=Settings;System;
+Keywords=preferences;wallpaper;theme;wifi;sound;display;about;
+StartupWMClass=polyos-settings
+OnlyShowIn=PolyOS;

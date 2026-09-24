@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=XSession
+Name=PolyOS
+Comment=The PolyOS desktop
+Exec=/usr/bin/polyos-session
+TryExec=/usr/bin/polyos-session
+DesktopNames=PolyOS

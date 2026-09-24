@@ -1,0 +1,49 @@
+# Builds the PolyOS live ISO on GitHub's servers (Debian inside a privileged container).
+# Run it from the Actions tab ("Run workflow") or by pushing a tag like v0.1.0.
+name: Build PolyOS ISO
+
+on:
+  workflow_dispatch:
+    inputs:
+      dist:
+        description: Debian release
+        type: choice
+        options: [trixie, bookworm]
+        default: trixie
+  push:
+    tags: ["v*"]
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      DIST: ${{ inputs.dist || 'trixie' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checks and tests
+        run: python3 main.py check && python3 main.py test
+
+      - name: Free disk space for the build
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Build the ISO in Debian ${{ env.DIST }}
+        run: |
+          docker run --rm --privileged -v "$PWD":/src -w /src "debian:$DIST" bash -euxc "
+            apt-get update
+            apt-get install -y --no-install-recommends live-build debootstrap python3 ca-certificates \
+              xorriso squashfs-tools grub-efi-amd64-bin grub-pc-bin mtools dosfstools
+            python3 main.py iso --dist $DIST --workdir /tmp/polyos-iso
+          "
+          ls -lh dist/
+
+      - name: Upload the ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: polyos-${{ env.DIST }}-amd64-iso
+          path: dist/*.iso
+          compression-level: 0
+          retention-days: 14

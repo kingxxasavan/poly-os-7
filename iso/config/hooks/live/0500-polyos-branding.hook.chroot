@@ -1,0 +1,18 @@
+#!/bin/sh
+# PolyOS branding inside the live image (runs in the chroot during `lb build`).
+set -e
+
+# Installer: use the PolyOS Calamares branding and call it "Install PolyOS".
+if [ -f /etc/calamares/settings.conf ]; then
+    sed -i 's/^branding:.*/branding: polyos/' /etc/calamares/settings.conf
+fi
+for f in /usr/share/applications/install-debian.desktop /usr/share/applications/calamares.desktop; do
+    if [ -f "$f" ]; then
+        sed -i '/^Name\[/d; /^Comment\[/d; s/^Name=.*/Name=Install PolyOS/; s/^Comment=.*/Comment=Install PolyOS on this computer/' "$f"
+    fi
+done
+
+# Boot splash: the PolyOS pinwheel (rebuilds the initramfs with the theme in it).
+if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+    plymouth-set-default-theme -R polyos || echo "polyos: could not set the Plymouth theme" >&2
+fi
