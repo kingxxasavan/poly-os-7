@@ -20,6 +20,8 @@ _ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 _PKG = re.compile(r"^[a-z0-9][a-z0-9+.-]{0,80}$")
 _REF = re.compile(r"^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+){2,}$")
 FLATHUB_URL = "https://dl.flathub.org/repo/flathub.flatpakrepo"
+# where Debian packages and Flathub put app launchers (plus the per-user ones under ~/.local/share)
+LAUNCHER_DIRS = ("/usr/share/applications", "/usr/local/share/applications", "/var/lib/flatpak/exports/share/applications")
 
 
 class CatalogError(ValueError):
@@ -78,6 +80,15 @@ def for_arch(data: dict, arch: str | None = None) -> dict:
 def pack(data: dict, name: str) -> dict | None:
     """A pack ("gaming", "developer") with its apps, or None."""
     return (data.get("packs") or {}).get(name)
+
+
+def installed_launcher(app: dict, home: Path, dirs=LAUNCHER_DIRS) -> str | None:
+    """The launcher (.desktop id) an installed app put on the system, if any."""
+    folders = [Path(d) for d in dirs] + [home / ".local/share/applications", home / ".local/share/flatpak/exports/share/applications"]
+    for desktop_id in app.get("desktop") or []:
+        if any((folder / desktop_id).is_file() for folder in folders):
+            return desktop_id
+    return None
 
 
 def load(path: Path | None = None) -> dict:

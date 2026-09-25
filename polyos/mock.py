@@ -572,6 +572,7 @@ class MockBackend(Backend):
                 self._add_store_app(apps[i])
             self.bus.publish("apps", apps=self._apps)
             self.update_settings({"editionSetup": True})
+            self.add_desktop_shortcuts([(apps[i].get("desktop") or [None])[0] for i in ids])
         steps = ["Checking Debian for the latest versions…", "Connecting to Flathub…",
                  *[f"Installing {apps[i]['name']} ({n + 1} of {len(ids)})…" for n, i in enumerate(ids)]]
         return self.jobs.start("pack", f"Setting up {info['name']}", [], target=name,

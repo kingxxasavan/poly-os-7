@@ -648,8 +648,10 @@ export function mount(root, store) {
       const more = (id, title, sub, ico) => h('button.su-option', { onclick: () => { extra = id; go(step); } },
         h('span.su-option-text', h('b', title), h('small', sub)), h('span.su-dual', icon(ico)));
       if (extra) {
+        const panel = packPanel(extra, { compact: true, external: true });
         return [...head(extra === 'gaming' ? 'Gaming apps' : 'Developer tools', 'Pick what to install. You can add more in Settings anytime.'),
-          packPanel(extra, { compact: true }), nav(h('button.su-link', { onclick: () => { extra = null; go(step); } }, 'Back to choices'), next())];
+          panel, nav(h('button.su-link', { onclick: () => { extra = null; go(step); } }, 'Back to choices'),
+            installAndContinue(panel, extra))];
       }
       return [...head('Add more to PolyOS?', 'Optional: set up gaming or coding now. Both are in Settings later too.'),
         h('div.su-options', more('gaming', 'Gaming', 'Steam, Wine, Heroic and cloud gaming', 'gamepad'),
@@ -657,14 +659,34 @@ export function mount(root, store) {
         nav(next('Skip'))];
     }
     const online = store.state.system.network.kind && store.state.system.network.kind !== 'none';
+    const panel = packPanel(pack, { compact: true, external: true, onDone: () => saveSettings({ editionSetup: true }).catch(() => {}) });
     return [
       ...head(`Your ${name} edition`, text),
       online ? null : h('p.su-note', icon('wifiOff'), 'You’re offline. Go back to connect, or set this up later in Settings.'),
-      packPanel(pack, { compact: true, onDone: () => saveSettings({ editionSetup: true }).catch(() => {}) }),
-      nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Later'), next()),
+      panel,
+      h('p.su-note', icon('info'), 'The apps download while you finish setting up, and appear on your desktop when they’re ready.'),
+      nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Later'), installAndContinue(panel, pack)),
     ];
   }
   let extra = null;
+  let packJob = null; // the edition's apps, installing in the background while setup carries on
+
+  // "Install and continue": start installing what's ticked, then go on (nothing ticked just goes on)
+  function installAndContinue(panel, pack) {
+    const button = next('Install and continue', async () => {
+      button.disabled = true;
+      button.textContent = 'Starting…';
+      const started = await panel.start();
+      if (started) {
+        packJob = packJob || { kind: 'pack', target: pack, state: 'running', progress: 0, message: 'Starting…' };
+        go(step + 1);
+      } else {
+        button.disabled = false;
+        button.textContent = 'Install and continue';
+      }
+    }, { primary: true });
+    return button;
+  }
 
   function vara() {
     const key = h('input.su-input', { type: 'password', placeholder: 'Paste your API key', autocomplete: 'off', 'aria-label': 'API key' });
@@ -697,11 +719,17 @@ export function mount(root, store) {
   }
 
   function done() {
+    const apps = packJob ? h('div.su-apps', { role: 'status' },
+      h('span', packJob.state === 'running' ? packJob.message || 'Installing your apps…'
+        : packJob.state === 'done' ? 'Your apps are installed and on your desktop.' : packJob.error || 'Some apps didn’t install. Try again in Settings.'),
+      packJob.state === 'running' ? h('div.su-progress', h('span', { style: { width: `${Math.max(3, Math.round((packJob.progress || 0) * 100))}%` } })) : null,
+      packJob.state === 'running' ? h('small', 'They keep installing after you start using PolyOS.') : null) : null;
     return [
       h('div.su-center',
         h('img.su-done-logo', { src: '/img/logo-white.svg', alt: '' }),
         h('h1', 'You’re all set.'),
         h('p.su-sub', 'Enjoy PolyOS 7. Everything you chose here is in Settings.'),
+        apps,
         h('button.su-next.primary', { onclick: finish }, 'Start using PolyOS')),
     ];
   }
@@ -718,6 +746,11 @@ export function mount(root, store) {
 
   // ---- live updates ---------------------------------------------------------------------
   watchJobs((job) => {
+    if (job.kind === 'pack' && packJob) {
+      packJob = job;
+      if (steps[step] === done) go(step);
+      return;
+    }
     if (job.kind !== 'install') return;
     installJob = job;
     if (steps[step] !== installing) return;

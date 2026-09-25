@@ -441,7 +441,16 @@ class Backend:
             self.bus.publish("store")
             if job["state"] == "done":
                 self.update_settings({"editionSetup": True})
+                apps = store.validate(store.load())
+                self.add_desktop_shortcuts([store.installed_launcher(apps[i], self.files.home) for i in ids])
         return self.jobs.start("pack", f"Setting up {info['name']}", ["pack", name, *ids], target=name, on_done=done)
+
+    def add_desktop_shortcuts(self, desktop_ids: list[str | None]) -> None:
+        """Put newly installed apps on the desktop (edition packs), after the ones already there."""
+        icons = list(self.settings.get("desktopIcons") or [])
+        new = [d for d in dict.fromkeys(desktop_ids) if d and d not in icons]
+        if new and len(icons) < 24:
+            self.update_settings({"desktopIcons": (icons + new)[:24]})
 
     # ---- cloud gaming ------------------------------------------------------------------------
     def cloud_gaming(self) -> dict:

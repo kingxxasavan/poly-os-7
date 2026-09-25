@@ -1,7 +1,7 @@
 // Reusable controls: switch, slider, settings rows and the Wi-Fi network list.
 
 import { api, withToken } from './api.js';
-import { h, icon, throttle, wifiLevel } from './ui.js';
+import { fill, h, icon, throttle, wifiLevel } from './ui.js';
 
 export function toggle(checked, onChange, label = '') {
   const el = h('button.switch', { role: 'switch', 'aria-checked': String(!!checked), 'aria-label': label });
@@ -241,7 +241,8 @@ export function wifiPanel(store, { compact = false } = {}) {
 
 // ---- editions: an app pack (Gaming, Developer) to pick from and install in one go ---------
 // Used by the welcome screens and Settings. onDone() runs after a successful install.
-export function packPanel(name, { onDone, compact = false } = {}) {
+// external: the caller's own button installs (el.start()), as in first-sign-in setup's "Install and continue"
+export function packPanel(name, { onDone, compact = false, external = false } = {}) {
   const el = h('div.pack', h('p.muted.small.pad', 'Loading…'));
   const status = h('div.pack-status', { hidden: true });
   const bar = h('div.pack-bar', h('span'));
@@ -268,7 +269,7 @@ export function packPanel(name, { onDone, compact = false } = {}) {
     });
     button.disabled = running || !chosen.size;
     button.addEventListener('click', () => install([...chosen]));
-    el.replaceChildren(h('div.pack-list', rows), bar, status, h('div.pack-actions', button));
+    fill(el, h('div.pack-list', rows), bar, status, external ? null : h('div.pack-actions', button));
     bar.hidden = !running;
   }
 
@@ -278,7 +279,7 @@ export function packPanel(name, { onDone, compact = false } = {}) {
   }
 
   async function install(ids) {
-    if (!ids.length) return;
+    if (!ids.length) return false;
     status.hidden = false;
     status.textContent = 'Starting…';
     try {
@@ -306,11 +307,16 @@ export function packPanel(name, { onDone, compact = false } = {}) {
           if (job.state === 'done') onDone?.();
         }
       }).off;
+      return true;
     } catch (err) {
       status.textContent = err.cancelled ? '' : err.message;
       status.hidden = !status.textContent;
+      return false;
     }
   }
+
+  // true once the chosen apps are installing (nothing chosen counts as done), false if it couldn't start
+  el.start = async () => (running || !chosen || !chosen.size ? true : install([...chosen]));
 
   load();
   return el;

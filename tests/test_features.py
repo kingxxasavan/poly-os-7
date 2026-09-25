@@ -107,6 +107,29 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(text, "Installed vlc")
         self.assertIsNone(admin.parse_apt_status("Reading package lists..."))
 
+    def test_installed_launcher(self):
+        app = {"desktop": ["com.valvesoftware.Steam.desktop", "steam.desktop"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            system, home = Path(tmp) / "apps", Path(tmp) / "home"
+            system.mkdir()
+            self.assertIsNone(store.installed_launcher(app, home, dirs=[str(system)]))
+            (system / "steam.desktop").write_text("[Desktop Entry]\n")
+            self.assertEqual(store.installed_launcher(app, home, dirs=[str(system)]), "steam.desktop")
+            flatpak = home / ".local/share/flatpak/exports/share/applications"
+            flatpak.mkdir(parents=True)
+            (flatpak / "com.valvesoftware.Steam.desktop").write_text("[Desktop Entry]\n")
+            self.assertEqual(store.installed_launcher(app, home, dirs=[str(system)]), "com.valvesoftware.Steam.desktop")
+
+    def test_edition_apps_land_on_the_desktop(self):
+        from polyos.core import EventBus, Settings
+        from polyos.mock import MockBackend
+
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = MockBackend(Settings(Path(tmp) / "settings.json"), EventBus(), home=Path(tmp) / "home")
+            backend.update_settings({"desktopIcons": ["polyos-files.desktop"]})
+            backend.add_desktop_shortcuts(["steam.desktop", None, "polyos-files.desktop", "steam.desktop"])
+            self.assertEqual(backend.settings.get("desktopIcons"), ["polyos-files.desktop", "steam.desktop"])
+
     def test_admin_refuses_unknown_things(self):
         with self.assertRaises(admin.AdminError):
             admin.store_action("install", "not-an-app")
