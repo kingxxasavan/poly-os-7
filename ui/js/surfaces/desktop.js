@@ -51,11 +51,11 @@ export function mount(root, store) {
     }, Math.max(0, 1400 - (Date.now() - started)));
   };
 
-  // Live USB, after "Try PolyOS first": the PolyOS "It's time to get started" card.
+  // Live USB: the PolyOS "It's time to get started" card (behind the installer until it's closed).
   const { env } = store.state;
   let card = null;
   const syncCard = () => {
-    const want = env.live && store.state.settings.setupDone;
+    const want = env.live;
     if (want && !card) {
       card = h('div.welcome',
         h('div.welcome-main',
