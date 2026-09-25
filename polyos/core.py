@@ -35,6 +35,7 @@ IMAGE_TYPES = {
 }
 
 DEFAULTS: dict = {
+    "theme": "dark",  # "dark" | "light" (PolyOS 7's Appearance choice)
     "accent": "#678fd9",
     "wallpaper": "builtin:polyos-dusk.jpg",
     "clock24h": False,
@@ -43,6 +44,7 @@ DEFAULTS: dict = {
     "pinned": [
         "firefox-esr.desktop",
         "polyos-files.desktop",
+        "polyos-store.desktop",
         "xfce4-terminal.desktop",
         "org.xfce.mousepad.desktop",
         "polyos-settings.desktop",
@@ -52,6 +54,7 @@ DEFAULTS: dict = {
     "effects": True,  # compositor: blur, shadows, rounded corners (next sign-in)
     "glass": 78,  # opacity of the dock and popups in percent (lower = more see-through)
     "scale": "auto",  # "auto" | "1" | "2" (next sign-in)
+    "showAllApps": False,  # list the technical apps PolyOS hides from the launcher
 }
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -99,6 +102,12 @@ def _glass(value):
     raise ValueError("expected a whole number from 30 to 100")
 
 
+def _theme(value):
+    if value in ("dark", "light"):
+        return value
+    raise ValueError("expected dark or light")
+
+
 def _scale(value):
     if value in ("auto", "1", "2"):
         return value
@@ -106,6 +115,8 @@ def _scale(value):
 
 
 VALIDATORS = {
+    "theme": _theme,
+    "showAllApps": _bool,
     "accent": _accent,
     "wallpaper": _wallpaper,
     "clock24h": _bool,

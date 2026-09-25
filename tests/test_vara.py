@@ -27,7 +27,7 @@ class VaraTests(unittest.TestCase):
         self.assertEqual(self.ask("mute")["reply"], "Muted.")
         self.assertTrue(self.backend.system_status()["volume"]["muted"])
         reply = self.ask("open firefox")["reply"]
-        self.assertEqual(reply, "Opening Firefox ESR.")
+        self.assertEqual(reply, "Opening Firefox.")
         self.assertTrue(any(w["appId"] == "firefox-esr.desktop" for w in self.backend.windows()))
         self.assertIn("off", self.ask("turn wifi off")["reply"])
         self.assertFalse(self.backend.system_status()["network"]["wifiEnabled"])

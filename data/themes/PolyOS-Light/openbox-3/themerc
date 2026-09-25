@@ -1,0 +1,99 @@
+# PolyOS window decorations for Openbox 3 (light appearance).
+# Circular title-bar buttons (the .xbm masks here) on a seamless dark title bar,
+# following PolyOS 7. Colors are the PolyOS 7 palette (ui/css/polyos.css).
+
+border.width: 1
+padding.width: 12
+padding.height: 8
+window.handle.width: 3
+window.client.padding.width: 0
+window.client.padding.height: 0
+menu.overlap: 0
+menu.separator.width: 1
+menu.separator.padding.width: 6
+menu.separator.padding.height: 3
+window.label.text.justify: left
+menu.title.text.justify: center
+
+# ---- active window ----
+window.active.border.color: #d4d4d8
+window.active.client.color: #f2f2f4
+window.active.title.bg: flat solid
+window.active.title.bg.color: #f2f2f4
+window.active.title.separator.color: #f2f2f4
+window.active.label.bg: parentrelative
+window.active.label.text.color: #1b1b1f
+window.active.handle.bg: flat solid
+window.active.handle.bg.color: #f2f2f4
+window.active.grip.bg: flat solid
+window.active.grip.bg.color: #f2f2f4
+
+window.active.button.unpressed.bg: parentrelative
+window.active.button.unpressed.image.color: #8a8a90
+window.active.button.hover.bg: parentrelative
+window.active.button.hover.image.color: #4f76c0
+window.active.button.pressed.bg: parentrelative
+window.active.button.pressed.image.color: #3e63a8
+window.active.button.toggled.bg: parentrelative
+window.active.button.toggled.image.color: #8a8a90
+window.active.button.toggled.hover.bg: parentrelative
+window.active.button.toggled.hover.image.color: #4f76c0
+window.active.button.disabled.bg: parentrelative
+window.active.button.disabled.image.color: #c8c8cc
+
+# ---- inactive window ----
+window.inactive.border.color: #dedee2
+window.inactive.client.color: #f7f7f9
+window.inactive.title.bg: flat solid
+window.inactive.title.bg.color: #f7f7f9
+window.inactive.title.separator.color: #f7f7f9
+window.inactive.label.bg: parentrelative
+window.inactive.label.text.color: #8a8a90
+window.inactive.handle.bg: flat solid
+window.inactive.handle.bg.color: #f7f7f9
+window.inactive.grip.bg: flat solid
+window.inactive.grip.bg.color: #f7f7f9
+
+window.inactive.button.unpressed.bg: parentrelative
+window.inactive.button.unpressed.image.color: #b0b0b5
+window.inactive.button.hover.bg: parentrelative
+window.inactive.button.hover.image.color: #8a8a90
+window.inactive.button.pressed.bg: parentrelative
+window.inactive.button.pressed.image.color: #3e63a8
+window.inactive.button.toggled.bg: parentrelative
+window.inactive.button.toggled.image.color: #b0b0b5
+window.inactive.button.disabled.bg: parentrelative
+window.inactive.button.disabled.image.color: #dcdce0
+
+# ---- menus (window menu, Alt+Tab) ----
+menu.border.color: #d4d4d8
+menu.title.bg: flat solid
+menu.title.bg.color: #e8e8ec
+menu.title.text.color: #1b1b1f
+menu.items.bg: flat solid
+menu.items.bg.color: #f2f2f4
+menu.items.text.color: #1b1b1f
+menu.items.disabled.text.color: #a0a0a5
+menu.items.active.bg: flat solid
+menu.items.active.bg.color: #4f76c0
+menu.items.active.text.color: #ffffff
+menu.separator.color: #d4d4d8
+
+# ---- on-screen displays ----
+osd.border.color: #d4d4d8
+osd.bg: flat solid
+osd.bg.color: #f2f2f4
+osd.label.bg: flat solid
+osd.label.bg.color: #f2f2f4
+osd.label.text.color: #1b1b1f
+osd.hilight.bg: flat solid
+osd.hilight.bg.color: #4f76c0
+osd.unhilight.bg: flat solid
+osd.unhilight.bg.color: #d4d4d8
+
+# Per-button colors (Openbox 3.6+): the close button is always red, so it's easy to find
+window.active.button.close.unpressed.image.color: #e06c6c
+window.active.button.close.hover.image.color: #f08585
+window.active.button.close.pressed.image.color: #b85252
+window.inactive.button.close.unpressed.image.color: #8f4b4b
+window.inactive.button.close.hover.image.color: #e06c6c

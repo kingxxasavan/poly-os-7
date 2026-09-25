@@ -1,6 +1,6 @@
 // Taskbar right-click menu: new window, pin/unpin, close.
 
-import { closePopup, launch, saveSettings, windowAction, withToken } from '../api.js';
+import { api, closePopup, launch, saveSettings, windowAction, withToken } from '../api.js';
 import { h, icon } from '../ui.js';
 
 export default function taskmenu(root, store, data) {
@@ -26,10 +26,13 @@ export default function taskmenu(root, store, data) {
   }
   if (wins.length) {
     items.push(
-      h('button.menu-item.danger', { onclick: () => done(Promise.all(wins.map((w) => windowAction(w.xid, 'close')))) },
+      h('button.menu-item', { onclick: () => done(Promise.all(wins.map((w) => windowAction(w.xid, 'close')))) },
         icon('close'), wins.length > 1 ? `Close ${wins.length} windows` : 'Close window'),
+      h('button.menu-item.danger', { onclick: () => done(Promise.all(wins.map((w) => windowAction(w.xid, 'kill')))) },
+        icon('stop'), 'Force close'),
     );
   }
+  items.push(h('button.menu-item', { onclick: () => done(api.post('/api/open', { app: 'taskmgr' })) }, icon('activity'), 'Task Manager'));
   const iconUrl = app ? app.icon : wins[0]?.icon;
   root.append(
     h('div.tm-head', iconUrl ? h('img', { src: withToken(iconUrl), alt: '' }) : null,

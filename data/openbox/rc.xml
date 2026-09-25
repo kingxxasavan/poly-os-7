@@ -2,7 +2,8 @@
 <!--
   Openbox configuration for the PolyOS session.
   polyos-session copies this to $XDG_RUNTIME_DIR/polyos/openbox-rc.xml and replaces
-  @PANEL_MARGIN@ with the taskbar height in device pixels. To customize, copy it to
+  @PANEL_MARGIN@ with the taskbar height in device pixels and @THEME@ with PolyOS or
+  PolyOS-Light (Settings > Appearance switches it while running). To customize, copy it to
   ~/.config/polyos/openbox/rc.xml (placeholders there are filled in too).
 -->
 <openbox_config xmlns="http://openbox.org/3.4/rc" xmlns:xi="http://www.w3.org/2001/XInclude">
@@ -28,7 +29,7 @@
   </placement>
 
   <theme>
-    <name>PolyOS</name>
+    <name>@THEME@</name>
     <titleLayout>LIMC</titleLayout>
     <keepBorder>yes</keepBorder>
     <animateIconify>yes</animateIconify>
@@ -84,6 +85,9 @@
     <keybind key="C-A-t"><action name="Execute"><command>polyos-ctl run terminal</command></action></keybind>
     <keybind key="W-b"><action name="Execute"><command>polyos-ctl run browser</command></action></keybind>
     <keybind key="W-l"><action name="Execute"><command>polyos-ctl power lock</command></action></keybind>
+    <keybind key="W-x"><action name="Execute"><command>polyos-ctl popup quickmenu</command></action></keybind>
+    <keybind key="C-S-Escape"><action name="Execute"><command>polyos-ctl open taskmgr</command></action></keybind>
+    <keybind key="C-A-Delete"><action name="Execute"><command>polyos-ctl open taskmgr</command></action></keybind>
     <keybind key="Print"><action name="Execute"><command>xfce4-screenshooter -f</command></action></keybind>
 
     <!-- Windows -->

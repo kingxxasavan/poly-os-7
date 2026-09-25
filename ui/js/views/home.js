@@ -27,7 +27,7 @@ export default function home(root, store) {
   const dateCard = h('button.hm-card.hm-date', { title: 'Open the calendar', onclick: () => popup('calendar') },
     h('span.hm-date-main', `${now.toLocaleDateString([], { month: 'long' })} ${ordinal(now.getDate())}`),
     h('span.hm-date-year', String(now.getFullYear())),
-    h('span.hm-date-sub', `${greeting(now)}, ${first}`));
+    h('span.hm-date-sub', store.state.env.live ? 'Welcome to PolyOS 7' : `${greeting(now)}, ${first}`));
   const calCard = h('button.hm-card.hm-cal', { title: 'Open the calendar', onclick: () => popup('calendar') },
     h('span.hm-cal-day', String(now.getDate())),
     h('span.hm-cal-meta', now.toLocaleDateString([], { weekday: 'long' }), h('br'), now.toLocaleDateString([], { month: 'short', year: 'numeric' })));
@@ -80,7 +80,7 @@ export default function home(root, store) {
   // Pinned apps, then recently opened ones that aren't pinned.
   function renderPinned() {
     const { apps: all, settings } = store.state;
-    const byId = new Map(all.map((a) => [a.id, a]));
+    const byId = new Map(all.filter((a) => settings.showAllApps || !a.hidden).map((a) => [a.id, a]));
     const pins = settings.pinned.map((id) => byId.get(id)).filter(Boolean).slice(0, 5);
     const recent = settings.recent.filter((id) => !settings.pinned.includes(id))
       .map((id) => byId.get(id)).filter(Boolean).slice(0, 5);

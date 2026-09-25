@@ -21,6 +21,9 @@ WALLPAPER_DIR = SHARE / "wallpapers"
 OPENBOX_RC = SHARE / "openbox" / "rc.xml"
 PICOM_CONF = SHARE / "picom" / "picom.conf"
 XDG_DIR = SHARE / "xdg"
+STORE_CATALOG = SHARE / "store" / "catalog.json"
+# The root helper for installing PolyOS and software (run through sudo, never directly by the UI).
+ADMIN = ROOT / "data" / "bin" / "polyos-admin" if IN_REPO else Path("/usr/libexec/polyos/polyos-admin")
 
 
 def _xdg(var: str, fallback: str) -> Path:

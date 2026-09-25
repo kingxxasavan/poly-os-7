@@ -91,7 +91,9 @@ osd.hilight.bg.color: #678fd9
 osd.unhilight.bg: flat solid
 osd.unhilight.bg.color: #2a2a2c
 
-# Per-button colors (Openbox 3.6+; ignored by older versions): red close like PolyOS
-window.active.button.close.hover.image.color: #c76969
-window.active.button.close.pressed.image.color: #a85656
-window.inactive.button.close.hover.image.color: #c76969
+# Per-button colors (Openbox 3.6+): the close button is always red, so it's easy to find
+window.active.button.close.unpressed.image.color: #e06c6c
+window.active.button.close.hover.image.color: #f08585
+window.active.button.close.pressed.image.color: #b85252
+window.inactive.button.close.unpressed.image.color: #8f4b4b
+window.inactive.button.close.hover.image.color: #e06c6c

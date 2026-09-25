@@ -44,6 +44,7 @@ export function icon(name, ...args) {
 
 export function applyTheme(state) {
   const root = document.documentElement;
+  root.dataset.theme = state.settings.theme === 'light' ? 'light' : 'dark';
   root.style.setProperty('--accent', state.settings.accent);
   root.style.setProperty('--glass-a', String(state.settings.glass / 100));
   root.style.setProperty('--panel-h', `${state.env.panelHeight}px`);

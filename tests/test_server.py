@@ -97,6 +97,27 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/files/raw?path=" + home, token=None)[0], 401)
         self.assertEqual(self.request("GET", "/files/raw?path=" + home + "/.bashrc")[0], 404)  # not an image
 
+    def test_store_drivers_procs_and_admin(self):
+        catalog = json.loads(self.request("GET", "/api/store")[1])
+        self.assertTrue(any(a["id"] == "firefox" and a["installed"] for a in catalog["apps"]))
+        self.assertEqual(self.request("POST", "/api/store/install", {"id": "nope"})[0], 404)
+        self.assertEqual(self.request("POST", "/api/store/install", {"id": "vlc"})[0], 401)  # needs the password
+        self.assertEqual(self.request("POST", "/api/admin/auth", {"password": "wrong"})[0], 403)
+        self.assertEqual(self.request("POST", "/api/admin/auth", {"password": "polyos"})[0], 200)
+        status, body, _ = self.request("POST", "/api/store/install", {"id": "vlc"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)["state"], "running")
+        self.assertEqual(self.request("POST", "/api/store/install", {"id": "gimp"})[0], 409)  # one job at a time
+        self.assertEqual(self.request("POST", "/api/store/remove", {"id": "firefox"})[0], 400)
+        drivers = json.loads(self.request("GET", "/api/drivers")[1])
+        self.assertTrue(any("nvidia-driver" in d["packages"] for d in drivers["devices"]))
+        self.assertEqual(self.request("POST", "/api/drivers/install", {"packages": ["openssh-server"]})[0], 400)
+        procs = json.loads(self.request("GET", "/api/procs")[1])
+        self.assertIn("cpu", procs["perf"])
+        self.assertEqual(self.request("POST", "/api/procs/end", {"pid": 1201})[0], 403)  # part of PolyOS
+        self.assertEqual(self.request("GET", "/api/install/probe")[0], 409)  # not the live USB
+        self.assertEqual(self.request("GET", "/icon/theme/vlc,video")[0], 200)
+
     def test_icons_and_wallpaper(self):
         status, body, res = self.request("GET", "/icon/app/firefox-esr.desktop")
         self.assertEqual(status, 200)

@@ -1,126 +1,503 @@
-// First-run setup ("It's time to get started"), after the PolyOS 7 installer and Welcome Guide.
+// PolyOS 7 setup, after the Scratch original: "Cryptic Software presents", the pinwheel falls
+// into place, the striped 7 slides in, and the crystal backdrop says welcome. Then:
+//   live USB:      It's time to get started (install / dual boot) → Terms → Account → Appearance
+//                  → Where to install → installing → restart
+//   first sign-in: Wi-Fi → Drivers → Vara → Tour → done
 
-import { api, saveSettings, withToken } from '../api.js';
+import { withAdmin, watchJobs } from '../admin.js';
+import { api, launch, saveSettings, withToken } from '../api.js';
 import { wifiPanel } from '../components.js';
-import { fill, h, icon, networkLabel } from '../ui.js';
+import { fill, formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
 
-const ACCENTS = ['#678fd9', '#9b7fe0', '#d97fb8', '#e0906a', '#d9c46a', '#81d862', '#5fc4c4', '#b5b5b5'];
+const GB = 1000 ** 3;
+const TERMS =
+  'BY CLICKING “I AGREE”, YOU AGREE TO THE FOLLOWING TERMS AND CONDITIONS: PolyOS 7 for Debian is presented by ' +
+  'Cryptic Software and based on PolyOS, created in Scratch by AndrewInput and PIXAPoLY Software. PolyOS is free ' +
+  'software: you may use, copy, change and share it under the GNU General Public License, version 3 or later. It is ' +
+  'built on Debian GNU/Linux and includes software from many open-source projects, each under its own license; some ' +
+  'drivers and firmware are non-free and are covered by their makers’ licenses. The PolyOS logo, colors and PIXAPoLY ' +
+  'artwork come from the PolyOS 7 Scratch project and are shared under CC BY-SA 2.0. “Scratch” is a trademark of the ' +
+  'Scratch Foundation; PolyOS is not affiliated with or sponsored by the Scratch Foundation, Debian or any app maker. ' +
+  'Installing an operating system changes your disk: back up anything important first. THIS SOFTWARE COMES WITH ' +
+  'ABSOLUTELY NO WARRANTY, TO THE EXTENT PERMITTED BY APPLICABLE LAW.';
 const TOUR = [
-  ['Home Menu', 'Click the PolyOS logo in the dock (or tap the Super key) to open the Home Menu. Your quick apps, settings and power options live here.'],
-  ['Launcher', 'Want to see all of your installed apps? The launcher button opens a multi-page menu of every app. Use Pin Apps to add them to the dock.'],
-  ['Files', 'Files browses everything on your computer. Deleted items go to the Trash first, so you can always restore them.'],
-  ['Shortcuts', 'Super+S opens the launcher, Super+R runs a command, Super+E opens Files and Super+L locks the screen.'],
+  ['Home Menu', 'Click the pinwheel in the dock or tap the Windows key. Tap it again to close.'],
+  ['Right-click', 'Right-click (or tap with two fingers) the desktop to personalize PolyOS or open Task Manager.'],
+  ['PolyMarket', 'Get Chrome, Discord, Spotify, Steam and more from PolyOS’s store of trusted apps.'],
+  ['Shortcuts', 'Win+S all apps · Win+E Files · Win+X quick menu · Ctrl+Shift+Esc Task Manager · Win+L lock.'],
 ];
+const FALLBACK_ZONES = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Phoenix',
+  'America/Anchorage', 'Pacific/Honolulu', 'America/Toronto', 'America/Mexico_City', 'America/Sao_Paulo', 'Europe/London',
+  'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid', 'Africa/Lagos', 'Africa/Johannesburg', 'Asia/Dubai', 'Asia/Kolkata',
+  'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul', 'Australia/Sydney', 'UTC'];
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function timeZones() {
+  try {
+    const list = Intl.supportedValuesOf('timeZone');
+    if (list && list.length) return list;
+  } catch { /* older engines */ }
+  return FALLBACK_ZONES;
+}
+
+function guessZone() {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return tz && tz !== 'UTC' && tz !== 'Etc/UTC' ? tz : 'America/New_York';
+}
+
+function usernameFrom(name) {
+  const first = (name.trim().split(/\s+/)[0] || '').normalize('NFKD').replace(/[^\w]/g, '').toLowerCase().replace(/_/g, '');
+  const clean = first.replace(/[^a-z0-9]/g, '').slice(0, 24);
+  return clean ? (/^[a-z]/.test(clean) ? clean : `u${clean}`) : '';
+}
 
 export function mount(root, store) {
+  const live = !!store.state.env.live;
   root.className = 'setup';
-  const wall = h('div.su-wall');
+  const bg = h('div.su-bg');
+  const scrim = h('div.su-scrim');
+  const intro = h('div.su-intro');
   const card = h('section.su-card');
-  const dots = h('div.su-dots');
-  root.append(wall, card, dots);
+  const pills = h('div.su-pills');
+  const stage = h('div.su-stage', card);
+  root.append(bg, scrim, intro, stage, pills);
+  bg.style.backgroundImage = `url("${withToken('/wallpaper/builtin/polyos-crystal.jpg')}")`;
 
-  let step = 0;
+  const plan = {
+    mode: 'erase', disk: null, size: null, hostname: '', timezone: guessZone(),
+    user: { fullName: '', username: '', password: '' },
+    appearance: { theme: store.state.settings.theme || 'dark', accent: store.state.settings.accent },
+  };
+  let probe = null;        // disks from /api/install/probe (fetched while the person fills in the rest)
+  let probeError = null;
+  let usernameEdited = false;
+  let hostnameEdited = false;
+  let installJob = null;
+  let progressEls = null; // the install progress screen, updated in place
   let wifi = null;
-  const steps = [welcome, look, connect, tour, done];
 
-  function setWall() {
-    wall.style.backgroundImage = `url("${withToken(`/wallpaper/current?v=${encodeURIComponent(store.state.settings.wallpaper)}`)}")`;
+  // ---- intro ---------------------------------------------------------------------------
+  async function playIntro() {
+    const skip = { done: false };
+    const skipper = (e) => {
+      if (e.type === 'keydown' && !['Enter', ' ', 'Escape'].includes(e.key)) return;
+      skip.done = true;
+    };
+    root.addEventListener('pointerdown', skipper);
+    document.addEventListener('keydown', skipper);
+    const wait = async (ms) => {
+      const end = Date.now() + (reduceMotion() ? ms / 4 : ms);
+      while (Date.now() < end && !skip.done) await sleep(40);
+    };
+    const name = (store.state.user.fullName || '').split(' ')[0];
+    const presents = h('div.in-presents', h('span', 'Cryptic Software'), h('small', 'presents'));
+    const logo = h('img.in-logo', { src: '/img/logo-white.svg', alt: '' });
+    const seven = h('img.in-seven', { src: '/img/seven.svg', alt: '' });
+    const mark = h('div.in-mark', logo, seven);
+    const hello = h('div.in-hello', h('h1', 'Welcome to PolyOS 7'),
+      h('p', live ? 'We’re glad you’re here.' : `We’re glad you’re here${name ? `, ${name}` : ''}.`));
+    fill(intro, presents, mark, hello);
+    root.classList.add('intro');
+    if (live) {
+      presents.classList.add('show');
+      await wait(2300);
+      presents.classList.remove('show');
+      await wait(700);
+    }
+    mark.classList.add('fall');
+    await wait(1100);
+    mark.classList.add('landed', 'seven');
+    await wait(1300);
+    root.classList.add('crystal');
+    mark.classList.add('up');
+    await wait(900);
+    hello.classList.add('show');
+    await wait(1400);
+    hello.classList.add('second');
+    await wait(1700);
+    root.removeEventListener('pointerdown', skipper);
+    document.removeEventListener('keydown', skipper);
+    root.classList.add('crystal');
+    root.classList.remove('intro');
+    intro.classList.add('gone');
+    setTimeout(() => intro.remove(), 700);
   }
+
+  // ---- steps ---------------------------------------------------------------------------
+  const installSteps = [start, terms, account, appearance, target, installing];
+  const welcomeSteps = [connect, drivers, vara, tour, done];
+  const steps = live ? installSteps : welcomeSteps;
+  let step = 0;
 
   function go(n) {
     step = Math.max(0, Math.min(steps.length - 1, n));
     wifi = null;
-    card.classList.remove('enter');
+    progressEls = null;
+    card.classList.remove('enter', 'light');
     void card.offsetWidth;
     card.classList.add('enter');
-    fill(card, ...steps[step]());
-    fill(dots, ...steps.map((_, i) => h('span', { class: i === step ? 'on' : i < step ? 'done' : '' })));
+    card.classList.toggle('light', live && plan.appearance.theme === 'light' && steps[step] === appearance);
+    fill(card, ...steps[step](), h('img.su-seven', { src: '/img/seven.svg', alt: '' }));
+    const count = live ? 5 : steps.length;
+    fill(pills, ...Array.from({ length: count }, (_, i) => h('span', { class: i < step ? 'done' : i === step ? 'on' : '' })));
+    pills.hidden = live && step >= 5;
+    card.querySelector('[autofocus]')?.focus();
   }
 
-  const nav = (nextLabel = 'Next', { skip = false } = {}) => h('div.su-nav',
-    step > 0 ? h('button.pill-btn', { onclick: () => go(step - 1) }, icon('chevronLeft'), 'Back') : h('span'),
-    h('div.su-nav-right',
-      skip ? h('button.pill-btn.ghost', { onclick: () => go(step + 1) }, 'Skip') : null,
-      h('button.pill-btn.on', { onclick: () => go(step + 1) }, nextLabel, icon('chevronRight'))));
+  const head = (title, sub) => [h('h1', title), sub ? h('p.su-sub', sub) : null];
+  const back = () => h('button.su-back', { onclick: () => go(step - 1), title: 'Back' }, icon('chevronLeft'), 'Back');
+  const next = (label = 'Next', onclick = () => go(step + 1), opts = {}) =>
+    h('button.su-next', { onclick, disabled: opts.disabled, class: opts.primary ? 'primary' : '' }, label);
+  const nav = (...right) => h('div.su-nav', step > 0 ? back() : h('span'), h('div.su-nav-right', ...right));
+  const option = (title, sub, trailing, onclick) => h('button.su-option', { onclick },
+    h('span.su-option-text', h('b', title), h('small', sub)), trailing);
 
-  const choice = (title, sub, trailing, onclick, secondary = false) => h('button.su-choice', { class: secondary ? 'secondary' : '', onclick },
-    h('span.su-choice-text', h('b', title), h('small', sub)), trailing);
-
-  function welcome() {
+  // live USB --------------------------------------------------------------------------
+  function start() {
+    const extra = [];
+    extra.push(h('button.su-link', { onclick: tryFirst }, 'Try PolyOS first'));
+    if (store.state.env.installer) {
+      extra.push(h('span.su-dot', '·'), h('button.su-link', { onclick: () => launch(store.state.env.installer) }, 'Advanced installer'));
+    }
     return [
-      h('div.su-split',
-        h('div.su-main',
-          h('h1', 'It’s time to get started.'),
-          h('p.su-sub', 'Pick an option to set up PolyOS, or skip ahead with the defaults. You can change everything later in Settings.'),
-          choice('Set up PolyOS', 'Choose your look and connect to Wi-Fi',
-            h('img', { src: '/img/logo-white.svg', alt: '' }), () => go(1)),
-          choice('Use the defaults', 'Jump straight to the desktop', icon('arrowRight'), finish, true)),
-        h('img.su-mark', { src: '/img/logo-white.svg', alt: '' })),
+      ...head('It’s time to get started.', 'Pick an option to continue installation or dual boot.'),
+      h('div.su-options',
+        option('Install PolyOS 7', 'Start a fresh install.', h('img', { src: '/img/logo-white.svg', alt: '' }),
+          () => { plan.mode = 'erase'; go(1); }),
+        option('Dual boot', 'Boot along Windows or Linux.', h('span.su-dual', icon('window'), icon('window')),
+          () => { plan.mode = 'alongside'; go(1); })),
+      h('div.su-foot', ...extra),
     ];
   }
 
-  function look() {
-    const s = store.state.settings;
-    const walls = h('div.su-walls');
-    api.get('/api/wallpapers').then((list) => {
-      fill(walls, ...list.map((w) => h('button.su-wall', {
-        class: w.id === store.state.settings.wallpaper ? 'on' : '',
-        style: { backgroundImage: `url("${withToken(w.url)}")` },
-        onclick: async (e) => {
-          const picked = e.currentTarget; // (null again after the await)
-          await saveSettings({ wallpaper: w.id });
-          walls.querySelectorAll('.su-wall').forEach((el) => el.classList.toggle('on', el === picked));
-        },
-      }, h('span', w.name))));
+  function terms() {
+    return [
+      ...head('Terms and conditions', 'Agree to the terms and conditions to continue installation.'),
+      h('div.su-terms', { tabindex: '0' }, h('p', TERMS),
+        h('small', '*PolyOS™ is a trademark of PIXAPoLY Software. The full license texts are in /usr/share/common-licenses on the installed system.')),
+      nav(next('I Agree', () => go(step + 1), { primary: true })),
+    ];
+  }
+
+  function account() {
+    const err = h('div.su-error', { hidden: true });
+    const name = h('input.su-input', { value: plan.user.fullName, placeholder: 'Your name', autocomplete: 'name', autofocus: true, maxlength: 80 });
+    const user = h('input.su-input', { value: plan.user.username, placeholder: 'username', autocomplete: 'username', spellcheck: 'false', maxlength: 32 });
+    const pass = h('input.su-input', { type: 'password', value: plan.user.password, placeholder: 'Type a password', autocomplete: 'new-password' });
+    const confirm = h('input.su-input', { type: 'password', value: plan.user.password, placeholder: 'Type it again', autocomplete: 'new-password' });
+    const host = h('input.su-input', { value: plan.hostname, placeholder: 'computer-name', spellcheck: 'false', maxlength: 63 });
+    const zone = h('select.su-input', timeZones().map((z) => h('option', { value: z, selected: z === plan.timezone }, z.replace(/_/g, ' '))));
+    name.addEventListener('input', () => {
+      plan.user.fullName = name.value;
+      if (!usernameEdited) user.value = plan.user.username = usernameFrom(name.value);
+      if (!hostnameEdited) host.value = plan.hostname = user.value ? `${user.value}-polyos` : '';
     });
-    const swatches = h('div.su-swatches', ACCENTS.map((c) => h('button.swatch', {
-      class: c === s.accent ? 'sel' : '', style: { background: c }, title: c,
-      onclick: async (e) => {
-        const picked = e.currentTarget;
-        await saveSettings({ accent: c });
-        swatches.querySelectorAll('.swatch').forEach((el) => el.classList.toggle('sel', el === picked));
-      },
-    })));
+    user.addEventListener('input', () => {
+      usernameEdited = true;
+      user.value = user.value.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      plan.user.username = user.value;
+      if (!hostnameEdited) host.value = plan.hostname = user.value ? `${user.value}-polyos` : '';
+    });
+    host.addEventListener('input', () => {
+      hostnameEdited = true;
+      host.value = host.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+      plan.hostname = host.value;
+    });
+    zone.addEventListener('change', () => { plan.timezone = zone.value; });
+    const nextBtn = next('Next', () => {
+      const problem = !plan.user.fullName.trim() ? 'Enter your name.'
+        : !/^[a-z_][a-z0-9_-]{0,31}$/.test(plan.user.username) ? 'Usernames start with a letter and use lowercase letters, numbers, - and _.'
+          : pass.value !== confirm.value ? 'The passwords don’t match.'
+            : !/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(plan.hostname) ? 'Computer names use letters, numbers and hyphens.' : null;
+      if (problem) {
+        err.textContent = problem;
+        err.hidden = false;
+        return;
+      }
+      plan.user.password = pass.value;
+      go(step + 1);
+    });
+    const blank = h('p.su-note', { hidden: !!plan.user.password }, icon('info'),
+      'With no password, PolyOS signs you in automatically and anyone using this computer can change it.');
+    pass.addEventListener('input', () => { blank.hidden = !!pass.value; });
+    const field = (label, input, hint) => h('label.su-field', h('span', label), input, hint ? h('small', hint) : null);
     return [
-      h('h1', 'Make it yours'),
-      h('p.su-sub', 'Choose a wallpaper and an accent color. They apply right away.'),
-      walls,
-      h('div.su-row', h('b', 'Accent color'), swatches),
-      nav(),
+      ...head('Create your account', 'Choose a name and a password for your desktop. If you want, you can leave the password blank.'),
+      h('div.su-form',
+        field('Your name', name),
+        field('Username', user, 'For signing in. Lowercase, no spaces.'),
+        field('Password', pass),
+        field('Confirm password', confirm),
+        field('Computer name', host),
+        field('Time zone', zone)),
+      blank, err,
+      nav(nextBtn),
     ];
   }
 
+  function appearance() {
+    const pick = async (theme) => {
+      plan.appearance.theme = theme;
+      card.classList.toggle('light', theme === 'light');
+      darkBtn.classList.toggle('on', theme === 'dark');
+      lightBtn.classList.toggle('on', theme === 'light');
+      await saveSettings({ theme }).catch(() => {});
+    };
+    const darkBtn = h('button.su-theme.dark', { class: plan.appearance.theme === 'dark' ? 'on' : '', onclick: () => pick('dark'), 'aria-label': 'Dark' }, icon('moon'), h('span', 'Dark'));
+    const lightBtn = h('button.su-theme.light', { class: plan.appearance.theme === 'light' ? 'on' : '', onclick: () => pick('light'), 'aria-label': 'Light' }, icon('sun'), h('span', 'Light'));
+    const hue = h('input.range.hue-range.su-hue', { type: 'range', min: 0, max: 359, value: hexToHue(plan.appearance.accent), 'aria-label': 'Accent color' });
+    const send = throttle((v) => saveSettings({ accent: v }).catch(() => {}), 200);
+    hue.addEventListener('input', () => {
+      plan.appearance.accent = hueToHex(Number(hue.value));
+      document.documentElement.style.setProperty('--accent', plan.appearance.accent);
+      send(plan.appearance.accent);
+    });
+    return [
+      ...head('Appearance', 'Customize whether dark or light theme should be used, and UI accent color. This can be changed anytime.'),
+      h('div.su-themes', darkBtn, lightBtn),
+      h('div.su-accent', h('span', 'Accent color'), hue),
+      nav(next()),
+    ];
+  }
+
+  function loadProbe() {
+    if (probe || probeError === 'loading') return;
+    probeError = 'loading';
+    api.get('/api/install/probe').then((res) => {
+      probe = res;
+      probeError = null;
+      if (steps[step] === target) go(step);
+    }, (err) => {
+      probeError = err.message;
+      if (steps[step] === target) go(step);
+    });
+  }
+
+  function target() {
+    const erase = plan.mode === 'erase';
+    const title = erase ? 'Where should PolyOS go?' : 'Make room for PolyOS';
+    const sub = erase ? 'Choose the disk to install PolyOS on. Everything on it will be replaced.'
+      : 'PolyOS will sit next to your other system. You’ll pick which one to start each time you turn on the computer.';
+    if (!probe) {
+      if (probeError && probeError !== 'loading') {
+        return [...head(title, sub), h('div.su-error', probeError),
+          nav(next('Try again', () => { probeError = null; loadProbe(); go(step); }))];
+      }
+      loadProbe();
+      return [...head(title, sub), h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'Looking at your disks…'), nav(h('span'))];
+    }
+    const usable = probe.disks.filter((d) => (erase ? d.canErase : d.alongside.possible));
+    if (!usable.length) {
+      const reasons = probe.disks.filter((d) => !d.isLive).map((d) => h('li', h('b', `${d.model} (${formatBytes(d.size)})`), ': ',
+        erase ? 'too small or read-only.' : d.alongside.reason));
+      return [...head(title, erase ? 'PolyOS couldn’t find a disk to install on.' : 'PolyOS can’t fit next to your other system yet.'),
+        h('ul.su-reasons', reasons.length ? reasons : [h('li', 'No internal disk was found.')]),
+        nav(erase ? h('span') : next('Fresh install instead', () => { plan.mode = 'erase'; go(step); }))];
+    }
+    if (!usable.some((d) => d.path === plan.disk)) {
+      const internal = usable.filter((d) => !d.removable);
+      plan.disk = (erase ? (internal[0] || usable[0]) : usable[0]).path;
+      plan.size = null;
+    }
+    const disk = () => usable.find((d) => d.path === plan.disk);
+    const understood = h('input', { type: 'checkbox' });
+    const install = next('Install', () => startInstall(), { primary: true, disabled: true });
+    understood.addEventListener('change', () => { install.disabled = !understood.checked; });
+    const list = h('div.su-disks', usable.map((d) => h('button.su-disk', {
+      class: d.path === plan.disk ? 'on' : '',
+      onclick: () => { plan.disk = d.path; plan.size = null; go(step); },
+    }, h('span.su-disk-ico', icon(d.transport === 'usb' || d.removable ? 'download' : 'disk')),
+    h('span.su-disk-text', h('b', d.model), h('small', `${formatBytes(d.size)} · ${d.transport ? d.transport.toUpperCase() : 'disk'}${d.oses.length ? ` · ${d.oses.join(', ')}` : ''}`)),
+    d.path === plan.disk ? icon('check') : null)));
+    const body = [list];
+    const d = disk();
+    if (erase) {
+      body.push(h('p.su-warn', icon('info'), d.oses.length
+        ? `${d.oses.join(' and ')} and all files on ${d.model} will be erased.`
+        : `All files on ${d.model} will be erased.`));
+      body.push(h('label.su-check', understood, h('span', 'I understand that this disk will be erased.')));
+    } else {
+      const opt = d.alongside;
+      plan.size = plan.size || opt.suggested;
+      const other = d.oses[0] || 'Your other system';
+      const range = h('input.range.su-size', { type: 'range', min: opt.minBytes, max: opt.maxBytes, step: GB, value: plan.size, 'aria-label': 'Space for PolyOS' });
+      const labels = h('div.su-split-labels');
+      const bar = h('div.su-split-bar', h('span.su-split-other'), h('span.su-split-poly'));
+      const total = opt.kind === 'shrink' ? (d.partitions.find((p) => p.path === opt.partition)?.size || opt.maxBytes) : opt.maxBytes;
+      const paint = () => {
+        plan.size = Number(range.value);
+        const pct = Math.max(8, Math.min(92, (plan.size / total) * 100));
+        bar.style.setProperty('--poly', `${pct}%`);
+        range.style.setProperty('--pct', `${((plan.size - opt.minBytes) * 100) / Math.max(1, opt.maxBytes - opt.minBytes)}%`);
+        fill(labels,
+          h('span', h('b', other), opt.kind === 'shrink' ? ` keeps ${formatBytes(total - plan.size)}` : ' stays as it is'),
+          h('span', h('b', 'PolyOS'), ` gets ${formatBytes(plan.size)}`));
+      };
+      range.addEventListener('input', paint);
+      paint();
+      body.push(h('div.su-split', bar, labels, range));
+      body.push(h('label.su-check', understood, h('span', 'I’ve backed up my important files.')));
+      if (opt.kind === 'shrink') body.push(h('p.su-note', icon('info'), `${other} will be shrunk to make room. This can take a while.`));
+    }
+    if (probe.uefi && probe.secureBoot) body.push(h('p.su-note', icon('lock'), 'Secure Boot is on. PolyOS supports it.'));
+    return [...head(title, sub), ...body, nav(install)];
+  }
+
+  async function startInstall() {
+    const payload = { mode: plan.mode, disk: plan.disk, hostname: plan.hostname, timezone: plan.timezone,
+      user: plan.user, appearance: plan.appearance, ...(plan.mode === 'alongside' ? { size: plan.size } : {}) };
+    installJob = { state: 'running', progress: 0, message: 'Getting ready for installation…' };
+    go(steps.indexOf(installing));
+    try {
+      installJob = await withAdmin(() => api.post('/api/install/start', { plan: payload }));
+    } catch (err) {
+      installJob = { state: 'failed', error: err.message };
+    }
+    go(steps.indexOf(installing));
+  }
+
+  function installing() {
+    const job = installJob || { state: 'running', progress: 0, message: 'Getting ready for installation…' };
+    if (job.state === 'done') {
+      return [
+        h('div.su-center',
+          h('img.su-done-logo', { src: '/img/logo-white.svg', alt: '' }),
+          h('h1', 'PolyOS 7 is installed.'),
+          h('p.su-sub', 'Remove the USB drive, then restart to start using PolyOS.'),
+          h('button.su-next.primary', { onclick: () => api.post('/api/power', { action: 'reboot' }) }, 'Restart now')),
+      ];
+    }
+    if (job.state === 'failed') {
+      return [
+        ...head('The installation didn’t finish', 'Nothing was changed if PolyOS stopped before formatting. Your USB drive still works.'),
+        h('div.su-error', job.error || 'Something went wrong.'),
+        h('p.su-note', icon('info'), 'Details are in /var/log/polyos-installer.log.'),
+        h('div.su-nav', h('button.su-back', { onclick: () => { installJob = null; go(steps.indexOf(target)); } }, icon('chevronLeft'), 'Back'),
+          h('div.su-nav-right', next('Try again', startInstall, { primary: true }))),
+      ];
+    }
+    const els = { title: h('h1'), msg: h('p.su-sub.su-live'), bar: h('span'), pct: h('small.su-pct') };
+    setTimeout(() => { progressEls = els; paintProgress(job); }, 0);
+    paintProgress(job, els);
+    return [
+      h('div.su-center',
+        h('img.su-spin.big', { src: '/img/logo-white.svg', alt: '' }),
+        els.title, els.msg, h('div.su-progress', els.bar), els.pct,
+        h('p.su-note', 'Keep the computer plugged in and don’t remove the USB drive.')),
+    ];
+  }
+
+  function paintProgress(job, els = progressEls) {
+    if (!els) return;
+    const pct = Math.round((job.progress || 0) * 100);
+    els.title.textContent = pct < 3 ? 'Getting ready for installation…' : 'Installing PolyOS 7…';
+    els.msg.textContent = job.message || '';
+    els.bar.style.width = `${Math.max(2, pct)}%`;
+    els.pct.textContent = `${pct}%`;
+  }
+
+  async function tryFirst() {
+    root.classList.add('leaving');
+    await api.post('/api/setup/done', {}).catch(() => root.classList.remove('leaving'));
+  }
+
+  // first sign-in -----------------------------------------------------------------------
   function connect() {
     const net = store.state.system.network;
     let body;
-    if (net.kind === 'ethernet' || (net.kind === 'wifi' && !net.wifiDevice)) {
+    if (net.kind === 'ethernet' || (net.kind === 'wifi' && net.name)) {
       body = h('div.su-status', icon('check'), h('span', `You’re online: ${networkLabel(net)}.`));
     } else if (net.available && net.wifiDevice) {
       wifi = wifiPanel(store);
       body = h('div.su-wifi', wifi.el);
     } else {
-      body = h('div.su-status', icon('wifiOff'), h('span', 'No network adapter was found. You can connect later from quick settings.'));
+      body = h('div.su-status', icon('wifiOff'), h('span', 'No network adapter was found. The Driver Manager (next) can help.'));
     }
-    return [h('h1', 'Get connected'), h('p.su-sub', 'Connect to Wi-Fi to get updates and use the web.'), body, nav('Next', { skip: true })];
+    return [...head('Get connected', 'Connect to the internet for drivers, apps and updates.'), body,
+      nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Skip'), next())];
+  }
+
+  function drivers() {
+    const list = h('div.su-drivers', h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'Checking your hardware…'));
+    const status = h('p.su-note', { hidden: true });
+    const installBtn = next('Install drivers', null, { primary: true, disabled: true });
+    let missing = [];
+    api.get('/api/drivers').then((res) => {
+      missing = [...new Set(res.devices.flatMap((d) => d.missing))];
+      fill(list, ...res.devices.map((d) => h('div.su-driver',
+        h('span.su-driver-ico', icon({ graphics: 'monitor', wifi: 'wifi', bluetooth: 'bluetooth', audio: 'volume' }[d.kind] || 'chip')),
+        h('span.su-driver-text', h('b', d.title), h('small', d.missing.length ? `Recommended: ${d.missing.join(', ')}` : 'Ready')),
+        d.missing.length ? h('span.su-badge', 'Update') : h('span.su-ok', icon('check')))));
+      if (!res.devices.length) fill(list, h('div.su-status', icon('check'), h('span', 'Everything is ready. No extra drivers needed.')));
+      installBtn.disabled = !missing.length;
+      if (!missing.length) installBtn.textContent = 'All set';
+    }, (err) => fill(list, h('div.su-error', err.message)));
+    installBtn.addEventListener('click', async () => {
+      installBtn.disabled = true;
+      status.hidden = false;
+      status.textContent = 'Starting…';
+      try {
+        await withAdmin(() => api.post('/api/drivers/install', { packages: missing }),
+          { title: 'Install drivers', text: 'Enter your password to install drivers.' });
+        const { off } = watchJobs((job) => {
+          if (job.kind !== 'drivers') return;
+          status.textContent = job.state === 'running' ? `${job.message} ${Math.round(job.progress * 100)}%`
+            : job.state === 'done' ? `Drivers installed.${job.restart ? ' Restart when you’re done setting up.' : ''}`
+              : job.error;
+          if (job.state !== 'running') {
+            off();
+            installBtn.textContent = job.state === 'done' ? 'Installed' : 'Try again';
+            installBtn.disabled = job.state === 'done';
+          }
+        });
+      } catch (err) {
+        status.textContent = err.cancelled ? '' : err.message;
+        installBtn.disabled = false;
+      }
+    });
+    return [...head('Drivers', 'PolyOS checks your graphics, Wi-Fi and other hardware and installs what works best.'),
+      list, status, nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Skip'), installBtn, next())];
+  }
+
+  function vara() {
+    const key = h('input.su-input', { type: 'password', placeholder: 'Paste your API key', autocomplete: 'off', 'aria-label': 'API key' });
+    const status = h('p.su-note', { hidden: true });
+    const save = async () => {
+      if (!key.value.trim()) return go(step + 1);
+      status.hidden = false;
+      status.textContent = 'Checking the key…';
+      try {
+        await api.post('/api/vara/config', { apiKey: key.value.trim() });
+        const res = await api.post('/api/vara/test', {});
+        status.textContent = `Vara is ready: “${res.reply}”`;
+        setTimeout(() => go(step + 1), 900);
+      } catch (err) {
+        status.textContent = err.message;
+      }
+    };
+    return [
+      h('div.su-vara-head', h('img', { src: '/img/vara.png', alt: '' }), h('div', ...head('Meet Vara', 'Vara is the PolyOS assistant. Ask it to open apps, change settings or answer questions.'))),
+      h('label.su-field.wide', h('span', 'Ollama Cloud API key'), key,
+        h('small', 'Create a free key at ollama.com (Settings → Keys). You can use OpenAI or another provider in Settings > Vara.')),
+      status,
+      nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Later'), next('Next', save)),
+    ];
   }
 
   function tour() {
-    return [
-      h('h1', 'Welcome to PolyOS'),
-      h('p.su-sub', 'A quick tour of the PolyOS desktop.'),
-      h('div.su-tour', TOUR.map(([title, text]) => h('div.su-tip', h('b', title), h('p', text)))),
-      nav(),
-    ];
+    return [...head('A quick tour', 'A few things to know about PolyOS.'),
+      h('div.su-tour', TOUR.map(([t, text]) => h('div.su-tip', h('b', t), h('p', text)))), nav(next())];
   }
 
   function done() {
     return [
-      h('div.su-done',
+      h('div.su-center',
         h('img.su-done-logo', { src: '/img/logo-white.svg', alt: '' }),
         h('h1', 'You’re all set.'),
-        h('p.su-sub', 'Enjoy PolyOS. Settings has everything you chose here, whenever you want to change it.'),
-        h('button.pill-btn.on.big', { onclick: finish }, 'Start using PolyOS', icon('arrowRight'))),
-      h('div.su-nav', h('button.pill-btn', { onclick: () => go(step - 1) }, icon('chevronLeft'), 'Back'), h('span')),
+        h('p.su-sub', 'Enjoy PolyOS 7. Everything you chose here is in Settings.'),
+        h('button.su-next.primary', { onclick: finish }, 'Start using PolyOS')),
     ];
   }
 
@@ -134,10 +511,18 @@ export function mount(root, store) {
     }
   }
 
+  // ---- live updates ---------------------------------------------------------------------
+  watchJobs((job) => {
+    if (job.kind !== 'install') return;
+    installJob = job;
+    if (steps[step] !== installing) return;
+    if (job.state === 'running' && progressEls) paintProgress(job);
+    else go(step);
+  });
   store.subscribe((_s, changed) => {
-    if (changed.has('settings')) setWall();
     if (changed.has('system')) wifi?.update();
   });
-  setWall();
-  go(0);
+
+  if (live) loadProbe();
+  playIntro().then(() => go(0));
 }

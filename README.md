@@ -5,26 +5,31 @@ PolyOS started as an operating system built in Scratch by AndrewInput and the PI
 real desktop: a PolyOS session that runs on top of Debian and boots on real hardware.
 
 Debian provides the kernel, drivers, Wi-Fi, audio and apps. PolyOS provides everything you see:
-the desktop, dock, Home Menu, launcher, Files, Settings, Ask Vara, the login and lock screen, the
-boot splash and the installable live ISO.
+the desktop, dock, Home Menu, launcher, Files, Settings, Task Manager, Driver Manager, the
+PolyMarket app store, Ask Vara, the login and lock screen, the boot splash and the PolyOS 7
+installer on the live USB. This edition is presented by Cryptic Software.
 
 ## How it fits together
 
 ```
 LightDM + polyos-greeter                  PolyOS login and lock screen (WebKit)
-  └─ polyos-session                      X session: env, HiDPI scale, helpers, supervision
+  └─ polyos-session                      X session: env, HiDPI scale, dark/light theme, supervision
        ├─ openbox                        window manager (PolyOS theme, keybindings)
        ├─ picom                          compositor: blur, shadows, rounded corners (optional)
        ├─ xcape, polkit agent
        └─ polyos-shell                   restarted automatically if it crashes
-            ├─ GTK windows + WebKit      desktop · dock · popups · Settings · Files · setup  →  ui/
+            ├─ GTK windows + WebKit      desktop · dock · popups · Settings · Files · Task Manager ·
+            │                            Driver Manager · PolyMarket · setup/installer  →  ui/
             ├─ libwnck                   tracks app windows for the dock
             ├─ Gio                       apps from .desktop files, launching, XDG autostart
             └─ 127.0.0.1 API + events    token-protected bridge between the UI and the system
                  ├─ system.py            NetworkManager, PipeWire, brightnessctl, logind
                  ├─ files.py             Files app: filesystem and freedesktop Trash
+                 ├─ procs.py             Task Manager: processes and performance from /proc
+                 ├─ drivers.py, store.py Driver Manager and PolyMarket catalogs
                  └─ vara.py              Ask Vara: local actions + OpenAI-compatible models
 polyos-ctl                               CLI used by keybindings and scripts
+polyos-admin (root, via sudo)            installer engine (installer.py), apt and Flathub installs
 ```
 
 The UI is plain HTML/CSS/JS with no build step. On Debian it runs inside WebKitGTK. With
@@ -37,7 +42,7 @@ Everything goes through `main.py`, which uses only the Python standard library.
 
 | Command | Where | What it does |
 |---|---|---|
-| `python main.py dev` | any OS | UI at http://127.0.0.1:8790 with fake apps, windows, Wi-Fi and battery (`--live` shows the installer card) |
+| `python main.py dev` | any OS | UI at http://127.0.0.1:8790 with fake apps, windows, Wi-Fi and battery (`--live` runs the installer on fake disks) |
 | `python main.py test` | any OS | unit tests (parsers, settings, popup logic, HTTP security, .deb format) |
 | `python main.py check` | any OS | syntax checks for Python/JS/XML/SVG, LF line endings |
 | `python main.py deb` | any OS | builds `dist/polyos-shell_*.deb` and `dist/polyos-desktop_*.deb` |
@@ -45,7 +50,7 @@ Everything goes through `main.py`, which uses only the Python standard library.
 | `sudo python3 main.py uninstall` | Debian | removes the packages |
 | `sudo python3 main.py iso` | Debian | builds `dist/polyos-<version>-trixie-amd64.iso`: a live USB with the Calamares installer |
 | `python3 main.py nested` | Debian desktop | runs the real session in a Xephyr window for development |
-| `python main.py branding` | any OS | re-renders the boot splash and installer images (needs Pillow) |
+| `python main.py branding` | any OS | re-renders the crystal backdrop, boot splash and installer images (needs Pillow) |
 
 ## Install on a PC or VM
 
@@ -79,15 +84,20 @@ this step.
 
 | Piece | What it does |
 |---|---|
-| **Dock** | Pinwheel (Home Menu), pinned and running apps, status, clock, launcher grid |
+| **Installer** | The PolyOS 7 setup on the live USB: "Cryptic Software presents", the falling pinwheel and 7, the crystal welcome, then *Install PolyOS 7* (whole disk) or *Dual boot* (next to Windows or Linux, shrinking it if needed), terms, account, dark/light appearance, disk choice, progress, restart. Calamares stays as the *Advanced installer* |
+| **First sign-in** | Welcome back, Wi-Fi, drivers, Vara API key, a quick tour |
+| **Dock** | Pinwheel (Home Menu), pinned and running apps, status, clock, launcher grid; right-click an app for Close, Force close and Task Manager |
 | **Home Menu** | PolyOS 7 layout: date and calendar cards, Ask Vara, Run CMD, brightness and volume sliders, pinned and recent apps, power, launcher |
-| **Launcher** | Full-screen paged app grid with search and Pin Apps |
+| **Launcher** | Full-screen paged app grid with search and Pin Apps; technical tools are hidden (Settings > Appearance > Show all apps) |
+| **Desktop menu** | Right-click (or two-finger tap): Personalize, Display settings, Task Manager, Terminal, Files, PolyMarket |
 | **Files** | File manager for the real disk: places, breadcrumbs, grid/list views, thumbnails, search, copy/cut/paste, rename, Trash with restore, properties |
-| **Settings** | Appearance, Wi-Fi, Sound, Display, Power, Vara, About |
-| **Ask Vara** | Assistant: runs simple requests on the PC ("open firefox", "volume 40", "turn wifi off") and answers the rest with a local (Ollama) or cloud AI model |
+| **Task Manager** | Apps and processes with CPU and memory, End task and Force close, live CPU/memory/disk/network graphs |
+| **Driver Manager** | Finds NVIDIA, AMD and Intel graphics, Wi-Fi (including Broadcom), Bluetooth and sound hardware and installs the right drivers and firmware from Debian |
+| **PolyMarket** | Curated store: Chrome, Discord, Spotify, Steam, VS Code, LibreOffice, GIMP, OBS and more from Debian and Flathub |
+| **Settings** | Appearance (dark/light, accent, wallpaper), Wi-Fi, Sound, Display, Power, Vara, About |
+| **Ask Vara** | Assistant: runs simple requests on the PC ("open firefox", "volume 40", "turn wifi off") and answers the rest with an AI model; uses your Ollama Cloud (or other) API key |
 | **Login and lock screen** | PolyOS LightDM greeter; falls back to the stock greeter if it can't start |
-| **First-run setup** | "It's time to get started": look, Wi-Fi, a tour; runs once on first sign-in |
-| **Boot splash and installer** | Spinning pinwheel (Plymouth) and PolyOS-branded Calamares |
+| **Boot splash** | Spinning pinwheel (Plymouth) |
 
 ## Build the live USB / installer ISO
 
@@ -117,9 +127,16 @@ sudo apt install live-build
 sudo python3 main.py iso            # --dist bookworm for Debian 12
 ```
 
-The ISO boots into a live PolyOS session as user `polyos` (no password). The **Install PolyOS**
-card on the desktop starts the Calamares installer. Firmware for common Wi-Fi chips (Intel,
-Realtek, Atheros, Broadcom, Marvell for Surface devices) is included.
+The ISO boots into a live PolyOS session as user `polyos` (no password) and opens the PolyOS 7
+installer. *Try PolyOS first* goes to the desktop; the **Install PolyOS 7** card brings the
+installer back. Installing needs no internet: the GRUB packages for UEFI and legacy BIOS are on
+the USB drive. Firmware for common Wi-Fi chips (Intel, Realtek, Atheros, Broadcom, Marvell for
+Surface devices) is included.
+
+**Dual boot with Windows:** turn off BitLocker and Fast Startup in Windows first (Control Panel >
+Power Options > Choose what the power buttons do), and back up your files. The installer shrinks
+Windows' partition for you, or uses free space you made in Windows' Disk Management. The boot menu
+then offers PolyOS and Windows.
 
 ## Test the ISO
 
@@ -137,9 +154,11 @@ settings. The live session changes nothing on the disk until you run the install
 
 | Keys | Action |
 |---|---|
-| Tap `Super` · `Super+Space` | Home Menu (type to search) |
+| Tap `Super` (Windows key) · `Super+Space` | Open or close the Home Menu (type to search) |
 | `Super+S` | App launcher (all apps) |
 | `Super+R` | Run CMD |
+| `Super+X` | Quick menu: Task Manager, Settings, Files, Driver Manager, PolyMarket, power |
+| `Ctrl+Shift+Esc` · `Ctrl+Alt+Delete` | Task Manager |
 | `Super+V` | Ask Vara |
 | `Super+A` | Quick settings |
 | Power key | Power Options |
@@ -151,11 +170,15 @@ settings. The live session changes nothing on the disk until you run the install
 | `Alt+Tab` · `Alt+F4` | Switch · close windows |
 | Volume, brightness and power keys | Work, even if the shell is down |
 
+Touchpads: tap to click, two-finger tap to right-click, natural scrolling (like Windows).
+
 ## Where things live
 
 | Path | Contents |
 |---|---|
-| `polyos/` | Python: `shell.py` (GTK/WebKit/wnck), `server.py` (API), `system.py` (hardware), `session.py`, `ctl.py`, `mock.py` (dev) |
+| `polyos/` | Python: `shell.py` (GTK/WebKit/wnck), `server.py` (API), `system.py` (hardware), `session.py`, `ctl.py`, `installer.py` + `admin.py` (root helper), `privileged.py` (sudo, jobs), `procs.py`, `drivers.py`, `store.py`, `mock.py` (dev) |
+| `data/store/catalog.json` | PolyMarket's app list (also the list of what may be installed) |
+| `/var/log/polyos-installer.log` | Installer log (copied to the installed system) |
 | `ui/` | The interface: `js/surfaces/` (desktop, panel, popup, settings), `js/views/` (Home Menu, launcher, Run CMD, Power Options, quick settings, calendar, task menu), `css/polyos.css` |
 | `data/` | Openbox config and theme, picom, GTK defaults, LightDM greeter, session file, wallpapers, entry-point scripts |
 | `iso/config/` | live-build additions: package list, GRUB branding |
@@ -170,8 +193,10 @@ closing apps.
 
 - X11 only; Wayland would mean replacing Openbox and libwnck. The taskbar and popups use the
   primary monitor; other monitors show the wallpaper color.
-- Nothing that runs on Linux (shell, greeter, Plymouth theme, ISO build) has been run on real
-  Debian yet; the web UI and the Python backend are tested on Windows with the mock system.
+- The installer, Driver Manager and PolyMarket run their root steps through `polyos-admin`; the
+  partition planning is unit-tested and the steps have a dry-run test, but test installs on a
+  spare disk or VM before trusting one with important data.
+- Apps and drivers installed in the live session disappear at restart (it runs from RAM).
 - The login screen can't read each user's wallpaper (users' home folders are private), so it
   shows the PolyOS default.
 - The look follows PolyOS 7: the logo is the original vector, and the palette was measured from

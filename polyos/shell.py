@@ -34,16 +34,26 @@ except ValueError:
     gi.require_version("WebKit2", "4.0")
 from gi.repository import Gdk, GdkPixbuf, GdkX11, Gio, GLib, Gtk, WebKit2, Wnck  # noqa: E402
 
-from . import __version__, paths, system  # noqa: E402
-from .backend import DOCK_HEIGHT, DOCK_MARGIN, PANEL_HEIGHT, Backend  # noqa: E402
+from . import __version__, paths, system, theme  # noqa: E402
+from .backend import DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT, Backend  # noqa: E402
 from .core import IMAGE_TYPES, ApiError, EventBus, Settings, letter_icon  # noqa: E402
 from .mainloop import on_main  # noqa: E402
+from .procs import ProcessMonitor, protected_pids  # noqa: E402
 from .server import Server  # noqa: E402
 
 log = logging.getLogger("polyos.shell")
 
 EXIT_LOGOUT, EXIT_RESTART = 0, 3
 SOLID_BG = "#151515"
+# PolyOS's own apps: launching their .desktop entries opens them in the shell directly.
+OWN_APPS = {"polyos-settings.desktop": "settings", "polyos-files.desktop": "files", "polyos-taskmgr.desktop": "taskmgr",
+            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store"}
+# name: (surface, window title, WM class, default size)
+SINGLE_WINDOWS = {
+    "taskmgr": ("taskmgr", "Task Manager", "polyos-taskmgr", (940, 640)),
+    "drivers": ("drivers", "Driver Manager", "polyos-drivers", (900, 640)),
+    "store": ("store", "PolyMarket", "polyos-store", (1120, 740)),
+}
 GENERIC_EXECUTABLES = {"sh", "bash", "env", "flatpak", "snap", "python3", "python", "java", "wine",
                        "exo-open", "xdg-open", "pkexec", "sudo", "gtk-launch", "polyos-ctl"}
 
@@ -73,7 +83,10 @@ class DesktopShell(Backend):
         self.settings_window: Gtk.Window | None = None
         self.setup_window: Gtk.Window | None = None
         self.files_windows: set[Gtk.Window] = set()
+        self.single_windows: dict[str, Gtk.Window] = {}
         self._chooser = None
+        self.procmon = ProcessMonitor(protected_pids())
+        self._procs_lock = threading.Lock()
 
     # ==== startup ==========================================================================
     def start(self, base_url: str) -> None:
@@ -244,7 +257,8 @@ class DesktopShell(Backend):
             infos[app_id] = info
             apps.append({
                 "id": app_id,
-                "name": info.get_display_name() or app_id,
+                "name": DISPLAY_NAMES.get(app_id) or info.get_display_name() or app_id,
+                "hidden": app_id in HIDDEN_APPS,
                 "description": info.get_description() or "",
                 "categories": [c for c in (info.get_categories() or "").split(";") if c],
                 "keywords": list(info.get_keywords() or []),
@@ -331,8 +345,9 @@ class DesktopShell(Backend):
         return bytes(data)
 
     def launch(self, app_id: str):
-        if app_id == "polyos-settings.desktop":
-            return self.open_app("settings")
+        if app_id in OWN_APPS:
+            self.note_launch(app_id)
+            return self.open_app(OWN_APPS[app_id])
         on_main(self._launch_main, app_id)
         self.note_launch(app_id)
 
@@ -471,6 +486,15 @@ class DesktopShell(Backend):
             win.minimize()
         elif action == "close":
             win.close(ts)
+        elif action == "kill":  # "Force close": for apps that stopped responding
+            pid = win.get_pid()
+            if not pid:
+                win.close(ts)
+                return
+            try:
+                self.procmon.end(pid, force=True)
+            except (ProcessLookupError, PermissionError) as exc:
+                raise ApiError(str(exc), 409) from None
 
     def window_icon(self, xid: int) -> tuple[bytes, str]:
         def grab():
@@ -568,9 +592,27 @@ class DesktopShell(Backend):
 
     # ==== app windows (Settings, Files, first-run setup) ======================================
     def open_app(self, name: str, page: str | None = None):
+        if name in SINGLE_WINDOWS:
+            GLib.idle_add(self._open_single_main, name, page)
+            return
         handler = {"settings": self._open_settings_main, "files": self._open_files_main,
                    "setup": self._open_setup_main}[name]
         GLib.idle_add(handler, page)
+
+    def _open_single_main(self, name: str, page: str | None):
+        win = self.single_windows.get(name)
+        if win is not None:
+            if page:
+                self.bus.publish("navigate", surface=SINGLE_WINDOWS[name][0], page=page)
+            win.present_with_time(self._x_time())
+            return False
+        surface, title, wmclass, size = SINGLE_WINDOWS[name]
+        query = f"surface={surface}" + (f"&page={quote(page)}" if page else "")
+        win = self._app_window(query, title, wmclass, size)
+        win.connect("destroy", lambda *_: self.single_windows.pop(name, None))
+        self.single_windows[name] = win
+        win.show_all()
+        return False
 
     def _app_window(self, query: str, title: str, wmclass: str, size: tuple[int, int]) -> Gtk.Window:
         win = Gtk.Window(title=title)
@@ -616,6 +658,68 @@ class DesktopShell(Backend):
         self.setup_window = win
         win.show_all()
         return False
+
+    # ==== Task Manager =====================================================================
+    def _windows_with_pids(self) -> list[dict]:
+        out = []
+        by_id = {a["id"]: a for a in self._apps}
+        for win in self._windows_main():
+            wnck_win = Wnck.Window.get(win["xid"])
+            app = by_id.get(win["appId"]) if win["appId"] else None
+            out.append({**win, "pid": wnck_win.get_pid() if wnck_win is not None else 0,
+                        "name": app["name"] if app else win["title"]})
+        return out
+
+    def procs(self) -> dict:
+        windows = on_main(self._windows_with_pids)
+        with self._procs_lock:
+            return self.procmon.sample(windows)
+
+    def procs_end(self, pid: int, force: bool):
+        try:
+            self.procmon.end(pid, force)
+        except ProcessLookupError as exc:
+            raise ApiError(str(exc), 404) from None
+        except PermissionError as exc:
+            raise ApiError(str(exc) if "PolyOS" in str(exc) else "You can't end that process.", 403) from None
+
+    def theme_icon(self, name: str) -> tuple[bytes, str]:
+        if not name or len(name) > 120 or "/" in name or name.startswith("."):
+            return letter_icon("?"), "image/svg+xml"
+        cached = self._icon_cache.get("theme:" + name)
+        if cached:
+            return cached
+
+        names = [n for n in name.split(",") if n][:6]  # candidates, best first
+
+        def find():
+            info = Gtk.IconTheme.get_default().choose_icon(names, 128, 0)
+            return info.get_filename() if info is not None else None
+
+        path = on_main(find)
+        result = None
+        if path:
+            ext = Path(path).suffix.lower()
+            try:
+                result = (Path(path).read_bytes(), IMAGE_TYPES[ext]) if ext in (".svg", ".png") else \
+                    (on_main(self._png_from_file, path), "image/png")
+            except (OSError, GLib.Error):
+                result = None
+        result = result or (letter_icon(names[0].split(".")[-1] if names else "?"), "image/svg+xml")
+        self._icon_cache["theme:" + name] = result
+        return result
+
+    def update_settings(self, patch: dict) -> dict:
+        settings = super().update_settings(patch)
+        if "theme" in patch:
+            try:
+                theme.apply_gtk(settings["theme"])
+            except OSError as exc:
+                log.warning("could not write GTK settings: %s", exc)
+            theme.switch_openbox(paths.runtime_dir() / "openbox-rc.xml", settings["theme"])
+        if "showAllApps" in patch:
+            self.bus.publish("apps", apps=self._apps)
+        return settings
 
     def finish_setup(self):
         self.update_settings({"setupDone": True})
@@ -698,8 +802,8 @@ def main(argv: list[str] | None = None) -> int:
     paths.write_runtime_info({"port": server.port, "token": token, "pid": os.getpid(), "version": __version__})
 
     shell.start(server.base_url)
-    if not settings.get("setupDone") and not shell.env()["live"]:
-        shell.open_app("setup")  # first sign-in: PolyOS's "It's time to get started"
+    if not settings.get("setupDone"):
+        shell.open_app("setup")  # live USB: the installer; first sign-in: PolyOS's welcome
     if args.autostart:
         GLib.timeout_add_seconds(2, shell.run_autostart)
     for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):

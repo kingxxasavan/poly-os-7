@@ -1,0 +1,201 @@
+"""Running polyos-admin as root, from the user's session.
+
+polyos-admin is started through sudo. On the live USB the PolyOS user may use sudo without
+a password; on an installed system the setup account is in the "sudo" group, and the UI
+asks for the password in a PolyOS dialog (sudo -S). sudo then remembers it for a few
+minutes (per parent process: this shell), so a series of installs asks only once.
+
+Long operations run as jobs: polyos-admin prints one JSON object per line
+({"progress": 0.4, "message": "..."}), and every update is published to the UI as a
+"job" event.
+"""
+
+from __future__ import annotations
+
+import itertools
+import json
+import logging
+import subprocess
+import threading
+import time
+from typing import Callable
+
+from . import paths
+from .core import ApiError, EventBus
+
+log = logging.getLogger("polyos.privileged")
+
+
+class NeedPassword(ApiError):
+    def __init__(self):
+        super().__init__("Enter your password to continue.", 401)
+
+
+def admin_argv(args: list[str]) -> list[str]:
+    helper = paths.ADMIN
+    base = ["python3", str(helper)] if paths.IN_REPO else [str(helper)]
+    return [*base, *args]
+
+
+def _sudo_error(stderr: str) -> ApiError:
+    text = stderr.lower()
+    if "password is required" in text or "a terminal is required" in text:
+        return NeedPassword()
+    if "incorrect password" in text or "sorry, try again" in text:
+        return ApiError("That password isn't right. Try again.", 403)
+    if "not in the sudoers" in text or "not allowed to" in text:
+        return ApiError("Your account isn't an administrator, so it can't install software.", 403)
+    return ApiError(stderr.strip().splitlines()[-1] if stderr.strip() else "Couldn't get administrator access.", 500)
+
+
+class Admin:
+    def ready(self) -> bool:
+        """True when sudo works without asking (live USB, or a password entered recently)."""
+        try:
+            return subprocess.run(["sudo", "-n", "true"], capture_output=True, timeout=10).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+
+    def authenticate(self, password: str) -> None:
+        try:
+            proc = subprocess.run(["sudo", "-S", "-p", "", "-v"], input=password + "\n", capture_output=True,
+                                  text=True, timeout=30)
+        except FileNotFoundError:
+            raise ApiError("sudo is not installed.", 500) from None
+        except subprocess.TimeoutExpired:
+            raise ApiError("Checking the password took too long.", 500) from None
+        if proc.returncode != 0:
+            raise _sudo_error(proc.stderr)
+
+    def stream(self, args: list[str], on_event: Callable[[dict], None], cancel: threading.Event | None = None) -> int:
+        """Run polyos-admin as root, calling on_event for each JSON line. Returns the exit code."""
+        argv = ["sudo", "-n", "--", *admin_argv(args)]
+        try:
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, bufsize=1)
+        except FileNotFoundError:
+            raise ApiError("sudo is not installed.", 500) from None
+        stderr_tail: list[str] = []
+
+        def drain():
+            for line in proc.stderr:
+                stderr_tail.append(line)
+                del stderr_tail[:-40]
+
+        threading.Thread(target=drain, daemon=True).start()
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                event = {"log": line}
+            if isinstance(event, dict):
+                on_event(event)
+            if cancel is not None and cancel.is_set():
+                proc.terminate()
+                break
+        rc = proc.wait()
+        err = "".join(stderr_tail)
+        if rc != 0 and "sudo:" in err:
+            raise _sudo_error(err)
+        if rc != 0 and err.strip():
+            log.warning("polyos-admin %s: %s", args[0], err.strip()[-2000:])
+        return rc
+
+    def call(self, args: list[str], timeout: float = 300) -> dict:
+        """A short polyos-admin command that returns {"result": ...}."""
+        result: dict = {}
+        errors: list[str] = []
+
+        def on_event(event):
+            if "result" in event:
+                result.update(event)
+            if "error" in event:
+                errors.append(event["error"])
+
+        rc = self.stream(args, on_event)
+        if errors:
+            raise ApiError(errors[-1], 500)
+        if rc != 0 or "result" not in result:
+            raise ApiError("The PolyOS helper failed. Details are in the system log.", 500)
+        return result["result"]
+
+
+class Jobs:
+    """Background root operations, one at a time, reported as "job" events."""
+
+    def __init__(self, bus: EventBus, admin: Admin | None = None):
+        self.bus = bus
+        self.admin = admin or Admin()
+        self._jobs: dict[str, dict] = {}
+        self._lock = threading.Lock()
+        self._ids = itertools.count(1)
+
+    def list(self) -> list[dict]:
+        with self._lock:
+            return [dict(j) for j in self._jobs.values()]
+
+    def running(self) -> dict | None:
+        with self._lock:
+            return next((dict(j) for j in self._jobs.values() if j["state"] == "running"), None)
+
+    def _publish(self, job: dict) -> None:
+        self.bus.publish("job", job=dict(job))
+
+    def start(self, kind: str, title: str, args: list[str], target: str | None = None,
+              on_done: Callable[[dict], None] | None = None, runner: Callable | None = None) -> dict:
+        """runner(job, update) replaces polyos-admin (the dev mock uses it)."""
+        with self._lock:
+            if any(j["state"] == "running" for j in self._jobs.values()):
+                raise ApiError("Another installation is still running. Wait for it to finish.", 409)
+            job = {"id": str(next(self._ids)), "kind": kind, "title": title, "target": target, "state": "running",
+                   "progress": 0.0, "message": "Starting…", "error": None, "restart": False, "started": time.time()}
+            self._jobs = {k: v for k, v in self._jobs.items() if v["state"] == "running" or time.time() - v["started"] < 3600}
+            self._jobs[job["id"]] = job
+        if runner is None and not self.admin.ready():
+            with self._lock:
+                self._jobs.pop(job["id"], None)
+            raise NeedPassword()
+        self._publish(job)
+
+        def update(event: dict):
+            with self._lock:
+                if "progress" in event and isinstance(event["progress"], (int, float)):
+                    job["progress"] = max(0.0, min(1.0, float(event["progress"])))
+                if isinstance(event.get("message"), str):
+                    job["message"] = event["message"][:300]
+                if event.get("restart"):
+                    job["restart"] = True
+                if isinstance(event.get("error"), str):
+                    job["error"] = event["error"][:600]
+                snapshot = dict(job)
+            if "log" not in event or len(event) > 1:
+                self.bus.publish("job", job=snapshot)
+
+        def work():
+            try:
+                rc = runner(job, update) if runner else self.admin.stream(args, update)
+                failed = rc != 0 or job["error"]
+            except ApiError as exc:
+                job["error"], failed = str(exc), True
+            except Exception as exc:  # noqa: BLE001 - reported to the UI instead of crashing the shell
+                log.exception("job %s failed", title)
+                job["error"], failed = f"Unexpected error: {exc}", True
+            with self._lock:
+                job["state"] = "failed" if failed else "done"
+                if failed and not job["error"]:
+                    job["error"] = "It didn't finish. Check your internet connection and try again."
+                if not failed:
+                    job["progress"] = 1.0
+                snapshot = dict(job)
+            self.bus.publish("job", job=snapshot)
+            if on_done:
+                try:
+                    on_done(snapshot)
+                except Exception:  # noqa: BLE001
+                    log.exception("job callback failed")
+
+        threading.Thread(target=work, name=f"job-{kind}", daemon=True).start()
+        return dict(job)

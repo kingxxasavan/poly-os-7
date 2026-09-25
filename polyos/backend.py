@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import getpass
 import json
+import os
 import socket
 import threading
 import time
 from pathlib import Path
 
-from . import __version__, paths
-from .core import DEFAULTS, IMAGE_TYPES, ApiError, EventBus, Settings
+from . import __version__, drivers, paths, store
+from .core import DEFAULTS, IMAGE_TYPES, ApiError, EventBus, Settings, letter_icon
 from .files import FileSystem
+from .privileged import Jobs
 from .vara import Vara, complete
 
 # Floating dock geometry in logical px. The dock window is the bar itself, inset from the
@@ -32,12 +34,37 @@ POPUP_SIZES = {
     "quick": (360, 326),  # the Wi-Fi list asks for more height via the "height" field
     "calendar": (320, 390),
     "taskmenu": (240, 200),
+    "quickmenu": (264, 468),  # Super+X: the Windows-style quick link menu
 }
 RECENT_LIMIT = 6
-WALLPAPER_NAMES = {"polyos-dusk": "Dusk", "polyos-violet": "Violet", "polyos-night": "Night", "pixapoly": "PIXAPoLY"}
+WALLPAPER_NAMES = {"polyos-dusk": "Dusk", "polyos-violet": "Violet", "polyos-night": "Night", "polyos-crystal": "Crystal",
+                   "pixapoly": "PIXAPoLY"}
 POWER_ACTIONS = ("lock", "logout", "suspend", "reboot", "poweroff")
 RUN_TARGETS = ("terminal", "files", "browser")
-OPEN_APPS = ("settings", "files", "setup")
+OPEN_APPS = ("settings", "files", "setup", "taskmgr", "drivers", "store")
+# Launcher entries most people never need (Settings > Apps shows them again).
+HIDDEN_APPS = {
+    "thunar.desktop", "thunar-bulk-rename.desktop", "thunar-settings.desktop", "thunar-volman-settings.desktop",
+    "org.xfce.thunar.desktop", "pavucontrol.desktop", "org.pulseaudio.pavucontrol.desktop", "arandr.desktop",
+    "nm-connection-editor.desktop", "light-locker-settings.desktop", "xfce4-notifyd-config.desktop",
+    "org.xfce.xfce4-notifyd-config.desktop", "im-config.desktop", "calamares.desktop", "install-debian.desktop",
+    "vim.desktop", "htop.desktop", "debian-xterm.desktop", "debian-uxterm.desktop", "xterm.desktop",
+    "uxterm.desktop", "display-im6.q16.desktop", "display-im7.q16.desktop", "yelp.desktop", "obconf.desktop",
+    "lightdm-gtk-greeter-settings.desktop", "blueman-adapters.desktop", "org.freedesktop.IBus.Setup.desktop",
+    "ibus-setup.desktop", "qv4l2.desktop", "qvidcap.desktop", "org.gnome.FileRoller.desktop",
+    "org.xfce.mousepad-settings.desktop", "xfce4-terminal-settings.desktop", "lxpolkit.desktop", "picom.desktop",
+    "compton.desktop", "openbox.desktop", "debian-reference-common.desktop", "python3.13.desktop",
+    "python3.11.desktop", "nvidia-settings.desktop", "org.gnome.Evince-previewer.desktop", "polyos-setup.desktop",
+    "info.desktop", "bssh.desktop", "bvnc.desktop", "avahi-discover.desktop", "jconsole.desktop",
+    "policytool.desktop", "gcr-prompter.desktop", "gcr-viewer.desktop", "org.gnome.seahorse.Application.desktop",
+    "firefox-esr-safe.desktop", "nm-applet.desktop", "xfce4-about.desktop", "org.xfce.volman.desktop",
+}
+# Friendlier names for Debian's default apps.
+DISPLAY_NAMES = {
+    "firefox-esr.desktop": "Firefox", "org.xfce.mousepad.desktop": "Text Editor", "xfce4-terminal.desktop": "Terminal",
+    "org.xfce.ristretto.desktop": "Image Viewer", "xfce4-screenshooter.desktop": "Screenshot",
+    "blueman-manager.desktop": "Bluetooth", "org.gnome.Evince.desktop": "Documents",
+}
 # Clicking the button that opened a popup first blurs it (closing it) and then
 # toggles it again; ignore a reopen of the same popup this soon after a close.
 REOPEN_GUARD = 0.35
@@ -53,6 +80,8 @@ class Backend:
         self.bus = bus
         self.files = FileSystem(home or Path.home())
         self.vara = Vara(settings.path.parent / "vara.json")  # ~/.config/polyos/vara.json
+        self.jobs = Jobs(bus)
+        self._driver_packages: set[str] = set()
         self._popup_lock = threading.Lock()
         self._popup: dict | None = None
         self._popup_key: str | None = None
@@ -88,6 +117,12 @@ class Backend:
     def greeter_state(self) -> dict: raise ApiError("only available on the login screen", 404)
     def greeter_login(self, user: str, password: str, session: str | None): raise ApiError("only available on the login screen", 404)
     def greeter_power(self, action: str): raise ApiError("only available on the login screen", 404)
+    def theme_icon(self, name: str) -> tuple[bytes, str]:
+        first = name.split(",")[0]
+        return letter_icon(first.split(".")[-1] or "?"), "image/svg+xml"
+
+    def procs(self) -> dict: raise NotImplementedError
+    def procs_end(self, pid: int, force: bool): raise NotImplementedError
     def _show_popup(self, popup: dict) -> None: pass
     def _hide_popup(self) -> None: pass
 
@@ -101,7 +136,9 @@ class Backend:
             full = pwd.getpwnam(name).pw_gecos.split(",")[0].strip() or name
         except (ImportError, KeyError):
             pass
-        return {"name": name, "fullName": full}
+        if full.lower() in ("debian live user", "live user"):  # the live USB's account
+            full = ""
+        return {"name": name, "fullName": full or name.capitalize()}
 
     def state(self) -> dict:
         return {
@@ -171,6 +208,75 @@ class Backend:
         if p.stat().st_size > 40 * 1024 * 1024:
             raise ApiError("image too large to preview", 413)
         return p
+
+    # ---- administrator access and background jobs ----------------------------------------
+    def admin_status(self) -> dict:
+        return {"ready": self.jobs.admin.ready()}
+
+    def admin_auth(self, password: str):
+        self.jobs.admin.authenticate(password)
+        return {"ready": True}
+
+    # ---- installer (live USB only) -----------------------------------------------------
+    def install_probe(self) -> dict:
+        if not self.env()["live"]:
+            raise ApiError("PolyOS is already installed on this computer.", 409)
+        return self.jobs.admin.call(["probe"], timeout=600)
+
+    def install_start(self, plan: dict) -> dict:
+        if not self.env()["live"]:
+            raise ApiError("PolyOS is already installed on this computer.", 409)
+        from .installer import InstallError, validate_plan
+
+        try:
+            clean = validate_plan(plan)
+        except InstallError as exc:
+            raise ApiError(str(exc)) from None
+        path = paths.runtime_dir() / "install-plan.json"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(clean, fh)
+        return self.jobs.start("install", "Installing PolyOS", ["install", str(path)])
+
+    # ---- Driver Manager ------------------------------------------------------------------
+    def drivers_scan(self) -> dict:
+        result = drivers.scan()
+        self._driver_packages = {p for d in result["devices"] for p in d["packages"]}
+        return result
+
+    def drivers_install(self, packages: list[str]) -> dict:
+        bad = [p for p in packages if p not in self._driver_packages or not drivers.DRIVER_PACKAGE_RE.match(p)]
+        if bad or not packages:
+            raise ApiError("Scan for drivers again, then pick from the list.")
+        return self.jobs.start("drivers", "Installing drivers", ["drivers", *packages],
+                               on_done=lambda job: self.bus.publish("drivers"))
+
+    # ---- PolyMarket ------------------------------------------------------------------------
+    def _store_app(self, app_id: str) -> dict:
+        app = store.validate(store.load()).get(app_id)
+        if app is None:
+            raise ApiError("That app isn't in PolyMarket.", 404)
+        return app
+
+    def store_list(self) -> dict:
+        return store.catalog_with_status(store.load())
+
+    def store_action(self, app_id: str, action: str) -> dict:
+        app = self._store_app(app_id)
+        if action == "remove" and app.get("system"):
+            raise ApiError(f"{app['name']} is part of PolyOS and can't be removed.")
+        verb = "Installing" if action == "install" else "Removing"
+        return self.jobs.start("store", f"{verb} {app['name']}", ["store", action, app_id], target=app_id,
+                               on_done=lambda job: self.bus.publish("store"))
+
+    def store_open(self, app_id: str):
+        app = self._store_app(app_id)
+        ids = {a["id"] for a in self.apps()}
+        target = next((d for d in app.get("desktop", []) if d in ids), None)
+        if target is None:
+            raise ApiError(f"{app['name']} runs from the Terminal." if not app.get("desktop") else
+                           f"{app['name']} isn't installed yet.", 404)
+        return self.launch(target)
 
     def vara_test(self) -> dict:
         reply = complete(self.vara.config.load(), [{"role": "user", "content": "Reply with just the word: ready"}], timeout=60)

@@ -2,7 +2,8 @@
 # config/packages.chroot (copied there by `main.py iso`).
 polyos-desktop
 
-# Live system and graphical installer
+# Live system. The PolyOS installer (setup on the live USB) uses the tools below;
+# Calamares stays as the "Advanced installer" for manual partitioning.
 live-boot
 live-config
 live-config-systemd
@@ -12,6 +13,33 @@ sudo
 user-setup
 locales
 keyboard-configuration
+
+# PolyOS installer: partitioning, filesystems, copying the system, boot loaders
+util-linux
+dosfstools
+e2fsprogs
+ntfs-3g
+squashfs-tools
+os-prober
+efibootmgr
+mokutil
+grub2-common
+grub-pc-bin
+grub-efi-amd64-bin
+grub-efi-amd64-signed
+shim-signed
+
+# Driver Manager and PolyMarket
+pciutils
+usbutils
+isenkram-cli
+nvidia-detect
+flatpak
+
+# Everyday apps and hardware
+evince
+bluez
+blueman
 
 # Boot splash
 plymouth

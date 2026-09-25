@@ -65,7 +65,8 @@ export default function launcher(root, store, data = {}) {
 
   function render(direction = 0) {
     layout();
-    const apps = searchApps(store.state.apps, input.value);
+    const { settings } = store.state;
+    const apps = searchApps(store.state.apps.filter((a) => settings.showAllApps || !a.hidden), input.value);
     pages = [];
     for (let i = 0; i < apps.length; i += perPage) pages.push(apps.slice(i, i + perPage));
     if (!pages.length) pages.push([]);

@@ -80,7 +80,7 @@ export function mount(root, store) {
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const it = el.item;
-      const count = (it.appId ? 2 : 0) + (it.windows.length ? 1 : 0);
+      const count = (it.appId ? 2 : 0) + (it.windows.length ? 2 : 0) + 1;
       openPopup('taskmenu', el, {
         data: { appId: it.appId, xids: it.windows.map((w) => w.xid) },
         height: 70 + count * 42 + 10,

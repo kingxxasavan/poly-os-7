@@ -35,6 +35,7 @@ function placePopup(p) {
 }
 
 // ---- fake window manager --------------------------------------------------------------
+const OWN = { 'polyos-taskmgr.desktop': 'taskmgr', 'polyos-drivers.desktop': 'drivers', 'polyos-store.desktop': 'store' };
 const els = new Map();
 const positions = new Map();
 let cascade = 0;
@@ -50,6 +51,8 @@ function makeWindow(win) {
     body.append(h('iframe', { src: `/index.html?surface=settings&page=${encodeURIComponent(win.page || 'appearance')}`, title: 'Settings' }));
   } else if (win.appId === 'polyos-files.desktop') {
     body.append(h('iframe', { src: `/index.html?surface=files&path=${encodeURIComponent(win.page || '')}`, title: 'Files' }));
+  } else if (OWN[win.appId]) {
+    body.append(h('iframe', { src: `/index.html?surface=${OWN[win.appId]}${win.page ? `&page=${encodeURIComponent(win.page)}` : ''}`, title: win.title }));
   } else {
     const app = state.apps.find((a) => a.id === win.appId);
     body.append(h('div.mock-placeholder', h('img', { src: withToken(win.icon), alt: '' }), h('b', app ? app.name : win.title),
@@ -59,7 +62,7 @@ function makeWindow(win) {
   if (!positions.has(win.xid)) {
     const W = layer.clientWidth;
     const H = layer.clientHeight;
-    const settingsApp = win.appId === 'polyos-settings.desktop' || win.appId === 'polyos-files.desktop';
+    const settingsApp = win.appId === 'polyos-settings.desktop' || win.appId === 'polyos-files.desktop' || !!OWN[win.appId];
     const w = Math.min(settingsApp ? 1000 : 760, W - 40);
     const hh = Math.min(settingsApp ? 660 : 480, H - 40);
     positions.set(win.xid, { x: Math.max(20, (W - w) / 2 + cascade * 28 - 60), y: Math.max(20, (H - hh) / 2 + cascade * 24 - 40), w, h: hh });
@@ -109,11 +112,11 @@ function renderWindows(windows) {
   }
 }
 
-// First sign-in: the real shell opens setup full screen until it's finished.
+// The real shell opens setup full screen until it's finished (the installer on the live USB).
 let setupFrame = null;
 function syncSetup(settings) {
-  if (!settings.setupDone && !state.env.live && !setupFrame) {
-    setupFrame = h('iframe#setup', { src: '/index.html?surface=setup', title: 'Setup' });
+  if (!settings.setupDone && !setupFrame) {
+    setupFrame = h('iframe', { id: 'setup', src: '/index.html?surface=setup', title: 'Setup' });
     screen.append(setupFrame);
   } else if (settings.setupDone && setupFrame) {
     setupFrame.remove();

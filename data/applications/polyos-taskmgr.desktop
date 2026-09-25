@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Task Manager
+GenericName=System Monitor
+Comment=See what's running and end apps that stopped responding
+Exec=polyos-ctl open taskmgr
+Icon=polyos-taskmgr
+Terminal=false
+Categories=System;Monitor;
+Keywords=processes;cpu;memory;end task;force quit;kill;performance;
+StartupWMClass=polyos-taskmgr
+OnlyShowIn=PolyOS;

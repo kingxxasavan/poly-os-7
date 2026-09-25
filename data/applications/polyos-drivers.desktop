@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Driver Manager
+GenericName=Drivers
+Comment=Install graphics, Wi-Fi and other drivers for your hardware
+Exec=polyos-ctl open drivers
+Icon=polyos-drivers
+Terminal=false
+Categories=System;Settings;HardwareSettings;
+Keywords=nvidia;amd;radeon;intel;graphics;gpu;wifi;firmware;broadcom;driver;
+StartupWMClass=polyos-drivers
+OnlyShowIn=PolyOS;

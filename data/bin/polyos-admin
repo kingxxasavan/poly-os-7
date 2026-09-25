@@ -1,0 +1,11 @@
+#!/usr/bin/python3
+"""Root helper for the PolyOS installer, Driver Manager and PolyMarket (run through sudo)."""
+import sys
+from pathlib import Path
+
+_checkout = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_checkout) if (_checkout / "polyos" / "__init__.py").is_file() else "/usr/lib/polyos")
+
+from polyos.admin import main  # noqa: E402
+
+sys.exit(main())

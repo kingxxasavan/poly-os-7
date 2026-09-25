@@ -20,7 +20,11 @@ async function request(method, path, body) {
   });
   let data = null;
   try { data = await res.json(); } catch { /* empty body */ }
-  if (!res.ok) throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const err = new Error((data && data.error) || `${res.status} ${res.statusText}`);
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 

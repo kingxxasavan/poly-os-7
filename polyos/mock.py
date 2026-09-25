@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import copy
+import random
 import shutil
 import threading
 import time
 from pathlib import Path
 
-from . import __version__, paths
-from .backend import DOCK_HEIGHT, DOCK_MARGIN, PANEL_HEIGHT, Backend
+from . import __version__, installer, paths, store
+from .backend import DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT, Backend
 from .core import ApiError, EventBus, Settings, letter_icon
 from .files import P
+from .privileged import NeedPassword
+
+GB = 1000 ** 3
+OWN_APPS = {"polyos-settings.desktop": "settings", "polyos-files.desktop": "files", "polyos-taskmgr.desktop": "taskmgr",
+            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store"}
 
 _APPS = [
     ("firefox-esr.desktop", "Firefox ESR", "Browse the World Wide Web", "Network;WebBrowser"),
@@ -20,13 +26,18 @@ _APPS = [
     ("xfce4-terminal.desktop", "Terminal", "Use the command line", "System;TerminalEmulator"),
     ("org.xfce.mousepad.desktop", "Mousepad", "Simple text editor", "Utility;TextEditor"),
     ("polyos-settings.desktop", "Settings", "Personalize and configure PolyOS", "Settings;System"),
+    ("polyos-taskmgr.desktop", "Task Manager", "See and end running apps", "System;Monitor"),
+    ("polyos-drivers.desktop", "Driver Manager", "Install drivers for your hardware", "System;Settings"),
+    ("polyos-store.desktop", "PolyMarket", "Get trusted apps", "System;PackageManager"),
+    ("pavucontrol.desktop", "Volume Control", "Adjust the volume level", "AudioVideo;Settings"),
+    ("nm-connection-editor.desktop", "Advanced Network Configuration", "Manage network connections", "Settings"),
+    ("htop.desktop", "Htop", "Show system processes", "System;Monitor"),
     ("org.gnome.Calculator.desktop", "Calculator", "Perform calculations", "Utility;Calculator"),
     ("libreoffice-writer.desktop", "LibreOffice Writer", "Create and edit documents", "Office"),
     ("gimp.desktop", "GNU Image Manipulation Program", "Create images and edit photographs", "Graphics"),
     ("vlc.desktop", "VLC media player", "Play movies and music", "AudioVideo"),
     ("blender.desktop", "Blender", "3D modeling, animation and rendering", "Graphics"),
     ("code.desktop", "Visual Studio Code", "Code editing. Redefined.", "Development"),
-    ("pavucontrol.desktop", "Volume Control", "Adjust the volume level", "AudioVideo;Settings"),
     ("arandr.desktop", "ARandR", "Arrange displays", "Settings"),
     ("xfce4-screenshooter.desktop", "Screenshot", "Take screenshots", "Utility"),
     ("org.xfce.ristretto.desktop", "Ristretto Image Viewer", "Look at your images", "Graphics"),
@@ -47,9 +58,13 @@ class MockBackend(Backend):
         if live:
             apps.append(("install-debian.desktop", "Install PolyOS", "Install to this computer", "System"))
         self._apps = sorted(
-            ({"id": i, "name": n, "description": d, "categories": c.split(";"), "keywords": [],
-              "icon": f"/icon/app/{i}"} for i, n, d, c in apps),
+            ({"id": i, "name": DISPLAY_NAMES.get(i, n), "description": d, "categories": c.split(";"), "keywords": [],
+              "icon": f"/icon/app/{i}", "hidden": i in HIDDEN_APPS} for i, n, d, c in apps),
             key=lambda a: a["name"].casefold())
+        self._admin_ready = live  # the live USB's account needs no password; "polyos" unlocks the mock
+        self._store_installed = {"firefox"}
+        self._driver_state: set[str] = {"firmware-iwlwifi", "firmware-sof-signed"}
+        self._procs_seed = random.Random(7)
         self._windows: list[dict] = []
         self._next_xid = 0x3a00001
         self._system = {
@@ -84,10 +99,8 @@ class MockBackend(Backend):
         return app
 
     def launch(self, app_id):
-        if app_id == "polyos-settings.desktop":
-            return self.open_app("settings")
-        if app_id == "polyos-files.desktop":
-            return self.open_app("files")
+        if app_id in OWN_APPS:
+            return self.open_app(OWN_APPS[app_id])
         app = self._app(app_id)
         self.note_launch(app_id)
         self._add_window(app["id"], app["name"])
@@ -115,7 +128,7 @@ class MockBackend(Backend):
                 win["minimized"] = False
             elif action == "minimize":
                 win.update(minimized=True, active=False)
-            elif action == "close":
+            elif action in ("close", "kill"):
                 self._windows.remove(win)
         self._publish_windows()
 
@@ -125,10 +138,14 @@ class MockBackend(Backend):
             return self._add_window("polyos-files.desktop", "Files", page=page or P(self.files.home))
         if name == "setup":
             return self.update_settings({"setupDone": False})
+        app_id = next(k for k, v in OWN_APPS.items() if v == name)
+        titles = {"settings": "Settings", "taskmgr": "Task Manager", "drivers": "Driver Manager", "store": "PolyMarket"}
+        if name != "settings":
+            self.note_launch(app_id)
         with self._lock:
-            win = next((w for w in self._windows if w["appId"] == "polyos-settings.desktop"), None)
+            win = next((w for w in self._windows if w["appId"] == app_id), None)
         if win is None:
-            self._add_window("polyos-settings.desktop", "Settings", page=page or "appearance")
+            self._add_window(app_id, titles[name], page=page or ("appearance" if name == "settings" else ""))
         else:
             self.window_action(win["xid"], "activate")
             if page:
@@ -190,7 +207,9 @@ class MockBackend(Backend):
         self.launch(match["id"])
 
     def app_icon(self, app_id):
-        own = {"polyos-settings.desktop": "settings.svg", "polyos-files.desktop": "files.svg"}
+        own = {"polyos-settings.desktop": "settings.svg", "polyos-files.desktop": "files.svg",
+               "polyos-taskmgr.desktop": "taskmgr.svg", "polyos-drivers.desktop": "drivers.svg",
+               "polyos-store.desktop": "store.svg"}
         if app_id in own:
             return (paths.UI_DIR / "img" / own[app_id]).read_bytes(), "image/svg+xml"
         name = next((a["name"] for a in self._apps if a["id"] == app_id), app_id)
@@ -294,6 +313,192 @@ class MockBackend(Backend):
 
     def restart_shell(self):
         self.bus.publish("power", action="restart-shell")
+
+    # ---- administrator access (password for the mock: "polyos") ---------------------------
+    def admin_status(self):
+        return {"ready": self._admin_ready}
+
+    def admin_auth(self, password):
+        time.sleep(0.5)
+        if password != "polyos":
+            raise ApiError("That password isn't right. Try again.", 403)
+        self._admin_ready = True
+        return {"ready": True}
+
+    def _simulate(self, steps, seconds, finish=None, fail=None, restart=False):
+        def runner(job, update):
+            for i, message in enumerate(steps):
+                update({"progress": i / len(steps), "message": message})
+                for _ in range(10):
+                    time.sleep(seconds / len(steps) / 10)
+            if fail:
+                update({"error": fail})
+                return 1
+            if finish:
+                finish()
+            if restart:
+                update({"restart": True})
+            update({"progress": 1.0, "message": "Done."})
+            return 0
+        return runner
+
+    # ---- installer --------------------------------------------------------------------
+    def install_probe(self):
+        if not self.live:
+            raise ApiError("PolyOS is already installed on this computer.", 409)
+        time.sleep(1.0)
+        uefi = True
+        nvme = {"path": "/dev/nvme0n1", "size": 512 * GB, "model": "Samsung SSD 970 EVO Plus", "transport": "nvme",
+                "removable": False, "readonly": False, "table": "gpt", "mounts": [], "partitions": [
+                    {"path": "/dev/nvme0n1p1", "number": 1, "size": 100 * 1024 ** 2, "fstype": "vfat", "label": "SYSTEM",
+                     "parttype": installer.ESP_GUID.lower(), "mounts": []},
+                    {"path": "/dev/nvme0n1p2", "number": 2, "size": 16 * 1024 ** 2, "fstype": "", "label": "",
+                     "parttype": "e3c9e316-0b5c-4db8-817d-f92df00215ae", "mounts": []},
+                    {"path": "/dev/nvme0n1p3", "number": 3, "size": 510 * GB, "fstype": "ntfs", "label": "Windows",
+                     "parttype": installer.MS_BASIC_GUID.lower(), "mounts": []},
+                    {"path": "/dev/nvme0n1p4", "number": 4, "size": 900 * 1024 ** 2, "fstype": "ntfs", "label": "Recovery",
+                     "parttype": "de94bba4-06d1-4d40-a16a-bfd50179d6ac", "mounts": []}]}
+        table = {"label": "gpt", "sector": 512, "first": 2048, "last": nvme["size"] // 512 - 34, "partitions": [
+            {"node": "/dev/nvme0n1p1", "number": 1, "start": 2048, "size": 204800, "type": installer.ESP_GUID.lower()},
+            {"node": "/dev/nvme0n1p2", "number": 2, "start": 206848, "size": 32768, "type": "x"},
+            {"node": "/dev/nvme0n1p3", "number": 3, "start": 239616, "size": 510 * GB // 512, "type": "x"},
+            {"node": "/dev/nvme0n1p4", "number": 4, "start": 239616 + 510 * GB // 512, "size": 1843200, "type": "x"}]}
+        resize = {"/dev/nvme0n1p3": {"fs": "ntfs", "min": 131 * GB, "used": 131 * GB, "reason": None}}
+        hdd = {"path": "/dev/sda", "size": 1000 * GB, "model": "WDC WD10SPZX", "transport": "sata", "removable": False,
+               "readonly": False, "table": None, "mounts": [], "partitions": []}
+        usb = {"path": "/dev/sdb", "size": 32 * GB, "model": "SanDisk Ultra", "transport": "usb", "removable": True,
+               "readonly": False, "table": "dos", "mounts": [], "partitions": [
+                   {"path": "/dev/sdb1", "number": 1, "size": 32 * GB, "fstype": "iso9660", "label": "PolyOS 0.2.0",
+                    "parttype": "0x0", "mounts": ["/run/live/medium"]}]}
+        disks = [installer.describe_disk(nvme, table, {"/dev/nvme0n1p1": "Windows 11"}, uefi, "/dev/sdb", resize),
+                 installer.describe_disk(hdd, None, {}, uefi, "/dev/sdb", {}),
+                 installer.describe_disk(usb, {"label": "dos", "sector": 512, "first": 0, "last": None,
+                                               "partitions": []}, {}, uefi, "/dev/sdb", {})]
+        return {"uefi": uefi, "secureBoot": True, "ram": 8 * 1024 ** 3, "disks": disks, "minBytes": installer.MIN_ROOT,
+                "liveDisk": "/dev/sdb"}
+
+    def install_start(self, plan):
+        if not self.live:
+            raise ApiError("PolyOS is already installed on this computer.", 409)
+        try:
+            clean = installer.validate_plan(plan)
+        except installer.InstallError as exc:
+            raise ApiError(str(exc)) from None
+        steps = ["Preparing the disk…", "Formatting…", "Copying PolyOS to the disk… 20%", "Copying PolyOS to the disk… 55%",
+                 "Copying PolyOS to the disk… 90%", "Setting up your computer…", "Creating your account…",
+                 "Installing the boot loader…", "Finishing the boot menu…", "Cleaning up…"]
+        if clean["mode"] == "alongside":
+            steps.insert(0, "Making room: shrinking Windows 11…")
+        return self.jobs.start("install", "Installing PolyOS", [], runner=self._simulate(steps, 14))
+
+    # ---- Driver Manager ------------------------------------------------------------------
+    def drivers_scan(self):
+        time.sleep(0.6)
+        from .drivers import recommend
+
+        devices = [
+            {"slot": "00:02.0", "className": "VGA compatible controller", "classId": "0300", "vendor": "Intel Corporation",
+             "vendorId": "8086", "device": "UHD Graphics 620", "deviceId": "5917", "driver": "i915"},
+            {"slot": "01:00.0", "className": "3D controller", "classId": "0302", "vendor": "NVIDIA Corporation",
+             "vendorId": "10de", "device": "GP108M [GeForce MX150]", "deviceId": "1d10", "driver": "nouveau"},
+            {"slot": "02:00.0", "className": "Network controller", "classId": "0280", "vendor": "Intel Corporation",
+             "vendorId": "8086", "device": "Wireless 8265 / 8275", "deviceId": "24fd", "driver": "iwlwifi"},
+            {"slot": "00:1f.3", "className": "Audio device", "classId": "0403", "vendor": "Intel Corporation",
+             "vendorId": "8086", "device": "Sunrise Point-LP HD Audio", "deviceId": "9d71", "driver": "snd_hda_intel"},
+        ]
+        items = recommend(devices, "nvidia-driver", ["firmware-misc-nonfree"])
+        for it in items:
+            it["missing"] = [p for p in it["packages"] if p not in self._driver_state]
+        self._driver_packages = {p for d in items for p in d["packages"]}
+        return {"devices": items, "secureBoot": True}
+
+    def drivers_install(self, packages):
+        bad = [p for p in packages if p not in self._driver_packages]
+        if bad or not packages:
+            raise ApiError("Scan for drivers again, then pick from the list.")
+        if not self._admin_ready:
+            raise NeedPassword()
+
+        def finish():
+            self._driver_state.update(packages)
+        runner = self._simulate(["Checking Debian for the latest versions…", "Downloading…", "Installing drivers…",
+                                 "Configuring…"], 6, finish, restart=any(p.startswith("nvidia") for p in packages))
+        return self.jobs.start("drivers", "Installing drivers", [], runner=runner,
+                               on_done=lambda j: self.bus.publish("drivers"))
+
+    # ---- PolyMarket ------------------------------------------------------------------------
+    def store_list(self):
+        data = store.load()
+        apps = [{**a, "installed": a["id"] in self._store_installed} for a in data["apps"]]
+        return {"categories": data["categories"], "apps": apps, "flatpak": True}
+
+    def store_action(self, app_id, action):
+        app = self._store_app(app_id)
+        if action == "remove" and app.get("system"):
+            raise ApiError(f"{app['name']} is part of PolyOS and can't be removed.")
+        if not self._admin_ready:
+            raise NeedPassword()
+
+        def finish():
+            desktop = (app.get("desktop") or [None])[0]
+            if action == "install":
+                self._store_installed.add(app_id)
+                if desktop and all(a["id"] != desktop for a in self._apps):
+                    self._apps.append({"id": desktop, "name": app["name"], "description": app["summary"],
+                                       "categories": [], "keywords": [], "icon": f"/icon/app/{desktop}", "hidden": False})
+                    self._apps.sort(key=lambda a: a["name"].casefold())
+            else:
+                self._store_installed.discard(app_id)
+                self._apps = [a for a in self._apps if a["id"] != desktop]
+            self.bus.publish("apps", apps=self._apps)
+        steps = (["Checking Debian for the latest versions…", "Downloading…", f"Installing {app['name']}…"]
+                 if app["source"] == "debian" else ["Connecting to Flathub…", "Downloading runtime… 35%",
+                                                    f"Installing {app['name']}… 80%"])
+        if action == "remove":
+            steps = [f"Removing {app['name']}…"]
+        verb = "Installing" if action == "install" else "Removing"
+        return self.jobs.start("store", f"{verb} {app['name']}", [], target=app_id,
+                               runner=self._simulate(steps, 5 if action == "install" else 2, finish),
+                               on_done=lambda j: self.bus.publish("store"))
+
+    # ---- Task Manager -----------------------------------------------------------------------
+    def procs(self):
+        rnd = self._procs_seed
+        apps = []
+        for w in self.windows():
+            app = next((a for a in self._apps if a["id"] == w["appId"]), None)
+            base = 420 if "firefox" in (w["appId"] or "") else 80
+            apps.append({"pid": 4000 + w["xid"] % 997, "name": app["name"] if app else w["title"], "title": w["title"],
+                         "icon": w["icon"], "cpu": round(rnd.uniform(0, 9 if base > 100 else 3), 1),
+                         "memory": int((base + rnd.uniform(-10, 40)) * 1024 ** 2), "count": 6 if base > 100 else 1,
+                         "status": "Running", "protected": False})
+        names = [("pipewire-pulse", 12), ("NetworkManager applet", 22), ("xfce4-notifyd", 18), ("gvfs-udisks2-volume-monitor", 9),
+                 ("tracker-miner-fs", 34), ("blueman-applet", 26), ("light-locker", 14), ("at-spi2-registryd", 6)]
+        background = [{"pid": 2000 + i * 17, "name": n, "cmdline": f"/usr/bin/{n}", "cpu": round(rnd.uniform(0, 1.2), 1),
+                       "memory": int((m + rnd.uniform(0, 4)) * 1024 ** 2), "count": 1, "status": "Running", "protected": False}
+                      for i, (n, m) in enumerate(names)]
+        desktop = [{"pid": 1200 + i, "name": n, "cmdline": n, "cpu": round(rnd.uniform(0, c), 1), "memory": int(m * 1024 ** 2),
+                    "count": 1, "status": "Running", "protected": True}
+                   for i, (n, c, m) in enumerate([("polyos-shell", 3, 160), ("openbox", 0.5, 18), ("picom", 2, 40),
+                                                   ("Xorg", 2, 90), ("polyos-session", 0.1, 21)])]
+        cpu = round(min(100, sum(a["cpu"] for a in apps + background + desktop) + rnd.uniform(2, 6)), 1)
+        return {"apps": sorted(apps, key=lambda r: -r["cpu"]), "background": sorted(background, key=lambda r: -r["cpu"]),
+                "desktop": desktop,
+                "perf": {"cpu": cpu, "cores": [round(max(0, min(100, cpu + rnd.uniform(-8, 8))), 1) for _ in range(4)],
+                         "cpuModel": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz", "memTotal": 8 * 1024 ** 3,
+                         "memUsed": int((2.6 + len(apps) * 0.35 + rnd.uniform(0, 0.2)) * 1024 ** 3),
+                         "memCached": int(1.4 * 1024 ** 3), "swapTotal": 4 * 1024 ** 3, "swapUsed": 0,
+                         "processes": 180 + len(apps) * 6, "threads": 920, "uptime": int(time.monotonic()) % 86400,
+                         "netDown": int(rnd.uniform(0, 400_000)), "netUp": int(rnd.uniform(0, 60_000)),
+                         "diskRead": int(rnd.uniform(0, 2_000_000)), "diskWrite": int(rnd.uniform(0, 800_000))}}
+
+    def procs_end(self, pid, force):
+        with self._lock:
+            win = next((w for w in self._windows if 4000 + w["xid"] % 997 == pid), None)
+        if win is not None:
+            return self.window_action(win["xid"], "close")
+        if 1200 <= pid < 1300:
+            raise ApiError("That's part of PolyOS itself and can't be ended here.", 403)
 
 
 def seed_home(home: Path) -> None:

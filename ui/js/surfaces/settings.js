@@ -17,7 +17,7 @@ const PAGES = [
 const ACCENTS = ['#678fd9', '#9b7fe0', '#d97fb8', '#e0906a', '#d9c46a', '#81d862', '#5fc4c4', '#b5b5b5'];
 const CREDITS =
   'PolyOS began as an operating system built in Scratch by AndrewInput and PIXAPoLY Software. ' +
-  'This edition brings PolyOS 7 to real hardware on top of Debian, with the team’s blessing. ' +
+  'This edition, presented by Cryptic Software, brings PolyOS 7 to real hardware on top of Debian, with the team’s blessing. ' +
   'The PolyOS logo, colors and PIXAPoLY wallpaper come from the Scratch project (CC BY-SA 2.0).';
 
 function pageHead(title, subtitle) {
@@ -79,10 +79,15 @@ const pages = {
     const seconds = toggle(s().showSeconds, (v) => save({ showSeconds: v }, err), 'Show seconds');
     const deskClock = toggle(s().desktopClock, (v) => save({ desktopClock: v }, err), 'Desktop clock');
     const effects = toggle(s().effects, (v) => save({ effects: v }, err), 'Visual effects');
+    const allApps = toggle(s().showAllApps, (v) => save({ showAllApps: v }, err), 'Show all apps');
+    const modes = h('div.seg', { role: 'radiogroup', 'aria-label': 'Mode' },
+      ['dark', 'light'].map((m) => h('button.seg-btn', { 'data-mode': m, role: 'radio', onclick: () => save({ theme: m }, err) },
+        icon(m === 'dark' ? 'moon' : 'sun'), m === 'dark' ? 'Dark' : 'Light')));
 
     page.append(
       pageHead('Appearance', 'Customize the look and feel of PolyOS.'),
       err,
+      group('Mode', row('Appearance', 'Dark or light, for PolyOS and your apps. Open apps update when you reopen them.', modes)),
       group('Accent color',
         row('Accent', 'Highlights, sliders and the active app', swatches),
         row('Custom color', 'Slide to pick any hue', h('div.slider-wrap', hue))),
@@ -94,6 +99,8 @@ const pages = {
         row('24-hour time', null, clock24),
         row('Show seconds in the dock', null, seconds),
         row('Clock on the desktop', 'Large time, date and greeting', deskClock)),
+      group('Launcher',
+        row('Show all apps', 'Include system tools PolyOS normally hides, like the volume mixer and network editor', allApps)),
     );
 
     function update() {
@@ -109,6 +116,8 @@ const pages = {
       seconds.set(cur.showSeconds);
       deskClock.set(cur.desktopClock);
       effects.set(cur.effects);
+      allApps.set(cur.showAllApps);
+      modes.querySelectorAll('.seg-btn').forEach((el) => el.setAttribute('aria-checked', String(el.dataset.mode === cur.theme)));
     }
     update();
     return { update: (_st, changed) => changed.has('settings') && update() };
@@ -222,15 +231,15 @@ const pages = {
 
   vara(page) {
     const PRESETS = [
-      ['Ollama on this PC', 'http://127.0.0.1:11434/v1', 'llama3.2'],
       ['Ollama Cloud', 'https://ollama.com/v1', 'gpt-oss:120b'],
       ['OpenAI', 'https://api.openai.com/v1', 'gpt-4o-mini'],
+      ['Ollama on this PC', 'http://127.0.0.1:11434/v1', 'llama3.2'],
     ];
     const err = h('div.error-text', { hidden: true });
     const note = h('span.muted.small');
     const endpoint = h('input.input', { placeholder: 'http://127.0.0.1:11434/v1', spellcheck: 'false', 'aria-label': 'Endpoint' });
     const model = h('input.input', { placeholder: 'llama3.2', spellcheck: 'false', 'aria-label': 'Model' });
-    const key = h('input.input', { type: 'password', placeholder: 'Not needed for Ollama on this PC', autocomplete: 'off', 'aria-label': 'API key' });
+    const key = h('input.input', { type: 'password', placeholder: 'Paste your API key', autocomplete: 'off', 'aria-label': 'API key' });
     const presets = h('div.swatches', PRESETS.map(([label, url, m]) => h('button.pill-btn', {
       onclick: () => { endpoint.value = url; model.value = m; },
     }, label)));
@@ -240,7 +249,8 @@ const pages = {
       endpoint.value = c.endpoint;
       model.value = c.model;
       key.value = '';
-      key.placeholder = c.hasKey ? 'Saved (type to replace)' : 'Not needed for Ollama on this PC';
+      key.placeholder = c.hasKey ? 'Saved (type to replace)' : 'Paste your API key';
+      note.textContent = c.needsKey ? 'Add an API key so Vara can chat. Ollama Cloud keys are free at ollama.com.' : '';
     });
     saveBtn.addEventListener('click', async () => {
       errorText(err, '');
@@ -275,7 +285,7 @@ const pages = {
       group('Privacy', h('p.prose',
         'Simple requests like “open Firefox” or “volume 40” are handled on this computer. Other messages ',
         'go to the endpoint above; with a cloud provider they leave this computer, so don’t share passwords with Vara. ',
-        'To keep everything local, install Ollama (ollama.com) and pull a model such as llama3.2.')),
+        'To keep everything on this computer instead, install Ollama (ollama.com), pull a model such as llama3.2 and choose “Ollama on this PC”.')),
     );
     load();
     return null;
@@ -289,6 +299,12 @@ const pages = {
         h('img', { src: '/img/logo.svg', alt: '' }),
         h('div', h('h1', 'PolyOS'), h('p.muted', `Version ${version}`))),
       specs,
+      group('Tools',
+        row('Task Manager', 'See what’s running and end apps that stopped responding (Ctrl+Shift+Esc)',
+          h('button.btn', { onclick: () => api.post('/api/open', { app: 'taskmgr' }) }, 'Open', icon('external'))),
+        row('Driver Manager', 'Install graphics, Wi-Fi and other drivers',
+          h('button.btn', { onclick: () => api.post('/api/open', { app: 'drivers' }) }, 'Open', icon('external'))),
+        row('PolyMarket', 'Get trusted apps', h('button.btn', { onclick: () => api.post('/api/open', { app: 'store' }) }, 'Open', icon('external')))),
       group('Credits', h('p.prose', CREDITS, ' ',
         h('a', { href: 'https://scratch.mit.edu/users/PolyOS/', target: '_blank', rel: 'noopener' }, 'PolyOS on Scratch'), '.')),
       group('License', h('p.prose',

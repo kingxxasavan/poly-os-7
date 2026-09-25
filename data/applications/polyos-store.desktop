@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=PolyMarket
+GenericName=App Store
+Comment=Get trusted apps for PolyOS
+Exec=polyos-ctl open store
+Icon=polyos-store
+Terminal=false
+Categories=System;PackageManager;
+Keywords=store;apps;install;software;market;flathub;download;
+StartupWMClass=polyos-store
+OnlyShowIn=PolyOS;

@@ -1,18 +1,38 @@
 #!/bin/sh
-# PolyOS branding inside the live image (runs in the chroot during `lb build`).
+# PolyOS setup inside the live image (runs in the chroot during `lb build`).
 set -e
 
-# Installer: use the PolyOS Calamares branding and call it "Install PolyOS".
+# Calamares stays available as PolyOS's "Advanced installer" (the PolyOS setup is the main one).
 if [ -f /etc/calamares/settings.conf ]; then
     sed -i 's/^branding:.*/branding: polyos/' /etc/calamares/settings.conf
 fi
 for f in /usr/share/applications/install-debian.desktop /usr/share/applications/calamares.desktop; do
     if [ -f "$f" ]; then
-        sed -i '/^Name\[/d; /^Comment\[/d; s/^Name=.*/Name=Install PolyOS/; s/^Comment=.*/Comment=Install PolyOS on this computer/' "$f"
+        sed -i '/^Name\[/d; /^Comment\[/d; s/^Name=.*/Name=PolyOS Advanced Installer/; s/^Comment=.*/Comment=Install PolyOS with manual partitioning/' "$f"
     fi
 done
 
 # Boot splash: the PolyOS pinwheel (rebuilds the initramfs with the theme in it).
 if command -v plymouth-set-default-theme >/dev/null 2>&1; then
     plymouth-set-default-theme -R polyos || echo "polyos: could not set the Plymouth theme" >&2
+fi
+
+# GRUB packages for the PolyOS installer, so installing works without internet. The live
+# system can't have grub-pc and grub-efi-amd64 installed together, so keep their .debs.
+debs=/usr/share/polyos/installer/debs
+for spec in efi:grub-efi-amd64 bios:grub-pc; do
+    kind=${spec%%:*}
+    pkg=${spec#*:}
+    mkdir -p "$debs/$kind"
+    apt-get clean
+    apt-get install -y --download-only --no-install-recommends "$pkg"
+    cp /var/cache/apt/archives/*.deb "$debs/$kind/"
+    apt-get clean
+done
+ls -l "$debs"/*
+
+# PolyMarket: Flathub for apps that aren't in Debian (Chrome, Discord, Spotify, Steam, ...).
+if command -v flatpak >/dev/null 2>&1; then
+    flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo \
+        || echo "polyos: could not add Flathub now; PolyMarket adds it on first use" >&2
 fi

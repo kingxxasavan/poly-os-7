@@ -49,16 +49,17 @@ PACKAGES = {
         "section": "x11",
         "depends": [
             "python3 (>= 3.11)", "python3-gi", "gir1.2-gtk-3.0", "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
-            "gir1.2-wnck-3.0", "librsvg2-common", "openbox", "x11-utils", "x11-xserver-utils", "xdg-utils",
+            "gir1.2-wnck-3.0", "librsvg2-common", "openbox", "x11-utils", "x11-xserver-utils", "xdg-utils", "sudo",
         ],
         "recommends": [
             "picom", "xcape", "wireplumber | pulseaudio-utils", "network-manager", "brightnessctl",
-            "papirus-icon-theme", "fonts-inter | fonts-noto-core", "lxpolkit | mate-polkit",
+            "papirus-icon-theme", "fonts-inter | fonts-noto-core", "lxpolkit | mate-polkit", "pciutils", "flatpak",
         ],
         "summary": "PolyOS desktop shell",
         "description": (
-            "The PolyOS desktop: dock, Home Menu, launcher, Files, Settings, Ask Vara and the\n"
-            "PolyOS login screen, running as an X11 session on the Openbox window manager.\n"
+            "The PolyOS desktop: dock, Home Menu, launcher, Files, Settings, Task Manager, Driver\n"
+            "Manager, PolyMarket, Ask Vara and the PolyOS login screen, running as an X11 session\n"
+            "on the Openbox window manager.\n"
             "The interface is web technology hosted in WebKitGTK; system integration uses\n"
             "NetworkManager, PipeWire and systemd-logind.\n"
             ".\n"
@@ -68,15 +69,16 @@ PACKAGES = {
     "polyos-desktop": {
         "section": "metapackages",
         "depends": [
-            "polyos-shell (= {version})", "xorg", "lightdm", "lightdm-gtk-greeter", "gir1.2-lightdm-1", "picom",
-            "pipewire-audio", "wireplumber", "network-manager", "papirus-icon-theme",
+            "polyos-shell (= {version})", "xorg", "xserver-xorg-input-libinput", "lightdm", "lightdm-gtk-greeter",
+            "gir1.2-lightdm-1", "picom", "pipewire-audio", "wireplumber", "network-manager", "papirus-icon-theme",
             "fonts-inter | fonts-noto-core", "dbus-user-session", "xdg-user-dirs", "adwaita-icon-theme",
-            "gvfs", "xfce4-terminal", "mousepad", "firefox-esr",
+            "gvfs", "xfce4-terminal", "mousepad", "firefox-esr", "pciutils", "xcape",
         ],
         "recommends": [
-            "thunar", "xcape", "brightnessctl", "lxpolkit | mate-polkit", "light-locker", "xfce4-notifyd", "tumbler",
+            "brightnessctl", "lxpolkit | mate-polkit", "light-locker", "xfce4-notifyd", "tumbler",
             "xfce4-screenshooter", "fonts-noto-color-emoji", "network-manager-gnome", "pavucontrol",
-            "arandr", "ristretto", "file-roller", "gvfs-backends", "plymouth", "plymouth-label",
+            "arandr", "ristretto", "file-roller", "gvfs-backends", "plymouth", "plymouth-label", "evince",
+            "flatpak", "bluez", "blueman", "usbutils", "isenkram-cli", "mokutil",
         ],
         "summary": "PolyOS desktop environment (complete)",
         "description": (
@@ -113,8 +115,8 @@ Files: *
 Copyright: 2026 The PolyOS Team
 License: GPL-3+
 
-Files: usr/share/polyos/ui/img/logo*.svg usr/share/icons/hicolor/scalable/apps/polyos.svg
- usr/share/polyos/wallpapers/pixapoly.jpg
+Files: usr/share/polyos/ui/img/logo*.svg usr/share/polyos/ui/img/seven.svg
+ usr/share/icons/hicolor/scalable/apps/polyos.svg usr/share/polyos/wallpapers/pixapoly.jpg
 Copyright: AndrewInput and PIXAPoLY Software (PolyOS for Scratch)
 License: CC-BY-SA-2.0
  https://creativecommons.org/licenses/by-sa/2.0/
@@ -154,12 +156,17 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
             (data / "lightdm/lightdm-gtk-greeter.conf.d/50-polyos.conf",
              "usr/share/lightdm/lightdm-gtk-greeter.conf.d/50-polyos.conf", 0o644),
             *_tree(data / "plymouth/polyos", "usr/share/plymouth/themes/polyos"),
+            (data / "xorg/40-polyos-touchpad.conf", "usr/share/X11/xorg.conf.d/40-polyos-touchpad.conf", 0o644),
+            # Firefox draws a normal title bar (with PolyOS's close button) instead of tabs in the title bar
+            (data / "firefox/policies.json", "etc/firefox/policies/policies.json", 0o644),
             copyright_file,
         ]
     files = [
         *[(p, d, m) for p, d, m in _tree(ROOT / "polyos", "usr/lib/polyos/polyos") if p.suffix == ".py"],
         *_tree(ROOT / "ui", "usr/share/polyos/ui", skip=DEV_UI_FILES),
         *[(data / "bin" / b, f"usr/bin/{b}", 0o755) for b in ("polyos-session", "polyos-shell", "polyos-ctl", "polyos-greeter")],
+        (data / "bin/polyos-admin", "usr/libexec/polyos/polyos-admin", 0o755),
+        *_tree(data / "store", "usr/share/polyos/store"),
         (data / "xgreeters/polyos-greeter.desktop", "usr/share/xgreeters/polyos-greeter.desktop", 0o644),
         (data / "xsessions/polyos.desktop", "usr/share/xsessions/polyos.desktop", 0o644),
         *_tree(data / "applications", "usr/share/applications"),
@@ -172,6 +179,8 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         (ROOT / "ui/img/settings.svg", "usr/share/icons/hicolor/scalable/apps/polyos-settings.svg", 0o644),
         (ROOT / "ui/img/files.svg", "usr/share/icons/hicolor/scalable/apps/polyos-files.svg", 0o644),
         (ROOT / "ui/img/logo.svg", "usr/share/icons/hicolor/scalable/apps/polyos-setup.svg", 0o644),
+        *[(ROOT / f"ui/img/{n}.svg", f"usr/share/icons/hicolor/scalable/apps/polyos-{n}.svg", 0o644)
+          for n in ("taskmgr", "drivers", "store")],
         # Poppins (SIL OFL 1.1) for window titles and the login screen, not just the web UI
         *[(p, f"usr/share/fonts/truetype/polyos/{p.name}", 0o644) for p in sorted((ROOT / "ui/fonts").glob("*.ttf"))],
         (ROOT / "ui/fonts/OFL.txt", "usr/share/doc/polyos-shell/Poppins-OFL.txt", 0o644),
@@ -341,7 +350,10 @@ def cmd_dev(args) -> None:
     from polyos.server import Server
 
     BUILD.mkdir(exist_ok=True)
-    backend = MockBackend(Settings(BUILD / "dev-settings.json"), EventBus(), live=args.live)
+    settings_path = BUILD / ("dev-settings-live.json" if args.live else "dev-settings.json")
+    if args.live:
+        settings_path.unlink(missing_ok=True)  # a live USB starts fresh every boot
+    backend = MockBackend(Settings(settings_path), EventBus(), live=args.live)
     server = Server(backend, ROOT / "ui", secrets.token_urlsafe(24), dev=True, port=args.port)
     server.start()
     url = f"{server.base_url}/"
@@ -403,7 +415,7 @@ def cmd_check(_args) -> None:
 
 def cmd_deb(args) -> None:
     print(f"Building PolyOS {VERSION} packages")
-    build_debs(Path(args.out))
+    build_debs(Path(args.out).resolve())
 
 
 def cmd_install(args) -> None:
@@ -471,7 +483,7 @@ def cmd_iso(args) -> None:
        "--memtest", "none",
        "--mirror-bootstrap", mirror,
        "--mirror-binary", mirror,
-       "--bootappend-live", "boot=live components quiet splash username=polyos hostname=polyos",
+       "--bootappend-live", "boot=live components quiet splash noeject username=polyos hostname=polyos",
        "--iso-application", "PolyOS",
        "--iso-publisher", "PolyOS Team",
        "--iso-volume", f"PolyOS {VERSION}",
@@ -572,12 +584,81 @@ def _logo_polygons(size: int, offset=(0, 0)) -> list[list[tuple[float, float]]]:
     return polys
 
 
+def _crystal_wallpaper(path: Path, w: int = 2560, h: int = 1600, seed: int = 7) -> None:
+    """PolyOS 7 "Crystal": an original low-poly crystal field in the PolyOS palette (setup backdrop)."""
+    import math
+    import random
+
+    from PIL import Image, ImageDraw, ImageFilter
+
+    rnd = random.Random(seed)
+    ss = 2
+    W, H = w * ss, h * ss
+    stops = [(0.00, (30, 20, 64)), (0.28, (84, 58, 170)), (0.50, (103, 143, 217)), (0.70, (95, 196, 196)),
+             (0.86, (190, 130, 220)), (1.00, (230, 140, 184))]
+
+    def field(x: float, y: float) -> tuple[float, float, float]:
+        t = 0.55 * x + 0.45 * (1 - y) + 0.08 * math.sin(6 * x + 3 * y) + 0.06 * math.sin(11 * y - 4 * x)
+        t = min(1.0, max(0.0, t))
+        for (t0, c0), (t1, c1) in zip(stops, stops[1:]):
+            if t <= t1:
+                k = (t - t0) / (t1 - t0)
+                return tuple(a + (b - a) * k for a, b in zip(c0, c1))
+        return stops[-1][1]
+
+    cols, rows = 30, 19
+    pts = {}
+    for r in range(rows + 1):
+        for c in range(cols + 1):
+            x, y = c / cols, r / rows
+            if 0 < c < cols:
+                x += rnd.uniform(-0.38, 0.38) / cols
+            if 0 < r < rows:
+                y += rnd.uniform(-0.38, 0.38) / rows
+            pts[r, c] = (x, y, rnd.uniform(0, 1))  # z: facet height, for lighting
+    light = (-0.45, -0.65, 0.62)
+    img = Image.new("RGB", (W, H))
+    draw = ImageDraw.Draw(img)
+    for r in range(rows):
+        for c in range(cols):
+            a, b, cc, d = pts[r, c], pts[r, c + 1], pts[r + 1, c + 1], pts[r + 1, c]
+            tris = [(a, b, cc), (a, cc, d)] if rnd.random() < 0.5 else [(a, b, d), (b, cc, d)]
+            for tri in tris:
+                (x1, y1, z1), (x2, y2, z2), (x3, y3, z3) = tri
+                ux, uy, uz = x2 - x1, y2 - y1, (z2 - z1) * 0.06
+                vx, vy, vz = x3 - x1, y3 - y1, (z3 - z1) * 0.06
+                nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+                n = math.sqrt(nx * nx + ny * ny + nz * nz) or 1
+                shade = (nx * light[0] + ny * light[1] + nz * light[2]) / n
+                shade = shade if nz >= 0 else -shade
+                cx, cy = (x1 + x2 + x3) / 3, (y1 + y2 + y3) / 3
+                base = field(cx, cy)
+                k = 0.78 + 0.42 * shade + rnd.uniform(-0.04, 0.04)
+                glint = 1.0 + (0.35 if rnd.random() < 0.035 else 0.0)  # a few bright crystal faces
+                color = tuple(max(0, min(255, int(v * k * glint))) for v in base)
+                draw.polygon([(x1 * W, y1 * H), (x2 * W, y2 * H), (x3 * W, y3 * H)], fill=color)
+    img = img.resize((w, h), Image.Resampling.LANCZOS)
+    glow = img.filter(ImageFilter.GaussianBlur(60))
+    img = Image.blend(img, glow, 0.22)
+    # soft vignette so white text stays readable on top
+    shade = Image.new("L", (w, h), 0)
+    sd = ImageDraw.Draw(shade)
+    for i in range(24):
+        inset = int(i * min(w, h) / 60)
+        sd.rectangle([inset, inset, w - inset, h - inset], outline=int(150 - i * 6.2))
+    shade = shade.filter(ImageFilter.GaussianBlur(80))
+    img = Image.composite(Image.new("RGB", (w, h), (12, 10, 24)), img, shade)
+    img.save(path, quality=88, optimize=True, progressive=True)
+
+
 def cmd_branding(_args) -> None:
     """Render the PNG artwork for the boot splash and the installer (needs Pillow)."""
     try:
         from PIL import Image, ImageDraw, ImageFilter, ImageFont
     except ImportError:
         sys.exit("This needs Pillow:  python -m pip install pillow")
+    _crystal_wallpaper(ROOT / "data/wallpapers/polyos-crystal.jpg")
+    print("  wrote data/wallpapers/polyos-crystal.jpg")
     ss = 4  # supersample for smooth edges
 
     def logo(size: int, color=(255, 255, 255, 255)) -> Image.Image:

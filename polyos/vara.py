@@ -2,7 +2,7 @@
 
 Simple requests ("open firefox", "volume 40", "turn wifi off", "lock") are handled right here
 on the computer. Everything else goes to a chat model through any OpenAI-compatible API:
-a local Ollama by default, or a cloud provider configured in Settings > Vara. The API key
+Ollama Cloud by default (with the person's own API key), or any provider set in Settings > Vara. The API key
 lives in ~/.config/polyos/vara.json (mode 600) and is never sent back to the UI.
 """
 
@@ -19,7 +19,10 @@ from pathlib import Path
 
 from .core import ApiError
 
-DEFAULT_CONFIG = {"endpoint": "http://127.0.0.1:11434/v1", "model": "llama3.2", "apiKey": ""}
+# Vara talks to Ollama Cloud by default; each person adds their own API key (Settings > Vara
+# or first-run setup). Any OpenAI-compatible service works, including a local Ollama.
+DEFAULT_CONFIG = {"endpoint": "https://ollama.com/v1", "model": "gpt-oss:120b", "apiKey": ""}
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 HISTORY_LIMIT = 24
 SYSTEM_PROMPT = (
     "You are Vara, the assistant built into PolyOS, a desktop operating system based on Debian and "
@@ -46,7 +49,7 @@ class VaraConfig:
 
     def public(self) -> dict:
         cfg = self.load()
-        return {"endpoint": cfg["endpoint"], "model": cfg["model"], "hasKey": bool(cfg["apiKey"])}
+        return {"endpoint": cfg["endpoint"], "model": cfg["model"], "hasKey": bool(cfg["apiKey"]), "needsKey": needs_key(cfg)}
 
     def update(self, endpoint: str | None, model: str | None, api_key: str | None) -> dict:
         with self._lock:
@@ -68,8 +71,15 @@ class VaraConfig:
         return self.public()
 
 
+def needs_key(cfg: dict) -> bool:
+    return not cfg.get("apiKey") and not any(h in cfg["endpoint"] for h in LOCAL_HOSTS)
+
+
 def complete(cfg: dict, messages: list[dict], timeout: float = 90) -> str:
     """One chat completion from an OpenAI-compatible endpoint."""
+    if needs_key(cfg):
+        raise RuntimeError("Vara needs an API key to chat. Add yours in Settings > Vara (Ollama Cloud keys are free "
+                           "at ollama.com). Simple requests like “open firefox” work without one.")
     body = json.dumps({"model": cfg["model"], "messages": messages, "stream": False}).encode()
     headers = {"Content-Type": "application/json"}
     if cfg.get("apiKey"):
@@ -93,7 +103,7 @@ def complete(cfg: dict, messages: list[dict], timeout: float = 90) -> str:
         raise RuntimeError(f"The AI service returned an error ({exc.code}). {detail}".strip()) from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise RuntimeError(
-            f"Vara couldn't reach an AI model at {cfg['endpoint']}. Install Ollama or add a provider "
+            f"Vara couldn't reach {cfg['endpoint']}. Check your internet connection, or change the provider "
             "in Settings > Vara. Simple requests like “open firefox” still work."
         ) from None
     try:

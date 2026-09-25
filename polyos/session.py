@@ -14,8 +14,9 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 
-from . import paths, system
+from . import paths, system, theme
 from .backend import PANEL_HEIGHT
 from .core import Settings
 
@@ -63,6 +64,12 @@ class Session:
         dirs = os.environ.get("XDG_CONFIG_DIRS") or "/etc/xdg"
         if str(paths.XDG_DIR) not in dirs.split(":"):
             os.environ["XDG_CONFIG_DIRS"] = f"{paths.XDG_DIR}:{dirs}"  # our GTK defaults first
+        # apps installed from Flathub (PolyMarket) show up in the launcher right away
+        data = [d for d in (os.environ.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share").split(":") if d]
+        for extra in (str(Path.home() / ".local/share/flatpak/exports/share"), "/var/lib/flatpak/exports/share"):
+            if extra not in data:
+                data.insert(0, extra)
+        os.environ["XDG_DATA_DIRS"] = ":".join(data)
         if paths.IN_REPO:
             os.environ["PATH"] = f"{paths.BIN_DIR}:{os.environ.get('PATH', '')}"
 
@@ -88,11 +95,11 @@ class Session:
             subprocess.run(["dbus-update-activation-environment", "--systemd", *names], check=False,
                            stdout=self.helper_log, stderr=subprocess.STDOUT)
 
-    def start_window_manager(self, scale: int) -> None:
+    def start_window_manager(self, scale: int, appearance: str) -> None:
         user_rc = paths.config_dir() / "openbox" / "rc.xml"
         source = user_rc if user_rc.is_file() else paths.OPENBOX_RC
         rc_path = paths.runtime_dir() / "openbox-rc.xml"
-        rc_path.write_text(source.read_text("utf-8").replace("@PANEL_MARGIN@", str(PANEL_HEIGHT * scale)), "utf-8")
+        rc_path.write_text(theme.openbox_rc(source.read_text("utf-8"), appearance, PANEL_HEIGHT * scale), "utf-8")
         if self.spawn(["openbox", "--config-file", str(rc_path)]) is None:
             log.error("openbox is missing; windows will have no decorations")
             return
@@ -172,7 +179,11 @@ class Session:
         self.update_activation_env()
         if system.have("xsetroot"):
             subprocess.run(["xsetroot", "-solid", "#151515", "-cursor_name", "left_ptr"], check=False)
-        self.start_window_manager(scale)
+        try:
+            theme.apply_gtk(settings.get("theme"))
+        except OSError as exc:
+            log.warning("could not write GTK settings: %s", exc)
+        self.start_window_manager(scale, settings.get("theme"))
         if settings.get("effects"):
             self.start_compositor()
         self.start_helpers()

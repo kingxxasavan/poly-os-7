@@ -12,6 +12,9 @@ const surfaces = {
   files: () => import('./surfaces/files.js'),
   setup: () => import('./surfaces/setup.js'),
   greeter: () => import('./surfaces/greeter.js'),
+  taskmgr: () => import('./surfaces/taskmgr.js'),
+  drivers: () => import('./surfaces/drivers.js'),
+  store: () => import('./surfaces/store.js'),
 };
 
 async function resync() {

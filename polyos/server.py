@@ -108,6 +108,12 @@ GET_API = {
     "/api/greeter/state": lambda be, q: be.greeter_state(),
     "/api/vara/history": lambda be, q: {"history": be.vara.history},
     "/api/vara/config": lambda be, q: be.vara.config.public(),
+    "/api/admin/status": lambda be, q: be.admin_status(),
+    "/api/jobs": lambda be, q: {"jobs": be.jobs.list()},
+    "/api/install/probe": lambda be, q: be.install_probe(),
+    "/api/drivers": lambda be, q: be.drivers_scan(),
+    "/api/store": lambda be, q: be.store_list(),
+    "/api/procs": lambda be, q: be.procs(),
 }
 
 
@@ -117,10 +123,25 @@ def _password(body: dict) -> str:
         raise ApiError("'password' must be a string")
     return value
 
+
+def _obj(body: dict, key: str) -> dict:
+    value = body.get(key)
+    if not isinstance(value, dict):
+        raise ApiError(f"'{key}' must be an object")
+    return value
+
+
+def _names(body: dict, key: str) -> list[str]:
+    value = body.get(key)
+    if not isinstance(value, list) or not value or len(value) > 40 or \
+            not all(isinstance(v, str) and 0 < len(v) <= 100 for v in value):
+        raise ApiError(f"'{key}' must be a list of names")
+    return value
+
 POST_API = {
     "/api/launch": lambda be, b: be.launch(_str(b, "id")),
     "/api/window": lambda be, b: be.window_action(
-        _int(b, "xid"), _choice(b, "action", ("activate", "minimize", "close", "toggle"))),
+        _int(b, "xid"), _choice(b, "action", ("activate", "minimize", "close", "toggle", "kill"))),
     "/api/volume": lambda be, b: be.set_volume(
         level=_opt_int(b, "level"), delta=_opt_int(b, "delta"),
         muted=_opt_bool(b, "muted"), toggle_mute=bool(_opt_bool(b, "toggleMute"))),
@@ -156,6 +177,13 @@ POST_API = {
     "/api/vara/test": lambda be, b: be.vara_test(),
     "/api/greeter/login": lambda be, b: be.greeter_login(_str(b, "user", 64), _password(b), _opt_str(b, "session")),
     "/api/greeter/power": lambda be, b: be.greeter_power(_choice(b, "action", ("shutdown", "restart", "suspend"))),
+    "/api/admin/auth": lambda be, b: be.admin_auth(_password(b)),
+    "/api/install/start": lambda be, b: be.install_start(_obj(b, "plan")),
+    "/api/drivers/install": lambda be, b: be.drivers_install(_names(b, "packages")),
+    "/api/store/install": lambda be, b: be.store_action(_str(b, "id", 60), "install"),
+    "/api/store/remove": lambda be, b: be.store_action(_str(b, "id", 60), "remove"),
+    "/api/store/open": lambda be, b: be.store_open(_str(b, "id", 60)),
+    "/api/procs/end": lambda be, b: be.procs_end(_int(b, "pid"), bool(_opt_bool(b, "force"))),
 }
 
 
@@ -250,6 +278,9 @@ class _Handler(BaseHTTPRequestHandler):
             return self._file(be.file_raw(_q(query, "path") or ""), "no-cache")
         if path.startswith("/icon/app/"):
             data, ctype = be.app_icon(path[len("/icon/app/"):])
+            return self._bytes(data, ctype, "max-age=600")
+        if path.startswith("/icon/theme/"):
+            data, ctype = be.theme_icon(path[len("/icon/theme/"):])
             return self._bytes(data, ctype, "max-age=600")
         if path.startswith("/icon/window/"):
             try:
