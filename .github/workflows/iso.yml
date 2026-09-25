@@ -1,10 +1,13 @@
 # Builds the PolyOS live ISOs on GitHub's servers (Debian inside a privileged container):
 # amd64 for Intel/AMD PCs and arm64 for ARM64 UEFI computers, each on a runner of its own kind.
 #
-# Run it from the Actions tab ("Run workflow"). Tick "Publish as a GitHub Release" to publish
-# both ISOs as release v<version> (from polyos/__init__.py); otherwise it's a test build with
-# 14-day downloads on the run. Pushing a tag like v0.6.0 also publishes a release. The website's
-# Download buttons always offer the newest release.
+# Releases are automatic: raise __version__ in polyos/__init__.py on main and this builds both ISOs
+# and publishes them as release v<version>; the website's Download buttons offer the newest release
+# right away. A version that is already released isn't built again.
+#
+# By hand: the Actions tab ("Run workflow") makes a test build with 14-day downloads on the run, or,
+# with "Publish as a GitHub Release" ticked, publishes the current version. Pushing a tag like
+# v0.7.0 also publishes a release.
 name: Build PolyOS ISO
 
 on:
@@ -20,7 +23,13 @@ on:
         type: boolean
         default: false
   push:
+    branches: [main]
+    paths: [polyos/__init__.py]  # the version number lives here
     tags: ["v*"]
+
+concurrency:
+  group: iso-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write  # publishing releases
@@ -32,6 +41,7 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     outputs:
+      build: ${{ steps.kind.outputs.build }}
       publish: ${{ steps.kind.outputs.publish }}
       tag: ${{ steps.kind.outputs.tag }}
     steps:
@@ -42,18 +52,32 @@ jobs:
 
       - name: Release or test build?
         id: kind
+        env:
+          RELEASE_INPUT: ${{ inputs.release }}
         run: |
+          version="v$(python3 -c 'import polyos; print(polyos.__version__)')"
+          build=true publish=false tag=""
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"; echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
-          elif [ "${{ inputs.release }}" = "true" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "tag=v$(python3 -c 'import polyos; print(polyos.__version__)')" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish=false" >> "$GITHUB_OUTPUT"
+            publish=true tag="$GITHUB_REF_NAME"
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            # polyos/__init__.py changed on main: a new version is released, the same one isn't rebuilt
+            if git ls-remote --exit-code --tags origin "refs/tags/$version" > /dev/null; then
+              echo "::notice::$version is already released; nothing to build."
+              build=false
+            else
+              found=$?
+              [ "$found" -eq 2 ] || exit "$found"  # 2: no such tag; anything else is a real error
+              publish=true tag="$version"
+            fi
+          elif [ "$RELEASE_INPUT" = "true" ]; then
+            publish=true tag="$version"
           fi
+          { echo "build=$build"; echo "publish=$publish"; echo "tag=$tag"; } >> "$GITHUB_OUTPUT"
+          echo "version $version: build=$build publish=$publish tag=$tag"
 
   iso:
     needs: setup
+    if: ${{ needs.setup.outputs.build == 'true' }}
     strategy:
       fail-fast: false  # one architecture failing still publishes the other
       matrix:

@@ -180,11 +180,14 @@ everything offline. Models without tool calling still chat.
 in UTM, Parallels or VMware Fusion; ARM cloud servers). `sudo python3 main.py iso` builds the one for
 the computer it runs on (`--arch`); GitHub Actions builds both.
 
-**Publishing a new release:** bump `__version__` in `polyos/__init__.py` and push it to `main`.
-Then on GitHub open **Actions → Build PolyOS ISO → Run workflow**, tick **Publish as a GitHub
-Release**, and run it (or push a tag like `v0.6.0`). About an hour later the ISO is published with
-a `SHA256SUMS` file as release `v<version>` (split into parts if it's ever over GitHub's 2 GB file
-limit), and the website's Download button offers it automatically.
+**Publishing a new release is automatic:** raise `__version__` in `polyos/__init__.py` (say
+`0.6.0` → `0.6.1`) and push it to `main`. GitHub builds both ISOs and, about 15 minutes later,
+publishes them with a `SHA256SUMS` file as release `v<version>` (split into parts if one is ever
+over GitHub's 2 GB file limit). The website's Download buttons offer the new release as soon as it
+appears; nothing on the website needs changing. Pushes that don't change the version don't build
+anything, and a version that's already released isn't built again. To publish by hand instead, run
+**Actions → Build PolyOS ISO → Run workflow** with **Publish as a GitHub Release** ticked, or push
+a tag like `v0.7.0`.
 
 An ISO has to be built on Linux. Three ways:
 

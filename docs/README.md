@@ -26,9 +26,9 @@ into a real desktop that installs and boots on a PC, on top of Debian.
 
 The website's **Download** buttons (one for Intel/AMD PCs, one for ARM64) always offer the newest
 [release](https://github.com/kingxxasavan/poly-os-7-debain-receration/releases/latest): it asks GitHub for the
-latest release when the page loads, so publishing a release (Actions → Build PolyOS ISO → Run
-workflow with **Publish as a GitHub Release** ticked, see the main README) updates the site with
-no changes here.
+latest release when the page loads, so a new release reaches the site with no changes here.
+Releases themselves are automatic: raising the version in `polyos/__init__.py` on `main` builds
+both ISOs and publishes them (see the main README).
 
 ## Screenshots
 
