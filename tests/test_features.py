@@ -320,12 +320,23 @@ class EditionTests(unittest.TestCase):
     def test_cloud_shortcuts(self):
         from polyos import gaming
 
+        from polyos.core import Settings
+
+        self.assertIn("Exec=polyos-ctl cloud xcloud", gaming.shortcut("xcloud"))  # shipped in the package
+        self.assertEqual(gaming.cloud_id("polyos-cloud-luna.desktop"), "luna")
+        self.assertIsNone(gaming.cloud_id("steam.desktop"))
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            self.assertEqual(gaming.set_shortcuts(home, ["geforcenow", "xcloud"]), ["geforcenow", "xcloud"])
-            text = (gaming.apps_dir(home) / "polyos-cloud-xcloud.desktop").read_text()
-            self.assertIn("Exec=polyos-ctl cloud xcloud", text)
-            self.assertEqual(gaming.set_shortcuts(home, ["xcloud"]), ["xcloud"])
+            settings = Settings(home / "settings.json")
+            self.assertEqual(gaming.enabled(settings, home), [])
+            # a launcher left from before PolyOS shipped them still counts, and is tidied away
+            gaming.apps_dir(home).mkdir(parents=True)
+            (gaming.apps_dir(home) / "polyos-cloud-luna.desktop").write_text(gaming.shortcut("luna"))
+            self.assertEqual(gaming.enabled(settings, home), ["luna"])
+            self.assertEqual(gaming.set_enabled(settings, home, ["xcloud", "geforcenow"]), ["geforcenow", "xcloud"])
+            self.assertFalse((gaming.apps_dir(home) / "polyos-cloud-luna.desktop").exists())
+            self.assertEqual(settings.get("cloudGaming"), ["geforcenow", "xcloud"])
+            self.assertEqual(gaming.set_enabled(settings, home, []), [])
         have = lambda exe: exe == "chromium"  # noqa: E731
         self.assertEqual(gaming.browser_command("https://x", have, set())[:2], ["chromium", "--app=https://x"])
         self.assertEqual(gaming.browser_command("https://x", have, {"com.google.Chrome"})[:3],
@@ -415,3 +426,142 @@ class Arm64Tests(unittest.TestCase):
         self.assertIn("steam", {a["id"] for a in store.for_arch(data, "amd64")["apps"]})
         self.assertFalse(store.available({"arches": ["amd64"]}, "arm64"))
         self.assertTrue(store.available({}, "arm64"))
+
+
+class AppsPageTests(unittest.TestCase):
+    """Settings > Apps: startup apps and where installed apps came from."""
+
+    def test_startup_entries(self):
+        from polyos import startup
+
+        with tempfile.TemporaryDirectory() as tmp:
+            system, home = Path(tmp) / "xdg", Path(tmp) / "home"
+            system.mkdir()
+            (system / "nm-applet.desktop").write_text("[Desktop Entry]\nType=Application\nName=Network\nExec=nm-applet\n")
+            (system / "gnome-only.desktop").write_text("[Desktop Entry]\nType=Application\nName=G\nOnlyShowIn=GNOME;\n")
+            (system / "polyos-agent.desktop").write_text("[Desktop Entry]\nType=Application\nName=PolyOS\n")
+            names = lambda: [(e["id"], e["enabled"]) for e in startup.entries(home, [system], ["PolyOS"])]  # noqa: E731
+            self.assertEqual(names(), [("nm-applet.desktop", True), ("polyos-agent.desktop", True)])
+            startup.set_enabled(home, "nm-applet.desktop", False, [system])
+            self.assertIn("Hidden=true", (home / ".config/autostart/nm-applet.desktop").read_text())
+            self.assertEqual(names()[0], ("nm-applet.desktop", False))
+            startup.set_enabled(home, "nm-applet.desktop", True, [system])
+            self.assertFalse((home / ".config/autostart/nm-applet.desktop").exists())  # the override is gone
+            with self.assertRaises(ValueError):
+                startup.set_enabled(home, "polyos-agent.desktop", False, [system])
+            with self.assertRaises(ValueError):
+                startup.set_enabled(home, "../../etc/passwd", False, [system])
+            # your own: add, switch off (kept, Hidden), remove
+            launcher = Path(tmp) / "code.desktop"
+            launcher.write_text("[Desktop Entry]\nType=Application\nName=Code\nExec=code\n[Desktop Action new]\nName=New\n")
+            startup.add(home, launcher)
+            mine = next(e for e in startup.entries(home, [system], ["PolyOS"]) if e["id"] == "code.desktop")
+            self.assertTrue(mine["own"] and mine["enabled"])
+            startup.set_enabled(home, "code.desktop", False, [system])
+            text = (home / ".config/autostart/code.desktop").read_text()
+            self.assertIn("Hidden=true", text.split("[Desktop Action new]")[0])  # in the right section
+            startup.remove(home, "code.desktop", [system])
+            self.assertNotIn("code.desktop", [e["id"] for e in startup.entries(home, [system], ["PolyOS"])])
+
+    def test_app_origins(self):
+        self.assertEqual(store.parse_dpkg_search("firefox-esr: /usr/share/applications/firefox-esr.desktop\n"
+                                                 "libreoffice-writer:amd64, x: /usr/share/applications/w.desktop\n"
+                                                 "diversion by foo from: /x\n"),
+                         {"/usr/share/applications/firefox-esr.desktop": "firefox-esr",
+                          "/usr/share/applications/w.desktop": "libreoffice-writer"})
+        with tempfile.TemporaryDirectory() as tmp:
+            home, system, flat = Path(tmp) / "home", Path(tmp) / "apps", Path(tmp) / "flatpak/exports/share/applications"
+            for d in (system, flat, home / ".local/share/applications"):
+                d.mkdir(parents=True)
+            (system / "vlc.desktop").write_text("x")
+            (flat / "com.spotify.Client.desktop").write_text("x")
+            (home / ".local/share/applications/my.desktop").write_text("x")
+            dirs = [str(system), str(flat)]
+            self.assertEqual(store.app_origin("vlc.desktop", home, dirs)["kind"], "debian")
+            spotify = store.app_origin("com.spotify.Client.desktop", home, dirs)
+            self.assertEqual((spotify["kind"], spotify["ref"], spotify["user"]), ("flatpak", "com.spotify.Client", False))
+            self.assertEqual(store.app_origin("my.desktop", home, dirs)["kind"], "local")
+            self.assertEqual(store.app_origin("../x.desktop", home, dirs)["kind"], "unknown")
+
+
+class DisplaySoundTests(unittest.TestCase):
+    """Settings > Display (xrandr modes) and Sound (pactl devices)."""
+
+    XRANDR = """Screen 0: minimum 320 x 200, current 4480 x 1440, maximum 16384 x 16384
+eDP-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 309mm x 174mm
+   1920x1080     60.01*+  59.97    48.00
+   1280x720      60.00
+HDMI-1 connected 1080x1920+1920+0 left (normal left inverted right x axis y axis) 597mm x 336mm
+   2560x1440    143.97 + 120.00    59.95
+   1920x1080    144.00   120.00    60.00*
+   1920x1080i    60.00
+DP-1 disconnected (normal left inverted right x axis y axis)
+VGA-1 connected (normal left inverted right x axis y axis)
+   1024x768      60.00 +
+"""
+
+    def test_parse_xrandr(self):
+        from polyos import display
+
+        outs = {o["name"]: o for o in display.parse_xrandr(self.XRANDR)}
+        self.assertEqual(sorted(outs), ["HDMI-1", "VGA-1", "eDP-1"])
+        edp, hdmi, vga = outs["eDP-1"], outs["HDMI-1"], outs["VGA-1"]
+        self.assertEqual((edp["primary"], edp["mode"], edp["rate"], edp["preferred"]), (True, "1920x1080", 60.01, "1920x1080"))
+        self.assertEqual(edp["modes"][0]["rates"], [60.01, 59.97, 48.0])
+        self.assertEqual((hdmi["mode"], hdmi["rate"], hdmi["rotation"], hdmi["preferred"]), ("1920x1080", 60.0, "left", "2560x1440"))
+        self.assertEqual([m["size"] for m in hdmi["modes"]], ["2560x1440", "1920x1080"])  # the interlaced line merges in
+        self.assertFalse(vga["active"])
+        self.assertEqual(vga["preferred"], "1024x768")
+
+    def test_validate_and_command(self):
+        from polyos import display
+
+        outs = display.parse_xrandr(self.XRANDR)
+        display.validate(outs, "HDMI-1", "2560x1440", 143.97, "normal")
+        for bad in (("DP-1", None, None, None), ("HDMI-1", "800x600", None, None),
+                    ("HDMI-1", "2560x1440", 100.0, None), ("eDP-1", None, None, "sideways")):
+            with self.assertRaises(ValueError):
+                display.validate(outs, *bad)
+        self.assertEqual(display.command("HDMI-1", "2560x1440", 143.97, "normal", True),
+                         ["xrandr", "--output", "HDMI-1", "--mode", "2560x1440", "--rate", "143.97", "--rotate", "normal", "--primary"])
+
+    def test_displays_setting(self):
+        from polyos.core import Settings
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(Path(tmp) / "s.json")
+            settings.update({"displays": {"HDMI-1": {"size": "2560x1440", "rate": 143.97, "primary": True}}})
+            self.assertEqual(settings.get("displays")["HDMI-1"]["rotation"], "normal")
+            for bad in ({"HDMI-1": {"size": "big"}}, {"HDMI-1": {"rate": 5000}}, {"../x": {}}, {"A": {"rotation": "up"}}):
+                with self.assertRaises(ApiError):
+                    settings.update({"displays": bad})
+
+    def test_pactl_devices(self):
+        from polyos import system
+
+        sinks = json.dumps([{"name": "alsa_output.analog", "description": "Speakers", "mute": False,
+                             "volume": {"front-left": {"value_percent": "40%"}, "front-right": {"value_percent": "60%"}}}])
+        sources = json.dumps([{"name": "alsa_output.analog.monitor", "description": "Monitor of Speakers", "monitor_of_sink": "alsa_output.analog"},
+                              {"name": "alsa_input.mic", "description": "Microphone", "mute": True, "monitor_of_sink": "n/a",
+                               "volume": {"mono": {"value_percent": "70%"}}}])
+        self.assertEqual(system.parse_pactl_devices(sinks), [{"name": "alsa_output.analog", "description": "Speakers", "level": 50, "muted": False}])
+        self.assertEqual(system.parse_pactl_devices(sources, inputs=True),
+                         [{"name": "alsa_input.mic", "description": "Microphone", "level": 70, "muted": True}])
+        self.assertEqual(system.parse_pactl_devices("not json"), [])
+
+    def test_mock_routes(self):
+        from polyos.core import EventBus, Settings
+        from polyos.mock import MockBackend
+
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = MockBackend(Settings(Path(tmp) / "settings.json"), EventBus(), home=Path(tmp) / "home")
+            r = backend.displays_set("HDMI-1", "1920x1080", 144.0, "normal", True)
+            hdmi = next(o for o in r["outputs"] if o["name"] == "HDMI-1")
+            self.assertEqual((hdmi["mode"], hdmi["rate"], hdmi["primary"]), ("1920x1080", 144.0, True))
+            self.assertTrue(backend.settings.get("displays")["HDMI-1"]["primary"])
+            with self.assertRaises(ApiError):
+                backend.displays_set("HDMI-1", "1920x1080", 75.0, None, False)
+            d = backend.sound_set_device("output", "bluez_output.AC_12_2F.1")
+            self.assertEqual(d["defaultOutput"], "bluez_output.AC_12_2F.1")
+            with self.assertRaises(ApiError):
+                backend.sound_set_device("input", "nope")

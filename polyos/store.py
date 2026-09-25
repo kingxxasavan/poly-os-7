@@ -91,6 +91,45 @@ def installed_launcher(app: dict, home: Path, dirs=LAUNCHER_DIRS) -> str | None:
     return None
 
 
+DESKTOP_ID = re.compile(r"^[\w.+-]{1,120}\.desktop$")
+
+
+def launcher_path(desktop_id: str, home: Path, dirs=LAUNCHER_DIRS) -> Path | None:
+    """The .desktop file behind an app (yours first, as the launcher list sees it)."""
+    if not DESKTOP_ID.match(desktop_id):
+        return None
+    for folder in [home / ".local/share/applications", home / ".local/share/flatpak/exports/share/applications", *map(Path, dirs)]:
+        if (folder / desktop_id).is_file():
+            return folder / desktop_id
+    return None
+
+
+def app_origin(desktop_id: str, home: Path, dirs=LAUNCHER_DIRS) -> dict:
+    """Where an app came from: a Debian package, a Flatpak (system or yours), or a launcher in your home folder."""
+    path = launcher_path(desktop_id, home, dirs)
+    if path is None:
+        return {"kind": "unknown"}
+    mine = home in path.parents
+    if "/flatpak/exports/" in str(path):
+        return {"kind": "flatpak", "path": str(path), "ref": desktop_id[:-len(".desktop")], "user": mine}
+    return {"kind": "local" if mine else "debian", "path": str(path)}
+
+
+def parse_dpkg_search(text: str) -> dict[str, str]:
+    """`dpkg -S FILE...` lines ("pkg: /path", "pkg1, pkg2: /path") -> {path: first package}."""
+    owners = {}
+    for line in text.splitlines():
+        if line.startswith("diversion ") or ": " not in line:
+            continue
+        pkgs, path = line.split(": ", 1)
+        owners[path.strip()] = pkgs.split(",")[0].strip().split(":")[0]  # drop the :arch suffix
+    return owners
+
+
+def debian_owners(paths: list[str]) -> dict[str, str]:
+    return parse_dpkg_search(_run(["dpkg", "-S", *paths], timeout=30)) if paths and shutil.which("dpkg") else {}
+
+
 def load(path: Path | None = None) -> dict:
     data = json.loads((path or paths.STORE_CATALOG).read_text("utf-8"))
     validate(data)

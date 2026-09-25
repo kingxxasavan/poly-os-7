@@ -6,6 +6,7 @@
     polyos-admin drivers PACKAGE...        driver packages (names must match drivers.DRIVER_PACKAGE_RE)
     polyos-admin account FILE              for the sudo user: {"password"} and/or {"recoveryKey"} (file deleted)
     polyos-admin reboot                    restart right away (after installing, from the live USB)
+    polyos-admin app remove DESKTOP_ID     Settings > Apps: uninstall the Debian package or Flatpak behind an app
     polyos-admin disk delete DISK NUMBER   the installer's drive screen: delete a partition (live USB only)
     polyos-admin disk new DISK START BYTES     ... or make one in unallocated space (START in sectors)
     polyos-admin pack NAME ID...           an edition's apps (gaming, developer), only ids in its catalog pack
@@ -182,6 +183,32 @@ def has_candidate(package: str) -> bool:
     return bool(m) and m.group(1) != "(none)"
 
 
+def app_remove(desktop_id: str) -> None:
+    """Uninstall whatever put this app's launcher on the system; never a part of PolyOS."""
+    path = next((Path(d) / desktop_id for d in store.LAUNCHER_DIRS
+                 if store.DESKTOP_ID.match(desktop_id) and (Path(d) / desktop_id).is_file()), None)
+    if path is None:
+        raise AdminError("That app isn't installed for everyone, or it's already gone.")
+    if "/flatpak/exports/" in str(path):
+        emit({"progress": 0.2, "message": "Removing the app…"})
+        flatpak(["uninstall", "--system", "-y", "--noninteractive", desktop_id[:-len(".desktop")]])
+        emit({"progress": 1.0, "message": "Removed."})
+        return
+    owners = store.parse_dpkg_search(subprocess.run(["dpkg", "-S", str(path)], capture_output=True, text=True, timeout=30).stdout)
+    package = owners.get(str(path))
+    if not package:
+        raise AdminError("PolyOS couldn't tell which package this app came from.")
+    sim = subprocess.run(["apt-get", "-s", "remove", package], capture_output=True, text=True, timeout=120,
+                         env={**os.environ, **APT_ENV})
+    removed = [line.split()[1] for line in sim.stdout.splitlines() if line.startswith("Remv ")]
+    if any(p.startswith("polyos") for p in removed) or sim.returncode != 0:
+        raise AdminError("This app is part of PolyOS, so it can't be removed.")
+    emit({"progress": 0.1, "message": "Removing the app…"})
+    apt(["remove", package], start=0.1)
+    apt(["autoremove"], start=0.9)
+    emit({"progress": 1.0, "message": "Removed."})
+
+
 def join_group(group: str) -> None:
     """Add the person who asked (sudo's SUDO_USER) to a group, e.g. docker, so it works without sudo."""
     user = os.environ.get("SUDO_USER", "")
@@ -333,6 +360,8 @@ def main(argv: list[str] | None = None) -> int:
             account(Path(rest[0]))
         elif cmd == "reboot":
             reboot()
+        elif cmd == "app" and len(rest) == 2 and rest[0] == "remove":
+            app_remove(rest[1])
         elif cmd == "disk" and rest[:1] in (["delete"], ["new"]):
             if not installer.LIVE_MEDIUM.exists():
                 raise AdminError("Drives can only be changed from the PolyOS USB drive.")

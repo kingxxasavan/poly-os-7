@@ -38,6 +38,7 @@ BUILD = ROOT / "build"
 sys.path.insert(0, str(ROOT))
 
 from polyos import __version__ as VERSION  # noqa: E402
+from polyos import gaming  # noqa: E402
 from polyos.arch import debian_arch  # noqa: E402
 
 MAINTAINER = "PolyOS Team <team@polyos.invalid>"  # set a real contact before publishing packages
@@ -76,10 +77,12 @@ PACKAGES = {
             "gir1.2-lightdm-1", "picom", "pipewire-audio", "wireplumber", "network-manager", "papirus-icon-theme",
             "fonts-inter | fonts-noto-core", "dbus-user-session", "xdg-user-dirs", "adwaita-icon-theme",
             "gvfs", "xfce4-terminal", "mousepad", "firefox-esr", "pciutils", "xcape", "systemd-timesyncd", "polkitd",
+            # advanced sound on every edition: the full mixer, and pactl for Settings > Sound's device lists
+            "pavucontrol", "pulseaudio-utils",
         ],
         "recommends": [
             "brightnessctl", "lxpolkit | mate-polkit", "xfce4-notifyd", "tumbler", "playerctl",
-            "xfce4-screenshooter", "fonts-noto-color-emoji", "network-manager-gnome", "pavucontrol",
+            "xfce4-screenshooter", "fonts-noto-color-emoji", "network-manager-gnome",
             "arandr", "ristretto", "file-roller", "gvfs-backends", "plymouth", "plymouth-label", "evince",
             "flatpak", "bluez", "blueman", "usbutils", "isenkram-cli", "mokutil", "libxss1", "ufw",
             "unattended-upgrades", "zram-tools", "gamemode",
@@ -188,6 +191,8 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         (data / "xgreeters/polyos-greeter.desktop", "usr/share/xgreeters/polyos-greeter.desktop", 0o644),
         (data / "xsessions/polyos.desktop", "usr/share/xsessions/polyos.desktop", 0o644),
         *_tree(data / "applications", "usr/share/applications"),
+        # cloud gaming: one launcher per service, left out of your apps until switched on in Settings
+        *[(gaming.shortcut(cid).encode(), f"usr/share/applications/{gaming.PREFIX}{cid}.desktop", 0o644) for cid in gaming.CLOUD],
         *_tree(data / "openbox", "usr/share/polyos/openbox"),
         *_tree(data / "themes", "usr/share/themes"),
         *_tree(data / "picom", "usr/share/polyos/picom"),

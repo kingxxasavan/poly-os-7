@@ -35,7 +35,7 @@ except ValueError:
     gi.require_version("WebKit2", "4.0")
 from gi.repository import Gdk, GdkPixbuf, GdkX11, Gio, GLib, Gtk, WebKit2, Wnck  # noqa: E402
 
-from . import __version__, paths, power, system, theme  # noqa: E402
+from . import __version__, gaming, paths, power, system, theme  # noqa: E402
 from .backend import (CAMERA_APP, DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT,  # noqa: E402
                       Backend, dock_geometry, panel_margin)
 from .core import IMAGE_TYPES, ApiError, EventBus, Settings, bundled_icon, icon_names, letter_icon  # noqa: E402
@@ -116,6 +116,10 @@ class DesktopShell(Backend):
             WebKit2.UserContentInjectedFrames.TOP_FRAME,
             WebKit2.UserScriptInjectionTime.START, None, None))
 
+        try:
+            self.apply_saved_displays()  # the resolution and refresh rate chosen in Settings > Display
+        except Exception:  # noqa: BLE001 - a screen setting must never stop the desktop starting
+            log.exception("couldn't apply the saved display settings")
         self._load_apps()
         self._app_monitor = Gio.AppInfoMonitor.get()
         self._app_monitor.connect("changed", lambda *_: self._schedule_apps_reload())
@@ -426,6 +430,7 @@ class DesktopShell(Backend):
     def _load_apps(self) -> None:
         theme = Gtk.IconTheme.get_default()
         infos, apps, icons, themed_names = {}, [], {}, {}
+        cloud_on = set(gaming.enabled(self.settings, self.files.home))
         for info in Gio.AppInfo.get_all():
             if not isinstance(info, Gio.DesktopAppInfo) or not info.should_show():
                 continue
@@ -434,6 +439,9 @@ class DesktopShell(Backend):
                 continue
             if app_id == CAMERA_APP and not self._camera:
                 continue  # the Camera app only appears on computers with a webcam
+            cid = gaming.cloud_id(app_id)
+            if cid and cid not in cloud_on:
+                continue  # a cloud gaming service that isn't switched on (Settings > Gaming)
             infos[app_id] = info
             apps.append({
                 "id": app_id,
@@ -466,6 +474,9 @@ class DesktopShell(Backend):
         self._infos, self._apps, self._app_icons, self._wm_index = infos, apps, icons, index
         self._app_icon_names = themed_names
         self._icon_cache.clear()
+
+    def _apps_changed(self) -> None:
+        GLib.idle_add(lambda: self._schedule_apps_reload() and False)
 
     def _schedule_apps_reload(self) -> None:
         if self._apps_timer:

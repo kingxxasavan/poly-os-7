@@ -7,6 +7,7 @@ separate functions so they can be unit-tested on any OS.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import platform
@@ -511,3 +512,61 @@ def parse_xrandr_dpi(text: str) -> float | None:
 
 def auto_scale(dpi: float | None) -> int:
     return 2 if dpi and dpi >= 170 else 1
+
+
+# ---- Settings > Sound: output and input devices (pactl, which PipeWire answers too) ----------
+
+def _percent(volume) -> int:
+    """pactl JSON volume ({"front-left": {"value_percent": "65%"}, ...}) -> the average percent."""
+    values = []
+    for channel in (volume or {}).values():
+        try:
+            values.append(int(str(channel.get("value_percent", "0")).rstrip("%")))
+        except (ValueError, AttributeError):
+            pass
+    return round(sum(values) / len(values)) if values else 0
+
+
+def parse_pactl_devices(text: str, inputs: bool = False) -> list[dict]:
+    """`pactl --format=json list sinks|sources` -> [{name, description, level, muted}] (no monitors)."""
+    try:
+        items = json.loads(text or "[]")
+    except ValueError:
+        return []
+    out = []
+    for item in items if isinstance(items, list) else []:
+        name = item.get("name") or ""
+        if not name:
+            continue
+        if inputs and (name.endswith(".monitor") or item.get("monitor_of_sink") not in (None, "", "n/a")):
+            continue  # "Monitor of ..." captures an output, not a microphone
+        out.append({"name": name, "description": item.get("description") or name,
+                    "level": _percent(item.get("volume")), "muted": bool(item.get("mute"))})
+    return out
+
+
+def sound_devices() -> dict:
+    if not have("pactl"):
+        return {"available": False, "outputs": [], "inputs": [], "defaultOutput": None, "defaultInput": None}
+    outputs = parse_pactl_devices(run(["pactl", "--format=json", "list", "sinks"], 5)[1])
+    inputs = parse_pactl_devices(run(["pactl", "--format=json", "list", "sources"], 5)[1], inputs=True)
+    rc1, sink = run(["pactl", "get-default-sink"], 3)
+    rc2, source = run(["pactl", "get-default-source"], 3)
+    return {"available": True, "outputs": outputs, "inputs": inputs,
+            "defaultOutput": sink.strip() if rc1 == 0 else None, "defaultInput": source.strip() if rc2 == 0 else None}
+
+
+def set_default_device(kind: str, name: str) -> None:
+    known = sound_devices()["outputs" if kind == "output" else "inputs"]
+    if not any(d["name"] == name for d in known):
+        raise ValueError("That sound device isn't connected.")
+    rc, out = run(["pactl", "set-default-sink" if kind == "output" else "set-default-source", name], 5)
+    if rc != 0:
+        raise ValueError(out.strip() or "That device couldn't be chosen.")
+
+
+def set_input(level: int | None = None, muted: bool | None = None) -> None:
+    if level is not None:
+        run(["pactl", "set-source-volume", "@DEFAULT_SOURCE@", f"{clamp(level, 0, 150)}%"], 5)
+    if muted is not None:
+        run(["pactl", "set-source-mute", "@DEFAULT_SOURCE@", "1" if muted else "0"], 5)

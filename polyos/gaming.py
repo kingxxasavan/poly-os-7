@@ -1,9 +1,9 @@
 """PolyOS Gaming: cloud gaming shortcuts and opening them in the best browser for streaming.
 
 Cloud services stream games to a browser tab, so they need no install or graphics driver.
-They work best in a Chromium-based browser (Chrome from PolyMarket, or Chromium); Firefox is
-the fallback. Shortcuts are ordinary .desktop files in ~/.local/share/applications, so they
-show in the launcher and can be pinned or put on the desktop.
+PolyOS ships a launcher for each one (/usr/share/applications/polyos-cloud-*.desktop) and
+Chromium to run them in; a service's launcher stays out of your apps until you switch it on in
+Settings > Gaming (the "cloudGaming" setting), so turning one on installs nothing.
 """
 
 from __future__ import annotations
@@ -35,21 +35,30 @@ def apps_dir(home: Path) -> Path:
 
 
 def installed(home: Path) -> list[str]:
+    """Services switched on the old way (a launcher in your home folder, before PolyOS shipped them)."""
     folder = apps_dir(home)
     return [cid for cid in CLOUD if (folder / f"{PREFIX}{cid}.desktop").is_file()]
 
 
-def set_shortcuts(home: Path, wanted: list[str]) -> list[str]:
-    """Add the chosen services' shortcuts and remove the others. Returns what's installed now."""
-    folder = apps_dir(home)
-    folder.mkdir(parents=True, exist_ok=True)
+def enabled(settings, home: Path) -> list[str]:
+    """Services whose launcher shows in your apps."""
+    on = set(settings.get("cloudGaming") or []) | set(installed(home))
+    return [cid for cid in CLOUD if cid in on]
+
+
+def set_enabled(settings, home: Path, wanted: list[str]) -> list[str]:
+    """Switch services on or off (a setting); old per-person launchers are tidied away."""
     for cid in CLOUD:
-        path = folder / f"{PREFIX}{cid}.desktop"
-        if cid in wanted:
-            path.write_text(shortcut(cid), "utf-8")
-        else:
-            path.unlink(missing_ok=True)
-    return installed(home)
+        (apps_dir(home) / f"{PREFIX}{cid}.desktop").unlink(missing_ok=True)
+    settings.update({"cloudGaming": [cid for cid in CLOUD if cid in wanted]})
+    return enabled(settings, home)
+
+
+def cloud_id(app_id: str) -> str | None:
+    """polyos-cloud-xcloud.desktop -> xcloud"""
+    if app_id.startswith(PREFIX) and app_id.endswith(".desktop"):
+        return app_id[len(PREFIX):-len(".desktop")]
+    return None
 
 
 def browser_command(url: str, have=shutil.which, flatpaks: set[str] | None = None) -> list[str]:

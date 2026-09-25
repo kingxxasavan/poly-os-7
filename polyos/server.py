@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from .backend import OPEN_APPS, POWER_ACTIONS, RUN_TARGETS
+from .backend import MIXER_TABS, OPEN_APPS, POWER_ACTIONS, RUN_TARGETS
 from .core import IMAGE_TYPES, ApiError
 from .vara import tools_overview
 
@@ -64,6 +64,15 @@ def _int(body: dict, key: str) -> int:
     if value is None:
         raise ApiError(f"'{key}' is required")
     return value
+
+
+def _opt_rate(body: dict) -> float | None:
+    value = body.get("rate")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= 1000:
+        raise ApiError("'rate' must be a refresh rate in Hz")
+    return float(value)
 
 
 def _opt_bool(body: dict, key: str) -> bool | None:
@@ -122,6 +131,9 @@ GET_API = {
     "/api/power/modes": lambda be, q: be.power_modes(),
     "/api/packs": lambda be, q: be.packs(),
     "/api/gaming/cloud": lambda be, q: be.cloud_gaming(),
+    "/api/apps/manage": lambda be, q: be.apps_manage(),
+    "/api/sound/devices": lambda be, q: be.sound_devices(),
+    "/api/displays": lambda be, q: be.displays_list(),
     "/api/security": lambda be, q: be.security_status(),
     "/api/widgets/data": lambda be, q: be.widgets.data(),
     "/api/widgets/weather": lambda be, q: be.widgets.weather(),
@@ -222,6 +234,15 @@ POST_API = {
     "/api/lock": lambda be, b: be.lock(),
     "/api/packs/install": lambda be, b: be.pack_install(_str(b, "pack", 30), _names(b, "apps")),
     "/api/gaming/cloud": lambda be, b: be.cloud_gaming_set(_str_list_any(b, "services")),
+    "/api/apps/uninstall": lambda be, b: be.app_uninstall(_str(b, "id", 130)),
+    "/api/apps/startup": lambda be, b: be.startup_set(_str(b, "id", 130), bool(_opt_bool(b, "enabled"))),
+    "/api/apps/startup/add": lambda be, b: be.startup_add(_str(b, "id", 130)),
+    "/api/apps/startup/remove": lambda be, b: be.startup_remove(_str(b, "id", 130)),
+    "/api/sound/device": lambda be, b: be.sound_set_device(_choice(b, "kind", ("output", "input")), _str(b, "name", 300)),
+    "/api/sound/input": lambda be, b: be.sound_set_input(_opt_int(b, "level"), _opt_bool(b, "muted")),
+    "/api/sound/mixer": lambda be, b: be.sound_mixer(_choice(b, "tab", MIXER_TABS)),
+    "/api/displays": lambda be, b: be.displays_set(
+        _str(b, "name", 64), _opt_str(b, "size"), _opt_rate(b), _opt_str(b, "rotation"), bool(_opt_bool(b, "primary"))),
     "/api/security": lambda be, b: be.security_set(_choice(b, "what", ("firewall", "updates")), bool(_opt_bool(b, "on"))),
     "/api/dev": lambda be, b: be.dev_action(_choice(b, "action", ("folder", "source", "reset"))),
     "/api/lock/unlock": lambda be, b: be.lock_unlock(_password(b)),

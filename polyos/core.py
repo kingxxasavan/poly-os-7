@@ -43,6 +43,8 @@ DEFAULTS: dict = {
     "showSeconds": False,
     "desktopClock": False,
     "desktopIcons": ["polyos-files.desktop", "firefox-esr.desktop", "polyos-store.desktop"],  # shortcuts on the wallpaper
+    "cloudGaming": [],  # cloud gaming services shown in your apps (gaming.py)
+    "displays": {},  # each screen's resolution, refresh rate, orientation (display.py), applied at start
     "desktopOpen": "double",  # "double" | "single": clicks to open a desktop shortcut
     "pinned": [
         "firefox-esr.desktop",
@@ -126,6 +128,31 @@ def _pinned(value):
     return out
 
 
+def _cloud(value):
+    if not isinstance(value, list) or len(value) > 16 or not all(isinstance(v, str) and re.fullmatch(r"[a-z0-9]{1,24}", v) for v in value):
+        raise ValueError("expected a list of cloud gaming services")
+    return list(dict.fromkeys(value))
+
+
+def _displays(value):
+    """{"HDMI-1": {"size": "2560x1440", "rate": 143.97, "rotation": "normal", "primary": true}, ...}"""
+    if not isinstance(value, dict) or len(value) > 8:
+        raise ValueError("expected up to 8 screens")
+    out = {}
+    for name, cfg in value.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[\w.-]{1,32}", name) or not isinstance(cfg, dict):
+            raise ValueError("invalid screen")
+        size, rate, rotation = cfg.get("size"), cfg.get("rate"), cfg.get("rotation", "normal")
+        if size is not None and not (isinstance(size, str) and re.fullmatch(r"\d{2,5}x\d{2,5}", size)):
+            raise ValueError("invalid resolution")
+        if rate is not None and (isinstance(rate, bool) or not isinstance(rate, (int, float)) or not 10 <= rate <= 1000):
+            raise ValueError("invalid refresh rate")
+        if rotation not in ("normal", "left", "right", "inverted"):
+            raise ValueError("invalid orientation")
+        out[name] = {"size": size, "rate": rate, "rotation": rotation, "primary": bool(cfg.get("primary"))}
+    return out
+
+
 def _glass(value):
     if isinstance(value, int) and not isinstance(value, bool) and 30 <= value <= 100:
         return value
@@ -170,6 +197,8 @@ VALIDATORS = {
     "desktopClock": _bool,
     "lockWallpaper": _wallpaper,
     "desktopIcons": _pinned,
+    "cloudGaming": _cloud,
+    "displays": _displays,
     "desktopOpen": _choice("double", "single"),
     "taskbarStyle": _choice("floating", "full"),
     "taskbarAlign": _choice("center", "left"),

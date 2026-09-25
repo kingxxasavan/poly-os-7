@@ -6,11 +6,12 @@ import getpass
 import json
 import os
 import socket
+import subprocess
 import threading
 import time
 from pathlib import Path
 
-from . import __version__, devmode, drivers, gaming, paths, security, store
+from . import __version__, devmode, drivers, gaming, paths, security, startup, store
 from .core import DEFAULTS, IMAGE_TYPES, ApiError, EventBus, Settings, bundled_icon, letter_icon, log
 from .files import FileSystem
 from .privileged import Jobs
@@ -46,6 +47,7 @@ WALLPAPER_NAMES = {"polyos-prism": "Crystal", "polyos-amethyst": "Amethyst", "po
 WALLPAPER_ORDER = ("polyos-prism", "polyos-amethyst")
 POWER_ACTIONS = ("lock", "logout", "suspend", "reboot", "poweroff")
 RUN_TARGETS = ("terminal", "files", "browser")
+MIXER_TABS = {"playback": 1, "recording": 2, "output": 3, "input": 4, "configuration": 5}  # pavucontrol --tab
 OPEN_APPS = ("settings", "files", "setup", "taskmgr", "drivers", "store", "camera")
 CAMERA_APP = "polyos-camera.desktop"  # listed only when a webcam is connected
 CAMERA_TYPES = {"photo": {"image/jpeg": ".jpg", "image/png": ".png"},
@@ -465,15 +467,164 @@ class Backend:
         if new and len(icons) < 24:
             self.update_settings({"desktopIcons": (icons + new)[:24]})
 
+    # ---- Settings > Sound and Display ----------------------------------------------------------
+    def sound_devices(self) -> dict:
+        from . import system
+        return system.sound_devices()
+
+    def sound_set_device(self, kind: str, name: str) -> dict:
+        from . import system
+        try:
+            system.set_default_device(kind, name)
+        except ValueError as exc:
+            raise ApiError(str(exc)) from None
+        return self.sound_devices()
+
+    def sound_set_input(self, level: int | None, muted: bool | None) -> dict:
+        from . import system
+        system.set_input(level, muted)
+        return self.sound_devices()
+
+    def sound_mixer(self, tab: str) -> dict:
+        """Advanced sound settings: the PulseAudio mixer (installed with PolyOS) on the matching tab."""
+        from . import system
+        if not system.have("pavucontrol"):
+            raise ApiError("The advanced sound mixer (pavucontrol) isn't installed.")
+        system.spawn(["pavucontrol", f"--tab={MIXER_TABS[tab]}"])
+        return {"opened": tab}
+
+    def displays_list(self) -> dict:
+        from . import display, system
+        rc, out = system.run(["xrandr", "--query"], 10) if system.have("xrandr") else (1, "")
+        return {"outputs": display.parse_xrandr(out) if rc == 0 else [], "graphics": self.graphics_info()}
+
+    def displays_set(self, name: str, size: str | None, rate: float | None, rotation: str | None, primary: bool) -> dict:
+        """Change one screen right away; the setting keeps it for next time (the UI asks to keep or undo)."""
+        from . import display, system
+        outputs = self.displays_list()["outputs"]
+        try:
+            display.validate(outputs, name, size, rate, rotation)
+        except ValueError as exc:
+            raise ApiError(str(exc)) from None
+        rc, out = system.run(display.command(name, size, rate, rotation, primary), 15)
+        if rc != 0:
+            raise ApiError(out.strip() or "The screen couldn't be changed.")
+        saved = dict(self.settings.get("displays") or {})
+        if primary:
+            saved = {k: {**v, "primary": False} for k, v in saved.items()}
+        saved[name] = {"size": size, "rate": rate, "rotation": rotation or "normal", "primary": primary}
+        self.update_settings({"displays": saved})
+        return self.displays_list()
+
+    def apply_saved_displays(self) -> None:
+        """At start: the modes chosen in Settings, for the screens connected now (skipping anything they can't show)."""
+        from . import display, system
+        saved = self.settings.get("displays") or {}
+        if not saved:
+            return
+        outputs = self.displays_list()["outputs"]
+        for name, cfg in saved.items():
+            try:
+                display.validate(outputs, name, cfg.get("size"), cfg.get("rate"), cfg.get("rotation"))
+            except ValueError:
+                continue
+            system.run(display.command(name, cfg.get("size"), cfg.get("rate"), cfg.get("rotation"), cfg.get("primary")), 15)
+
+    def graphics_info(self) -> list[dict]:
+        """Graphics cards and the driver each uses (from lspci)."""
+        from . import drivers, system
+        if not system.have("lspci"):
+            return []
+        rc, out = system.run(["lspci", "-vmmknn"], 10)
+        if rc != 0:
+            return []
+        return [{"name": f"{d['vendor']} {d['device']}".strip(), "driver": d.get("driver") or ""}
+                for d in drivers.parse_lspci(out) if str(d.get("classId", "")).startswith("03")]
+
+    # ---- Settings > Apps: installed apps and startup apps ----------------------------------------
+    def _startup_dirs(self) -> list[Path]:
+        return startup.system_dirs()
+
+    def apps_manage(self) -> dict:
+        """Every app with where it came from and whether it can be uninstalled, and the startup apps."""
+        home = self.files.home
+        catalog = store.validate(store.load())
+        system_ids = {d for a in catalog.values() if a.get("system") for d in a.get("desktop") or []}
+        apps = [a for a in self.apps() if not a.get("hidden")]
+        origins = {a["id"]: self._app_origin(a["id"]) for a in apps}
+        owners = self._debian_owners([o["path"] for o in origins.values() if o["kind"] == "debian"])
+        items = []
+        for app in apps:
+            origin = origins[app["id"]]
+            package = owners.get(origin.get("path", ""))
+            part_of_polyos = app["id"].startswith("polyos-") or app["id"] in system_ids or (package or "").startswith("polyos")
+            removable = not part_of_polyos and (origin["kind"] in ("flatpak", "local") or (origin["kind"] == "debian" and bool(package)))
+            items.append({"id": app["id"], "name": app["name"], "icon": app["icon"], "kind": origin["kind"],
+                          "package": package, "removable": removable})
+        return {"apps": items, "startup": startup.entries(home, self._startup_dirs())}
+
+    def _app_origin(self, desktop_id: str) -> dict:
+        return store.app_origin(desktop_id, self.files.home)
+
+    def _debian_owners(self, paths: list[str]) -> dict[str, str]:
+        return store.debian_owners(paths)
+
+    def app_uninstall(self, desktop_id: str) -> dict:
+        info = next((a for a in self.apps_manage()["apps"] if a["id"] == desktop_id), None)
+        if info is None or not info["removable"]:
+            raise ApiError("That app is part of PolyOS, or it's already gone.")
+        origin = self._app_origin(desktop_id)
+        if origin["kind"] == "local":  # a launcher of your own: just remove it
+            Path(origin["path"]).unlink(missing_ok=True)
+            self._apps_changed()
+            return {"removed": desktop_id}
+        if origin["kind"] == "flatpak" and origin.get("user"):
+            proc = subprocess.run(["flatpak", "uninstall", "--user", "-y", "--noninteractive", origin["ref"]],
+                                  capture_output=True, text=True, timeout=600)
+            if proc.returncode != 0:
+                detail = (proc.stderr or proc.stdout).strip().splitlines()
+                raise ApiError(detail[-1] if detail else "Flatpak couldn't remove it.")
+            self._apps_changed()
+            return {"removed": desktop_id}
+
+        def done(_job):
+            self._apps_changed()
+            self.bus.publish("store")
+        return self.jobs.start("app", f"Removing {info['name']}", ["app", "remove", desktop_id], target=desktop_id, on_done=done)
+
+    def startup_set(self, entry_id: str, enabled: bool) -> dict:
+        try:
+            startup.set_enabled(self.files.home, entry_id, enabled, self._startup_dirs())
+        except ValueError as exc:
+            raise ApiError(str(exc)) from None
+        return {"startup": startup.entries(self.files.home, self._startup_dirs())}
+
+    def startup_add(self, desktop_id: str) -> dict:
+        path = store.launcher_path(desktop_id, self.files.home)
+        if path is None:
+            raise ApiError("That app can't start automatically.")
+        try:
+            startup.add(self.files.home, path)
+        except ValueError as exc:
+            raise ApiError(str(exc)) from None
+        return {"startup": startup.entries(self.files.home, self._startup_dirs())}
+
+    def startup_remove(self, entry_id: str) -> dict:
+        try:
+            startup.remove(self.files.home, entry_id, self._startup_dirs())
+        except ValueError as exc:
+            raise ApiError(str(exc)) from None
+        return {"startup": startup.entries(self.files.home, self._startup_dirs())}
+
     # ---- cloud gaming ------------------------------------------------------------------------
     def cloud_gaming(self) -> dict:
         return {"services": [{"id": cid, "name": v[0], "url": v[1], "summary": v[2]} for cid, v in gaming.CLOUD.items()],
-                "installed": gaming.installed(self.files.home)}
+                "installed": gaming.enabled(self.settings, self.files.home)}
 
     def cloud_gaming_set(self, ids: list[str]) -> dict:
         if any(i not in gaming.CLOUD for i in ids):
             raise ApiError("Unknown cloud gaming service.")
-        gaming.set_shortcuts(self.files.home, ids)
+        gaming.set_enabled(self.settings, self.files.home, ids)
         self._apps_changed()
         return self.cloud_gaming()
 

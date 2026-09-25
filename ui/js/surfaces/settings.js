@@ -1,23 +1,24 @@
 // Settings app: appearance, taskbar, Wi-Fi, sound, display, power, account, privacy & security,
 // Vara, about.
 
-import { withAdmin } from '../admin.js';
+import { watchJobs, withAdmin } from '../admin.js';
 import { api, launch, on, params, power, saveSettings, withToken } from '../api.js';
 import { VARA_PROVIDERS, errorText, group, packPanel, providerFor, row, slider, toggle, wifiPanel } from '../components.js';
 import { fill, formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
 
 const PAGES = [
-  ['appearance', 'Appearance', 'palette'],
-  ['taskbar', 'Taskbar & Desktop', 'taskbar'],
-  ['network', 'Wi-Fi & Network', 'wifi'],
-  ['sound', 'Sound', 'volume'],
   ['display', 'Display', 'monitor'],
-  ['power', 'Power & Performance', 'bolt'],
+  ['sound', 'Sound', 'volume'],
   ['account', 'Account', 'user'],
   ['privacy', 'Privacy & Security', 'shield'],
+  ['network', 'Wi-Fi & Network', 'wifi'],
+  ['appearance', 'Appearance', 'palette'],
+  ['taskbar', 'Taskbar & Desktop', 'taskbar'],
   ['gaming', 'Gaming', 'gamepad'],
-  ['developer', 'Developer', 'code'],
   ['vara', 'Vara', 'chat'],
+  ['apps', 'Apps', 'apps'],
+  ['power', 'Power & Performance', 'bolt'],
+  ['developer', 'Developer', 'code'],
   ['about', 'About', 'info'],
 ];
 // PolyOS blue first; the rest share its softness so text on them stays readable.
@@ -263,16 +264,63 @@ const pages = {
     const vol = slider({ label: 'Volume', onInput: (v) => api.post('/api/volume', { level: v }) });
     const value = h('span.value');
     const mute = toggle(false, (v) => api.post('/api/volume', { muted: v }), 'Mute');
+    const err = h('div.error-text', { hidden: true });
+    const outSel = h('select.select', { 'aria-label': 'Output device' });
+    const inSel = h('select.select', { 'aria-label': 'Input device' });
+    const micVol = slider({ label: 'Input volume', onInput: (v) => api.post('/api/sound/input', { level: v }) });
+    const micValue = h('span.value');
+    const micMute = toggle(false, (v) => api.post('/api/sound/input', { muted: v }).then(show, fail), 'Mute microphone');
     const body = h('div');
-    page.append(pageHead('Sound', 'Output volume and audio devices.'), body);
-    function build() {
-      body.replaceChildren(
-        store.state.system.volume.available
-          ? group('Output', row('Volume', null, h('div.slider-wrap', vol, value)), row('Mute', null, mute))
-          : group(null, row('No audio output found', 'Check that PipeWire is running and a device is connected')),
-        group('Advanced', row('Devices and per-app volume', null, helperButton(store, 'pavucontrol.desktop', 'Open mixer', 'pavucontrol'))),
-      );
+    const fail = (x) => errorText(err, x.message);
+    // Every section has its own "Advanced" button: the full mixer (pavucontrol, installed with PolyOS) on the matching tab.
+    const advanced = (tab, label = 'Advanced') => h('button.btn', {
+      onclick: () => api.post('/api/sound/mixer', { tab }).then(() => errorText(err, ''), fail),
+    }, label, icon('external'));
+    outSel.addEventListener('change', () => api.post('/api/sound/device', { kind: 'output', name: outSel.value }).then(show, fail));
+    inSel.addEventListener('change', () => api.post('/api/sound/device', { kind: 'input', name: inSel.value }).then(show, fail));
+    page.append(pageHead('Sound', 'Speakers, headphones, microphones and each app’s volume.'), err, body);
+
+    let devices = null;
+    function show(d) {
+      devices = d;
+      errorText(err, '');
+      fill(outSel, d.outputs.map((o) => h('option', { value: o.name }, o.description)));
+      outSel.value = d.defaultOutput || '';
+      fill(inSel, d.inputs.length ? d.inputs.map((o) => h('option', { value: o.name }, o.description)) : h('option', { value: '' }, 'No microphone found'));
+      inSel.value = d.defaultInput || '';
+      inSel.disabled = !d.inputs.length;
+      const mic = d.inputs.find((o) => o.name === d.defaultInput);
+      micVol.disabled = !mic;
+      micVol.set(mic ? mic.level : 0);
+      micValue.textContent = mic ? `${mic.level}%` : '';
+      micMute.set(mic ? mic.muted : false);
     }
+    function build() {
+      const v = store.state.system.volume;
+      fill(body,
+        v.available
+          ? group('Output',
+            row('Output device', 'Where sound plays', outSel),
+            row('Volume', null, h('div.slider-wrap', vol, value)),
+            row('Mute', null, mute),
+            row('Output settings', 'Balance, ports and each device’s volume', advanced('output')))
+          : group('Output', row('No audio output found', 'Check that PipeWire is running and a device is connected'),
+            row('Output settings', 'Devices, ports and levels', advanced('output'))),
+        group('Input',
+          row('Input device', 'The microphone apps use', inSel),
+          row('Input volume', null, h('div.slider-wrap', micVol, micValue)),
+          row('Mute microphone', null, micMute),
+          row('Input settings', 'Levels, ports and each microphone', advanced('input'))),
+        group('Apps',
+          row('Volume for each app', 'Make one app louder or quieter than the rest', advanced('playback', 'Open')),
+          row('Apps using the microphone', 'See and change what records sound', advanced('recording', 'Open'))),
+        group('Advanced',
+          row('Sound card profiles', 'Stereo, surround 5.1/7.1, HDMI audio, headset mode', advanced('configuration')),
+          row('Full sound mixer', 'Every device and app in one place', advanced('playback', 'Open mixer'))),
+      );
+      if (devices) show(devices);
+    }
+    const refresh = () => api.get('/api/sound/devices').then(show, fail);
     let available = null;
     function update() {
       const v = store.state.system.volume;
@@ -285,6 +333,7 @@ const pages = {
       mute.set(v.muted);
     }
     update();
+    refresh();
     return { update: (_st, changed) => changed.has('system') && update() };
   },
 
@@ -296,13 +345,101 @@ const pages = {
       h('option', { value: 'auto' }, 'Automatic'), h('option', { value: '1' }, '100%'), h('option', { value: '2' }, '200% (HiDPI)'));
     scale.addEventListener('change', () => save({ scale: scale.value }, err));
     const briGroup = group('Brightness', row('Screen brightness', null, h('div.slider-wrap', bri, value)));
+    const screens = h('div');
+    const confirm = h('div.keep-bar', { hidden: true, role: 'alertdialog', 'aria-live': 'assertive' });
+    const graphics = h('div');
+    const fail = (x) => errorText(err, x.message);
+    const ROTATE = [['normal', 'Landscape'], ['left', 'Portrait'], ['right', 'Portrait (flipped)'], ['inverted', 'Landscape (flipped)']];
+    const friendly = (name) => (/^(eDP|LVDS|DSI)/.test(name) ? 'Built-in screen' : name.replace(/-\d+$/, (m) => ` ${m.slice(1)}`));
+    let outputs = [];
+    let countdown = null;
+
     page.append(
-      pageHead('Display', 'Brightness, scaling and screen arrangement.'),
-      err,
+      pageHead('Display', 'Resolution, refresh rate, brightness and graphics.'),
+      err, confirm,
       briGroup,
+      screens,
       group('Scale', row('Display scale', 'Automatic picks 200% on high-density screens. Applies at next sign-in.', scale)),
-      group('Arrangement', row('Resolution and multiple displays', null, helperButton(store, 'arandr.desktop', 'Arrange displays', 'arandr'))),
+      graphics,
+      group('Arrangement', row('Position multiple displays', 'Drag screens to match how they sit on your desk',
+        helperButton(store, 'arandr.desktop', 'Arrange displays', 'arandr'))),
     );
+
+    const stateOf = (o) => ({ name: o.name, size: o.mode, rate: o.rate, rotation: o.rotation, primary: o.primary });
+    function stopCountdown() {
+      clearInterval(countdown);
+      countdown = null;
+      confirm.hidden = true;
+    }
+    // Change a screen, then ask to keep it: if the picture is gone, it goes back by itself after 15 seconds.
+    function apply(o, patch) {
+      const before = stateOf(o);
+      const next = { ...before, ...patch };
+      if (patch.size) next.rate = o.modes.find((m) => m.size === patch.size)?.rates[0] ?? null;
+      api.post('/api/displays', next).then((r) => {
+        errorText(err, '');
+        show(r);
+        stopCountdown();
+        let left = 15;
+        const text = h('span');
+        const tick = () => { text.textContent = `Keep these display settings? Going back in ${left} s.`; };
+        tick();
+        fill(confirm, icon('monitor'), text, h('div.btn-row.tight',
+          h('button.btn', { onclick: () => { stopCountdown(); api.post('/api/displays', before).then(show, fail); } }, 'Revert'),
+          h('button.btn.primary', { onclick: stopCountdown }, 'Keep changes')));
+        confirm.hidden = false;
+        countdown = setInterval(() => {
+          left -= 1;
+          if (left > 0) return tick();
+          stopCountdown();
+          api.post('/api/displays', before).then(show, fail);
+        }, 1000);
+      }, (x) => { fail(x); show({ outputs, graphics: null }); });
+    }
+
+    function screenGroup(o) {
+      const sizeSel = h('select.select', { 'aria-label': `${friendly(o.name)} resolution` },
+        o.modes.map((m) => h('option', { value: m.size }, `${m.size.replace('x', ' × ')}${m.size === o.preferred ? ' (recommended)' : ''}`)));
+      sizeSel.value = o.mode || '';
+      sizeSel.addEventListener('change', () => apply(o, { size: sizeSel.value }));
+      const rates = o.modes.find((m) => m.size === o.mode)?.rates || [];
+      const rateSel = h('select.select', { 'aria-label': `${friendly(o.name)} refresh rate` },
+        rates.map((r) => h('option', { value: String(r) }, `${Math.round(r * 100) / 100} Hz`)));
+      rateSel.value = String(o.rate ?? '');
+      rateSel.disabled = rates.length < 2;
+      rateSel.addEventListener('change', () => apply(o, { rate: Number(rateSel.value) }));
+      const rotSel = h('select.select', { 'aria-label': `${friendly(o.name)} orientation` },
+        ROTATE.map(([v, t]) => h('option', { value: v }, t)));
+      rotSel.value = o.rotation;
+      rotSel.addEventListener('change', () => apply(o, { rotation: rotSel.value }));
+      const best = rates.length ? Math.max(...rates) : null;
+      return group(outputs.length > 1 ? `${friendly(o.name)}${o.primary ? ' · main display' : ''}` : 'Screen',
+        o.active ? [
+          row('Resolution', null, sizeSel),
+          row('Refresh rate', best && o.rate && best - o.rate > 1 ? `This screen can go up to ${Math.round(best)} Hz for smoother motion` : 'How many times a second the picture updates', rateSel),
+          row('Orientation', null, rotSel),
+          outputs.length > 1 ? row('Make this my main display', 'The taskbar and new windows go here',
+            toggle(o.primary, (v) => (v ? apply(o, { primary: true }) : show({ outputs, graphics: null })), 'Main display')) : null,
+        ] : row('This screen is off', 'Turn it on with Arrange displays'));
+    }
+
+    function show(r) {
+      outputs = r.outputs;
+      fill(screens, outputs.length ? outputs.map(screenGroup)
+        : group('Screen', row('Screen settings aren’t available', 'xrandr couldn’t read your screens')));
+      if (r.graphics) {
+        const drivers = h('button.btn', { onclick: () => api.post('/api/open', { app: 'drivers' }).catch(fail) }, 'Driver Manager', icon('external'));
+        const nvidia = store.state.apps.find((a) => a.id === 'nvidia-settings.desktop');
+        fill(graphics, group('Graphics',
+          r.graphics.length ? r.graphics.map((g) => row(g.name.replace(/\s*\[[0-9a-f]{4}:[0-9a-f]{4}\]/gi, ''),
+            g.driver ? `Driver: ${g.driver}` : 'No driver in use')) : row('Graphics card', 'Not detected'),
+          row('Graphics drivers', 'Install NVIDIA or other recommended drivers', drivers),
+          nvidia ? row('NVIDIA settings', 'Clocks, G-Sync, anti-aliasing and more', h('button.btn', { onclick: () => launch(nvidia.id) }, 'Open', icon('external'))) : null,
+          row('Performance mode', 'Balanced, Performance or Maximum for games and 3D',
+            h('button.btn', { onclick: () => navigate('power') }, 'Power & Performance', icon('chevronRight')))));
+      }
+    }
+
     function update() {
       const b = store.state.system.brightness;
       briGroup.hidden = !b.available;
@@ -311,7 +448,8 @@ const pages = {
       scale.value = store.state.settings.scale;
     }
     update();
-    return { update: (_st, changed) => (changed.has('system') || changed.has('settings')) && update() };
+    api.get('/api/displays').then(show, fail);
+    return { update: (_st, changed) => (changed.has('system') || changed.has('settings')) && update(), close: stopCountdown };
   },
 
   power(page, store) {
@@ -512,6 +650,86 @@ const pages = {
     return { update: (_st, changed) => changed.has('settings') && update(), close: () => { offSecurity(); offJob(); } };
   },
 
+  apps(page) {
+    const err = h('div.error-text', { hidden: true });
+    const startupBox = h('div');
+    const listBox = h('div.app-list');
+    const search = h('input.input', { placeholder: 'Search apps', spellcheck: 'false', 'aria-label': 'Search apps' });
+    const addSel = h('select.select', { 'aria-label': 'App to start when you sign in' });
+    const status = new Map(); // app id -> "Removing…" / error
+    let data = null;
+    let confirmFor = null;
+
+    const setStartup = (r) => { data.startup = r.startup; renderStartup(); };
+    function renderStartup() {
+      const inList = new Set(data.startup.map((e) => e.id));
+      fill(addSel, data.apps.filter((a) => !inList.has(a.id)).map((a) => h('option', { value: a.id }, a.name)));
+      fill(startupBox,
+        data.startup.length ? data.startup.map((e) => row(e.name, e.comment || (e.own ? 'Added by you' : ''),
+          e.locked ? h('span.muted.small', 'PolyOS needs this') : toggle(e.enabled, (v) => api.post('/api/apps/startup', { id: e.id, enabled: v })
+            .then(setStartup, (x) => errorText(err, x.message)), e.name),
+          e.own ? h('button.icon-btn', { title: `Remove ${e.name} from startup`, 'aria-label': `Remove ${e.name} from startup`,
+            onclick: () => api.post('/api/apps/startup/remove', { id: e.id }).then(setStartup, (x) => errorText(err, x.message)) }, icon('close')) : null))
+          : h('p.prose', 'Nothing starts automatically when you sign in.'),
+        row('Add an app', 'Start it every time you sign in', addSel, h('button.btn', {
+          onclick: () => addSel.value && api.post('/api/apps/startup/add', { id: addSel.value }).then(setStartup, (x) => errorText(err, x.message)),
+        }, icon('plus'), 'Add')));
+    }
+    const source = (a) => ({ debian: `Debian package ${a.package || ''}`.trim(), flatpak: 'Flathub', local: 'Added in your home folder' }[a.kind] || '');
+    function renderApps() {
+      const q = search.value.trim().toLowerCase();
+      const list = data.apps.filter((a) => !q || a.name.toLowerCase().includes(q));
+      fill(listBox, list.length ? list.map((a) => {
+        let action;
+        if (status.has(a.id)) action = h('span.muted.small', status.get(a.id));
+        else if (!a.removable) action = h('span.muted.small', 'Part of PolyOS');
+        else if (confirmFor === a.id) {
+          action = h('div.btn-row.tight',
+            h('button.btn', { onclick: () => { confirmFor = null; renderApps(); } }, 'Cancel'),
+            h('button.btn.danger.solid', { onclick: () => uninstall(a) }, 'Uninstall'));
+        } else action = h('button.btn', { onclick: () => { confirmFor = a.id; renderApps(); } }, 'Uninstall');
+        return h('div.row.app-row', h('img.app-row-icon', { src: withToken(a.icon), alt: '' }),
+          h('div.row-label', h('span', a.name), h('small', source(a))), action);
+      }) : h('p.prose', 'No app matches.'));
+    }
+    async function uninstall(a) {
+      confirmFor = null;
+      status.set(a.id, 'Removing…');
+      renderApps();
+      try {
+        const job = await withAdmin(() => api.post('/api/apps/uninstall', { id: a.id }),
+          { title: `Uninstall ${a.name}`, text: 'Enter your password to remove this app.' });
+        if (job && job.removed) { status.delete(a.id); load(); }
+      } catch (x) {
+        status.delete(a.id);
+        if (!x.cancelled) errorText(err, x.message);
+        renderApps();
+      }
+    }
+    const offJobs = watchJobs((job) => {
+      if (job.kind !== 'app' || !status.has(job.target)) return;
+      if (job.state === 'running') status.set(job.target, job.message || 'Removing…');
+      else {
+        status.delete(job.target);
+        if (job.state === 'failed') errorText(err, job.error || 'That app couldn’t be removed.');
+        load();
+      }
+      renderApps();
+    }).off;
+    function load() {
+      return api.get('/api/apps/manage').then((d) => { data = d; renderStartup(); renderApps(); }, (x) => errorText(err, x.message));
+    }
+    search.addEventListener('input', () => data && renderApps());
+    page.append(
+      pageHead('Apps', 'Uninstall apps, and choose what starts when you sign in.'),
+      err,
+      group('Startup apps', startupBox),
+      group('Installed apps', h('div.slider-wrap.wide.app-search', search), listBox),
+    );
+    load();
+    return { update: (_st, changed) => changed.has('apps') && load(), close: offJobs };
+  },
+
   gaming(page, store) {
     const s = () => store.state.settings;
     const err = h('div.error-text', { hidden: true });
@@ -532,9 +750,10 @@ const pages = {
       err,
       group('Game Mode',
         row('Game Mode', 'When a game is full screen: the performance power mode, no sleeping or locking, and PolyOS’s background work steps back until you close it.', gameMode)),
-      group('Gaming apps', packPanel('gaming')),
       group('Cloud gaming', h('p.muted.small.pad', 'Stream games from the cloud: no downloads, and they run well on any computer. '
-        + 'Turn a service on to add it to your apps. They work best with Google Chrome (PolyMarket).'), cloud),
+        + 'These come with PolyOS; switch one on to show it in your apps. They open in Chromium, which PolyOS includes.'), cloud),
+      group('Gaming apps', row('Steam, Heroic, Lutris and more', 'Get them from PolyMarket’s Games section.',
+        h('button.btn', { onclick: () => api.post('/api/open', { app: 'store' }).catch((e) => errorText(err, e.message)) }, 'Open PolyMarket'))),
       group('Tips', h('p.prose',
         'Windows games in Steam: Steam > Settings > Compatibility > “Enable Steam Play for all other titles” (Proton). ',
         'Add “gamemoderun %command%” to a game’s Launch Options for GameMode. ',
@@ -765,7 +984,7 @@ export function mount(root, store) {
   store.subscribe((_st, changed) => { if (changed.has('settings')) syncNav(); });
 
   function go(id) {
-    if (!pages[id]) id = 'appearance';
+    if (!pages[id]) id = PAGES[0][0];
     if (id === current) return;
     pageApi?.close?.();
     current = id;
@@ -780,5 +999,5 @@ export function mount(root, store) {
   navigate = go;
   store.subscribe((state, changed) => pageApi?.update?.(state, changed));
   on('navigate', (e) => { if (e.surface === 'settings' && e.page) go(e.page); });
-  go(params.get('page') || 'appearance');
+  go(params.get('page') || PAGES[0][0]);
 }

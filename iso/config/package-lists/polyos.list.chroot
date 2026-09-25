@@ -55,8 +55,10 @@ curl
 wget
 jq
 
-# Everyday apps and hardware (webcam for the Camera app, power modes, idle timers)
+# Everyday apps and hardware (webcam for the Camera app, power modes, idle timers).
+# Chromium runs the built-in cloud gaming services (GeForce NOW and Xbox need a Chromium browser).
 evince
+chromium
 power-profiles-daemon
 libxss1
 

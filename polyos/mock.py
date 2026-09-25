@@ -9,7 +9,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import __version__, installer, paths, store
+from . import __version__, installer, paths, startup, store
 from .backend import DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT, Backend
 from .core import ApiError, EventBus, Settings, bundled_icon, icon_names, letter_icon
 from .files import P
@@ -259,6 +259,89 @@ class MockBackend(Backend):
                 level = bl["level"] + delta
             bl["level"] = max(5, min(100, level if level is not None else 100))
         return self._publish_system()["brightness"]
+
+    # ---- Settings > Sound and Display ----------------------------------------------------------
+    _SOUND = {
+        "outputs": [{"name": "alsa_output.pci-0000_00_1f.3.analog-stereo", "description": "Speakers (built-in)", "level": 45, "muted": False},
+                    {"name": "alsa_output.pci-0000_01_00.1.hdmi-stereo", "description": "HDMI (Monitor)", "level": 80, "muted": False},
+                    {"name": "bluez_output.AC_12_2F.1", "description": "Poly Buds", "level": 60, "muted": False}],
+        "inputs": [{"name": "alsa_input.pci-0000_00_1f.3.analog-stereo", "description": "Microphone (built-in)", "level": 70, "muted": False},
+                   {"name": "alsa_input.usb-Webcam_C920-02.analog-stereo", "description": "Webcam microphone", "level": 55, "muted": False}],
+    }
+
+    def sound_devices(self):
+        with self._lock:
+            sound = getattr(self, "_sound", None)
+            if sound is None:
+                sound = self._sound = {**copy.deepcopy(self._SOUND), "available": True,
+                                       "defaultOutput": self._SOUND["outputs"][0]["name"],
+                                       "defaultInput": self._SOUND["inputs"][0]["name"]}
+            return copy.deepcopy(sound)
+
+    def sound_set_device(self, kind, name):
+        current = self.sound_devices()
+        if not any(d["name"] == name for d in current["outputs" if kind == "output" else "inputs"]):
+            raise ApiError("That sound device isn't connected.")
+        with self._lock:
+            self._sound["defaultOutput" if kind == "output" else "defaultInput"] = name
+        return self.sound_devices()
+
+    def sound_set_input(self, level, muted):
+        current = self.sound_devices()
+        with self._lock:
+            mic = next(d for d in self._sound["inputs"] if d["name"] == current["defaultInput"])
+            if level is not None:
+                mic["level"] = max(0, min(150, level))
+            if muted is not None:
+                mic["muted"] = muted
+        return self.sound_devices()
+
+    def sound_mixer(self, tab):
+        return {"opened": tab}
+
+    _XRANDR = """Screen 0: minimum 320 x 200, current 4480 x 1440, maximum 16384 x 16384
+eDP-1 connected primary 1920x1080+0+0 (normal left inverted right x axis y axis) 309mm x 174mm
+   1920x1080     60.01*+  59.97    48.00
+   1680x1050     59.95
+   1280x720      60.00
+HDMI-1 connected 2560x1440+1920+0 (normal left inverted right x axis y axis) 597mm x 336mm
+   2560x1440    143.97 + 120.00    59.95*
+   1920x1080    144.00   120.00    60.00
+   1280x720      60.00
+DP-1 disconnected (normal left inverted right x axis y axis)
+"""
+
+    def displays_list(self):
+        from . import display
+        with self._lock:
+            outputs = getattr(self, "_outputs", None)
+            if outputs is None:
+                outputs = self._outputs = display.parse_xrandr(self._XRANDR)
+            return {"outputs": copy.deepcopy(outputs), "graphics": self.graphics_info()}
+
+    def displays_set(self, name, size, rate, rotation, primary):
+        from . import display
+        try:
+            display.validate(self.displays_list()["outputs"], name, size, rate, rotation)
+        except ValueError as exc:
+            raise ApiError(str(exc)) from None
+        with self._lock:
+            for out in self._outputs:
+                if primary:
+                    out["primary"] = out["name"] == name
+                if out["name"] == name:
+                    if size:
+                        out["mode"], out["rate"] = size, rate or next(m["rates"][0] for m in out["modes"] if m["size"] == size)
+                    if rotation:
+                        out["rotation"] = rotation
+        saved = dict(self.settings.get("displays") or {})
+        saved[name] = {"size": size, "rate": rate, "rotation": rotation or "normal", "primary": primary}
+        self.update_settings({"displays": saved})
+        return self.displays_list()
+
+    def graphics_info(self):
+        return [{"name": "Intel Corporation Iris Xe Graphics [8086:9a49]", "driver": "i915"},
+                {"name": "NVIDIA Corporation GA107M [GeForce RTX 3050 Mobile] [10de:25a2]", "driver": "nouveau"}]
 
     def wifi_list(self):
         time.sleep(0.5)
@@ -621,10 +704,63 @@ class MockBackend(Backend):
         return self.jobs.start("pack", f"Setting up {info['name']}", [], target=name,
                                runner=self._simulate(steps, 6, finish), on_done=lambda j: self.bus.publish("store"))
 
+    # ---- Settings > Apps (simulated origins; startup entries in a sample folder) ------------------
+    def _startup_dirs(self):
+        folder = self.files.home.parent / "dev-autostart"
+        if not folder.is_dir():
+            folder.mkdir(parents=True)
+            samples = {"nm-applet.desktop": ("Network", "Wi-Fi and network connections in the tray"),
+                       "blueman.desktop": ("Bluetooth Manager", "Bluetooth devices"),
+                       "org.gnome.SettingsDaemon.Power.desktop": ("Power", "GNOME power management"),
+                       "print-applet.desktop": ("Print Queue Applet", "Shows printing jobs"),
+                       "polyos-agent.desktop": ("PolyOS", "PolyOS's own helper")}
+            for name, (title, comment) in samples.items():
+                only = "OnlyShowIn=GNOME;\n" if "GNOME" in name else ""
+                (folder / name).write_text(f"[Desktop Entry]\nType=Application\nName={title}\nComment={comment}\n"
+                                           f"Exec=true\n{only}", "utf-8")
+        return [folder]
+
+    def _app_origin(self, desktop_id):
+        if desktop_id.startswith(("com.", "org.", "net.", "md.", "us.", "io.")) and desktop_id not in (
+                "org.gnome.Calculator.desktop", "org.xfce.mousepad.desktop", "org.xfce.ristretto.desktop"):
+            return {"kind": "flatpak", "path": f"/var/lib/flatpak/exports/share/applications/{desktop_id}",
+                    "ref": desktop_id[:-8], "user": False}
+        return {"kind": "debian", "path": f"/usr/share/applications/{desktop_id}"}
+
+    def _debian_owners(self, paths):
+        owners = {"firefox-esr": "firefox-esr", "thunar": "thunar", "xfce4-terminal": "xfce4-terminal",
+                  "code": "code", "libreoffice-writer": "libreoffice-writer", "steam": "steam-installer"}
+        return {p: owners.get(Path(p).stem, Path(p).stem.split(".")[-1].lower()) for p in paths}
+
+    def startup_add(self, desktop_id):
+        app = next((a for a in self._apps if a["id"] == desktop_id), None)
+        if app is None:
+            raise ApiError("That app can't start automatically.")
+        folder = startup.user_dir(self.files.home)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / desktop_id).write_text(f"[Desktop Entry]\nType=Application\nName={app['name']}\nExec=true\n", "utf-8")
+        return {"startup": startup.entries(self.files.home, self._startup_dirs())}
+
+    def app_uninstall(self, desktop_id):
+        info = next((a for a in self.apps_manage()["apps"] if a["id"] == desktop_id), None)
+        if info is None or not info["removable"]:
+            raise ApiError("That app is part of PolyOS, or it's already gone.")
+        if not self._admin_ready:
+            raise NeedPassword()
+
+        def finish():
+            self._apps = [a for a in self._apps if a["id"] != desktop_id]
+            self._store_installed = {i for i in self._store_installed
+                                     if desktop_id not in (store.validate(store.load()).get(i, {}).get("desktop") or [])}
+            self.bus.publish("apps", apps=self._apps)
+        return self.jobs.start("app", f"Removing {info['name']}", [], target=desktop_id,
+                               runner=self._simulate(["Removing the app…", "Tidying up…"], 3, finish),
+                               on_done=lambda j: self.bus.publish("store"))
+
     def _apps_changed(self):
         from . import gaming
 
-        have = set(gaming.installed(self.files.home))
+        have = set(gaming.enabled(self.settings, self.files.home))
         self._apps = [a for a in self._apps if not a["id"].startswith(gaming.PREFIX)]
         for cid in have:
             name, _url, summary = gaming.CLOUD[cid]
