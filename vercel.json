@@ -36,17 +36,17 @@
   "redirects": [
     {
       "source": "/download/pc",
-      "destination": "https://github.com/kingxxasavan/poly-os-7/releases/latest/download/polyos-amd64.iso",
+      "destination": "https://github.com/kingxxasavan/poly-os-7-debain-receration/releases/latest/download/polyos-amd64.iso",
       "permanent": false
     },
     {
       "source": "/download/arm64",
-      "destination": "https://github.com/kingxxasavan/poly-os-7/releases/latest/download/polyos-arm64.iso",
+      "destination": "https://github.com/kingxxasavan/poly-os-7-debain-receration/releases/latest/download/polyos-arm64.iso",
       "permanent": false
     },
     {
       "source": "/download/checksums",
-      "destination": "https://github.com/kingxxasavan/poly-os-7/releases/latest/download/SHA256SUMS",
+      "destination": "https://github.com/kingxxasavan/poly-os-7-debain-receration/releases/latest/download/SHA256SUMS",
       "permanent": false
     }
   ]

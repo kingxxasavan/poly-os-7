@@ -116,7 +116,7 @@ this step.
 ## Build the live USB / installer ISO
 
 **Just want the ISO?** Download the newest release from the website's Download buttons or from
-[GitHub Releases](https://github.com/kingxxasavan/poly-os-7/releases/latest). Each release has two:
+[GitHub Releases](https://github.com/kingxxasavan/poly-os-7-debain-receration/releases/latest). Each release has two:
 `…-amd64.iso` for Intel/AMD PCs and `…-arm64.iso` for ARM64 computers with UEFI (Apple Silicon Macs in
 UTM, Parallels or VMware Fusion; ARM servers and VMs). `sudo python3 main.py iso` builds the one for
 the computer it runs on (`--arch`); GitHub Actions builds both.

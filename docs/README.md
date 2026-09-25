@@ -24,7 +24,7 @@ into a real desktop that installs and boots on a PC, on top of Debian.
 ## Download
 
 The website's **Download** buttons (one for Intel/AMD PCs, one for ARM64) always offer the newest
-[release](https://github.com/kingxxasavan/poly-os-7/releases/latest): it asks GitHub for the
+[release](https://github.com/kingxxasavan/poly-os-7-debain-receration/releases/latest): it asks GitHub for the
 latest release when the page loads, so publishing a release (Actions → Build PolyOS ISO → Run
 workflow with **Publish as a GitHub Release** ticked, see the main README) updates the site with
 no changes here.
@@ -76,10 +76,10 @@ All screenshots are full size in [`screenshots/`](screenshots/) (1440×900) with
 `vercel.json` in the project root tells Vercel to serve this folder as it is (no build step).
 
 1. Sign in at [vercel.com](https://vercel.com) with your GitHub account.
-2. **Add New… → Project**, then **Import** `kingxxasavan/poly-os-7`.
+2. **Add New… → Project**, then **Import** `kingxxasavan/poly-os-7-debain-receration`.
 3. Leave the settings as they are (Framework Preset: *Other*; `vercel.json` fills in the rest)
    and click **Deploy**.
-4. You get an address like `https://poly-os-7.vercel.app`. Every push to `main` updates the site,
+4. You get an address like `https://poly-os-7-debain-receration.vercel.app`. Every push to `main` updates the site,
    and other branches get their own preview links. Add your own domain under **Settings → Domains**.
 
 From a terminal instead: `npm i -g vercel`, then `vercel --prod` in the project folder.

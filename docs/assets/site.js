@@ -64,7 +64,7 @@ document.addEventListener('keydown', (e) => {
 // the newest release file), so downloading starts right here. The newest release's details
 // (version, sizes) come from GitHub's API; where the site's links don't exist (another host, an
 // older release with different file names) the buttons use the release files directly.
-const REPO = 'kingxxasavan/poly-os-7';
+const REPO = 'kingxxasavan/poly-os-7-debain-receration';
 const ARCHES = { amd64: ['pc', 'PC (Intel/AMD)'], arm64: ['arm64', 'ARM64'] };
 
 function gb(bytes) {

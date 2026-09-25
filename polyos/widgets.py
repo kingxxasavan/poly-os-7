@@ -22,7 +22,7 @@ from pathlib import Path
 from .core import IMAGE_TYPES, WIDGET_IDS, ApiError
 
 ALL_WIDGETS = WIDGET_IDS
-USER_AGENT = "PolyOS/0.2 (+https://github.com/kingxxasavan/poly-os-7)"
+USER_AGENT = "PolyOS/0.2 (+https://github.com/kingxxasavan/poly-os-7-debain-receration)"
 NEWS_FEEDS = {
     "top": ("Top stories", "https://feeds.bbci.co.uk/news/rss.xml"),
     "world": ("World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
