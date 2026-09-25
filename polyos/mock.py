@@ -214,6 +214,8 @@ class MockBackend(Backend):
                "polyos-store.desktop": "store.svg", "polyos-camera.desktop": "camera.svg"}
         if app_id in own:
             return (paths.UI_DIR / "img" / own[app_id]).read_bytes(), "image/svg+xml"
+        if app_id.startswith("polyos-cloud-"):
+            return (paths.UI_DIR / "img" / "cloud-gaming.svg").read_bytes(), "image/svg+xml"
         name = next((a["name"] for a in self._apps if a["id"] == app_id), app_id)
         return letter_icon(name), "image/svg+xml"
 
@@ -306,9 +308,12 @@ class MockBackend(Backend):
         self.bus.publish("lock", locked=True)
 
     def lock_unlock(self, password):
+        self.unlock_throttle.check()
         time.sleep(0.5)
         if password != "polyos":
+            self.unlock_throttle.failed()
             raise ApiError("That password isn't right. Try again.", 403)
+        self.unlock_throttle.succeeded()
         self.bus.publish("lock", locked=False)
         return {"ok": True}
 
@@ -427,7 +432,17 @@ class MockBackend(Backend):
                "readonly": False, "table": "dos", "mounts": [], "partitions": [
                    {"path": "/dev/sdb1", "number": 1, "size": 32 * GB, "fstype": "iso9660", "label": "PolyOS 0.2.0",
                     "parttype": "0x0", "mounts": ["/run/live/medium"]}]}
+        ssd = {"path": "/dev/sdc", "size": 1000 * GB, "model": "Crucial MX500", "transport": "sata", "removable": False,
+               "readonly": False, "table": "gpt", "mounts": [], "partitions": [
+                   {"path": "/dev/sdc1", "number": 1, "size": 700 * GB, "fstype": "ntfs", "label": "Games",
+                    "parttype": installer.MS_BASIC_GUID.lower(), "mounts": []},
+                   {"path": "/dev/sdc2", "number": 2, "size": 300 * GB, "fstype": "ext4", "label": "home",
+                    "parttype": installer.LINUX_GUID.lower(), "mounts": []}]}
+        ssd_table = {"label": "gpt", "sector": 512, "first": 2048, "last": ssd["size"] // 512 - 34, "partitions": [
+            {"node": "/dev/sdc1", "number": 1, "start": 2048, "size": 700 * GB // 512, "type": "x"},
+            {"node": "/dev/sdc2", "number": 2, "start": 2048 + 700 * GB // 512, "size": 300 * GB // 512, "type": "x"}]}
         disks = [installer.describe_disk(nvme, table, {"/dev/nvme0n1p1": "Windows 11"}, uefi, "/dev/sdb", resize),
+                 installer.describe_disk(ssd, ssd_table, {}, uefi, "/dev/sdb", {}),
                  installer.describe_disk(hdd, None, {}, uefi, "/dev/sdb", {}),
                  installer.describe_disk(usb, {"label": "dos", "sector": 512, "first": 0, "last": None,
                                                "partitions": []}, {}, uefi, "/dev/sdb", {})]
@@ -446,6 +461,8 @@ class MockBackend(Backend):
                  "Installing the boot loader…", "Finishing the boot menu…", "Cleaning up…"]
         if clean["mode"] == "alongside":
             steps.insert(0, "Making room: shrinking Windows 11…")
+        if clean["mode"] == "custom":
+            steps[0:1] = [f"Preparing {d}…" for d in clean["wipe"]] or ["Checking your partitions…"]
         return self.jobs.start("install", "Installing PolyOS", [], runner=self._simulate(steps, 14))
 
     # ---- Driver Manager ------------------------------------------------------------------
@@ -517,6 +534,72 @@ class MockBackend(Backend):
         return self.jobs.start("store", f"{verb} {app['name']}", [], target=app_id,
                                runner=self._simulate(steps, 5 if action == "install" else 2, finish),
                                on_done=lambda j: self.bus.publish("store"))
+
+    def _add_store_app(self, app):
+        desktop = (app.get("desktop") or [None])[0]
+        if desktop and all(a["id"] != desktop for a in self._apps):
+            self._apps.append({"id": desktop, "name": app["name"], "description": app["summary"],
+                               "categories": [], "keywords": [], "icon": f"/icon/app/{desktop}", "hidden": False})
+            self._apps.sort(key=lambda a: a["name"].casefold())
+
+    # ---- editions, cloud gaming and security (simulated) --------------------------------------
+    def packs(self):
+        data = store.load()
+        out = {}
+        by_id = {a["id"]: a for a in self.store_list()["apps"]}
+        for name, info in data["packs"].items():
+            out[name] = {"name": info["name"], "summary": info["summary"],
+                         "apps": [{**by_id[aid], "default": d} for aid, d in info["apps"]]}
+        return {"packs": out, "edition": self.settings.get("edition")}
+
+    def pack_install(self, name, ids):
+        info = store.pack(store.load(), name)
+        if info is None or not ids or any(i not in {a for a, _ in info["apps"]} for i in ids):
+            raise ApiError("Pick apps from the list.")
+        if not self._admin_ready:
+            raise NeedPassword()
+        apps = store.validate(store.load())
+
+        def finish():
+            for i in ids:
+                self._store_installed.add(i)
+                self._add_store_app(apps[i])
+            self.bus.publish("apps", apps=self._apps)
+            self.update_settings({"editionSetup": True})
+        steps = ["Checking Debian for the latest versions…", "Connecting to Flathub…",
+                 *[f"Installing {apps[i]['name']} ({n + 1} of {len(ids)})…" for n, i in enumerate(ids)]]
+        return self.jobs.start("pack", f"Setting up {info['name']}", [], target=name,
+                               runner=self._simulate(steps, 6, finish), on_done=lambda j: self.bus.publish("store"))
+
+    def _apps_changed(self):
+        from . import gaming
+
+        have = set(gaming.installed(self.files.home))
+        self._apps = [a for a in self._apps if not a["id"].startswith(gaming.PREFIX)]
+        for cid in have:
+            name, _url, summary = gaming.CLOUD[cid]
+            self._apps.append({"id": f"{gaming.PREFIX}{cid}.desktop", "name": name, "description": summary,
+                               "categories": ["Game"], "keywords": [], "icon": f"/icon/app/{gaming.PREFIX}{cid}.desktop", "hidden": False})
+        self._apps.sort(key=lambda a: a["name"].casefold())
+        self.bus.publish("apps", apps=self._apps)
+
+    _security = {"firewall": True, "updates": True}
+
+    def security_status(self):
+        return {**self._security, "apparmor": True, "secureBoot": True, "recoveryKey": True,
+                "lockOnSleep": self.settings.get("lockOnSleep")}
+
+    def security_set(self, what, on):
+        if what not in self._security:
+            raise ApiError("Unknown security setting.")
+        if not self._admin_ready:
+            raise NeedPassword()
+
+        def finish():
+            self._security = {**self._security, what: on}
+        return self.jobs.start("security", f"{what} {'on' if on else 'off'}", [], target=what,
+                               runner=self._simulate([f"Turning {what} {'on' if on else 'off'}…"], 1.5, finish),
+                               on_done=lambda j: self.bus.publish("security"))
 
     # ---- Task Manager -----------------------------------------------------------------------
     def procs(self):

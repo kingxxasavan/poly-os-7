@@ -47,7 +47,18 @@ def validate(data: dict) -> dict:
             if not isinstance(app.get(key), str) or not app[key]:
                 raise CatalogError(f"{aid}: missing {key}")
         apps[aid] = app
+    for name, pack in (data.get("packs") or {}).items():
+        if not _ID.match(name) or not isinstance(pack.get("apps"), list) or not pack["apps"]:
+            raise CatalogError(f"bad pack: {name!r}")
+        for item in pack["apps"]:
+            if not (isinstance(item, list) and len(item) == 2 and item[0] in apps and isinstance(item[1], bool)):
+                raise CatalogError(f"pack {name}: bad app {item!r}")
     return apps
+
+
+def pack(data: dict, name: str) -> dict | None:
+    """A pack ("gaming", "developer") with its apps, or None."""
+    return (data.get("packs") or {}).get(name)
 
 
 def load(path: Path | None = None) -> dict:
@@ -87,3 +98,13 @@ def catalog_with_status(data: dict) -> dict:
             installed = app["ref"] in flats
         apps.append({**app, "installed": installed})
     return {"categories": data["categories"], "apps": apps, "flatpak": bool(shutil.which("flatpak"))}
+
+
+def packs_with_status(data: dict) -> dict:
+    """The editions' app packs for Settings and the welcome screens, with what's installed."""
+    by_id = {a["id"]: a for a in catalog_with_status(data)["apps"]}
+    out = {}
+    for name, info in (data.get("packs") or {}).items():
+        out[name] = {"name": info["name"], "summary": info["summary"],
+                     "apps": [{**by_id[aid], "default": default} for aid, default in info["apps"]]}
+    return out

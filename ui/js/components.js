@@ -1,6 +1,6 @@
 // Reusable controls: switch, slider, settings rows and the Wi-Fi network list.
 
-import { api } from './api.js';
+import { api, withToken } from './api.js';
 import { h, icon, throttle, wifiLevel } from './ui.js';
 
 export function toggle(checked, onChange, label = '') {
@@ -237,4 +237,81 @@ export function wifiPanel(store, { compact = false } = {}) {
       if (next !== signature) load();
     },
   };
+}
+
+// ---- editions: an app pack (Gaming, Developer) to pick from and install in one go ---------
+// Used by the welcome screens and Settings. onDone() runs after a successful install.
+export function packPanel(name, { onDone, compact = false } = {}) {
+  const el = h('div.pack', h('p.muted.small.pad', 'Loading…'));
+  const status = h('div.pack-status', { hidden: true });
+  const bar = h('div.pack-bar', h('span'));
+  let chosen = null;
+  let running = false;
+  let offJobs = null;
+
+  function render(pack) {
+    chosen = chosen || new Set(pack.apps.filter((a) => a.default && !a.installed).map((a) => a.id));
+    const button = h('button.btn.primary', { disabled: running }, running ? 'Installing…' : 'Install selected');
+    const rows = pack.apps.map((app) => {
+      const box = h('input', { type: 'checkbox', checked: app.installed || chosen.has(app.id), disabled: app.installed || running,
+        'aria-label': app.name });
+      box.addEventListener('change', () => {
+        if (box.checked) chosen.add(app.id);
+        else chosen.delete(app.id);
+        button.disabled = running || !chosen.size;
+      });
+      return h('label.pack-app', { class: app.installed ? 'installed' : '' },
+        box,
+        h('img', { src: withToken(`/icon/theme/${encodeURIComponent((app.icons || []).join(','))}`), alt: '' }),
+        h('span.pack-text', h('b', app.name), compact ? null : h('small', app.summary)),
+        app.installed ? h('span.pack-done', 'Installed') : h('span.pack-src', app.source === 'flathub' ? 'Flathub' : 'Debian'));
+    });
+    button.disabled = running || !chosen.size;
+    button.addEventListener('click', () => install([...chosen]));
+    el.replaceChildren(h('div.pack-list', rows), bar, status, h('div.pack-actions', button));
+    bar.hidden = !running;
+  }
+
+  function load() {
+    return api.get('/api/packs').then((res) => { render(res.packs[name]); return res; },
+      (err) => el.replaceChildren(h('div.error-text', err.message)));
+  }
+
+  async function install(ids) {
+    if (!ids.length) return;
+    status.hidden = false;
+    status.textContent = 'Starting…';
+    try {
+      const { withAdmin, watchJobs } = await import('./admin.js');
+      await withAdmin(() => api.post('/api/packs/install', { pack: name, apps: ids }),
+        { title: 'Install apps', text: 'Enter your password to install these apps.' });
+      running = true;
+      load();
+      offJobs?.();
+      offJobs = watchJobs((job) => {
+        if (job.kind !== 'pack' || job.target !== name) return;
+        bar.hidden = job.state !== 'running';
+        bar.firstChild.style.width = `${Math.max(3, Math.round(job.progress * 100))}%`;
+        status.hidden = false;
+        status.textContent = job.state === 'failed' ? job.error : job.message;
+        status.classList.toggle('error', job.state === 'failed');
+        if (job.state !== 'running') {
+          running = false;
+          offJobs?.();
+          chosen = null;
+          load().then(() => {
+            status.hidden = false;
+            status.textContent = job.state === 'failed' ? job.error : job.message;
+          });
+          if (job.state === 'done') onDone?.();
+        }
+      }).off;
+    } catch (err) {
+      status.textContent = err.cancelled ? '' : err.message;
+      status.hidden = !status.textContent;
+    }
+  }
+
+  load();
+  return el;
 }

@@ -10,7 +10,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import __version__, drivers, paths, store
+from . import __version__, devmode, drivers, gaming, paths, security, store
 from .core import DEFAULTS, IMAGE_TYPES, ApiError, EventBus, Settings, letter_icon
 from .files import FileSystem
 from .privileged import Jobs
@@ -110,6 +110,7 @@ class Backend:
         self._popup: dict | None = None
         self._popup_key: str | None = None
         self._last_closed: tuple[str, float] | None = None
+        self.unlock_throttle = security.Throttle()
 
     # ---- implemented by subclasses -------------------------------------------------
     def apps(self) -> list[dict]: raise NotImplementedError
@@ -410,6 +411,80 @@ class Backend:
             fh.write(data)
         self._files_changed(str(folder))
         return {"path": str(target), "name": target.name}
+
+    # ---- editions: Gaming and Developer packs ----------------------------------------------
+    def packs(self) -> dict:
+        return {"packs": store.packs_with_status(store.load()), "edition": self.settings.get("edition")}
+
+    def pack_install(self, name: str, ids: list[str]) -> dict:
+        info = store.pack(store.load(), name)
+        if info is None:
+            raise ApiError("That edition doesn't exist.", 404)
+        allowed = {aid for aid, _default in info["apps"]}
+        if not ids or any(i not in allowed for i in ids):
+            raise ApiError(f"Pick apps from the {info['name']} list.")
+
+        def done(job):
+            self.bus.publish("store")
+            if job["state"] == "done":
+                self.update_settings({"editionSetup": True})
+        return self.jobs.start("pack", f"Setting up {info['name']}", ["pack", name, *ids], target=name, on_done=done)
+
+    # ---- cloud gaming ------------------------------------------------------------------------
+    def cloud_gaming(self) -> dict:
+        return {"services": [{"id": cid, "name": v[0], "url": v[1], "summary": v[2]} for cid, v in gaming.CLOUD.items()],
+                "installed": gaming.installed(self.files.home)}
+
+    def cloud_gaming_set(self, ids: list[str]) -> dict:
+        if any(i not in gaming.CLOUD for i in ids):
+            raise ApiError("Unknown cloud gaming service.")
+        gaming.set_shortcuts(self.files.home, ids)
+        self._apps_changed()
+        return self.cloud_gaming()
+
+    def _apps_changed(self) -> None:
+        """New .desktop files (the real shell notices them itself)."""
+
+    # ---- security checkup --------------------------------------------------------------------
+    def security_status(self) -> dict:
+        from . import recovery
+
+        status = security.status()
+        try:
+            # the records folder is root-only on most systems: then it can't be checked from here
+            status["recoveryKey"] = recovery.has_key(self.user()["name"]) if os.access(recovery.STORE, os.X_OK) else None
+        except Exception:  # noqa: BLE001 - unreadable record: just don't claim one
+            status["recoveryKey"] = None
+        status["lockOnSleep"] = self.settings.get("lockOnSleep")
+        return status
+
+    def security_set(self, what: str, on: bool) -> dict:
+        if what not in ("firewall", "updates"):
+            raise ApiError("Unknown security setting.")
+        title = {"firewall": "Firewall", "updates": "Automatic updates"}[what]
+        return self.jobs.start("security", f"{title} {'on' if on else 'off'}", ["security", what, "on" if on else "off"],
+                               target=what, on_done=lambda _job: self.bus.publish("security"))
+
+    # ---- developer mode ----------------------------------------------------------------------
+    def ui_override(self, rel: str) -> Path | None:
+        """A developer's replacement for a built-in UI file (only while developer mode is on)."""
+        if not self.settings.get("developerMode"):
+            return None
+        return devmode.resolve(self.settings.path.parent, rel)
+
+    def dev_action(self, action: str) -> dict:
+        config = self.settings.path.parent
+        if action == "folder":
+            path = devmode.prepare(config)
+        elif action == "source":
+            path = devmode.copy_source(paths.UI_DIR, self.files.home)
+        elif action == "reset":
+            aside = devmode.reset(config)
+            return {"path": str(aside) if aside else None}
+        else:
+            raise ApiError("Unknown developer action.")
+        self.open_app("files", str(path))
+        return {"path": str(path)}
 
     def widgets_update(self, patch: dict) -> dict:
         data = self.widgets.update(patch)

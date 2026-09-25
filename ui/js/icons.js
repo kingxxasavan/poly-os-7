@@ -9,6 +9,8 @@ const dim = (on) => (on ? '' : ' opacity=".28"');
 
 export const icons = {
   search: svg('<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>'),
+  gamepad: svg('<path d="M7.5 7h9a4.5 4.5 0 0 1 4.3 3.2l1.2 4.3a2.6 2.6 0 0 1-4.5 2.4L15.6 15H8.4l-1.9 1.9A2.6 2.6 0 0 1 2 14.5l1.2-4.3A4.5 4.5 0 0 1 7.5 7z"/><path d="M8 9.5v3M6.5 11h3"/><circle cx="15.5" cy="10" r=".9" fill="currentColor" stroke="none"/><circle cx="17.3" cy="12" r=".9" fill="currentColor" stroke="none"/>'),
+  code: svg('<path d="m8.5 7.5-4.5 4.5 4.5 4.5"/><path d="m15.5 7.5 4.5 4.5-4.5 4.5"/><path d="m13.5 5-3 14"/>'),
   camera: svg('<path d="M8.5 6.5 10 4.5h4l1.5 2H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2z"/><circle cx="12" cy="12.5" r="3.6"/>'),
   video: svg('<rect x="3" y="6.5" width="12.5" height="11" rx="2.5"/><path d="m15.5 10.5 5-3v9l-5-3"/>'),
   shield: svg('<path d="M12 3.5 19 6v5.5c0 4.3-2.9 7.6-7 9-4.1-1.4-7-4.7-7-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>'),

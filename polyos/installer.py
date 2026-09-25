@@ -6,10 +6,13 @@ finding free space, sizing partitions, validating the plan) is plain Python with
 effects, so it is unit-tested on any OS. The steps use standard Debian tools: sfdisk,
 mkfs, ntfsresize, resize2fs, unsquashfs, chroot, grub-install and efibootmgr.
 
-Two modes:
+Three modes:
   erase      wipe one disk: EFI system partition + ext4 root (UEFI), or one ext4 root (BIOS)
   alongside  keep the other system: use free space, or shrink its NTFS/ext4 partition first;
              GRUB then offers both (os-prober)
+  custom     the person decides per drive and partition: erase a drive for PolyOS, your files
+             (/home) or extra storage; or use existing partitions for /, /home, /boot/efi, swap
+             and storage (/mnt/NAME), formatted or kept as they are. Anything not chosen is kept.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import recovery
+from . import recovery, security
 
 KiB, MiB, GiB = 1024, 1024 ** 2, 1024 ** 3
 MIN_ROOT = 20 * GiB          # smallest PolyOS partition the installer offers
@@ -56,6 +59,25 @@ RESERVED_USERS = {
     "saned", "sshd", "systemd-network", "systemd-resolve", "systemd-timesync", "tss", "usbmux", "polyos", "admin",
 }
 LSBLK_COLUMNS = "NAME,TYPE,SIZE,MODEL,TRAN,RM,RO,FSTYPE,LABEL,PARTTYPE,PARTN,MOUNTPOINTS,PTTYPE,PKNAME"
+# custom mode: where partitions may go. "/", /var and /opt always get a fresh ext4 filesystem.
+SYSTEM_MOUNTS = ("/", "/boot/efi", "/home", "/var", "/opt", "/srv")
+MUST_FORMAT = ("/", "/var", "/opt")
+WIPE_TARGETS = ("/", "/home", "/srv")  # plus /mnt/NAME
+STORAGE_RE = re.compile(r"^/mnt/[a-z0-9][a-z0-9_-]{0,31}$")
+DEVICE_RE = re.compile(r"^/dev/[A-Za-z0-9/_-]+$")
+MIN_ESP = 100 * MiB
+# filesystems an existing partition can be mounted with, kept as it is (fstab type, options)
+KEEP_FS = {
+    "ext4": ("ext4", "defaults"), "ext3": ("ext3", "defaults"), "ext2": ("ext2", "defaults"),
+    "btrfs": ("btrfs", "defaults"), "xfs": ("xfs", "defaults"), "f2fs": ("f2fs", "defaults"),
+    "ntfs": ("ntfs3", "uid={uid},gid={uid},umask=022"), "vfat": ("vfat", "uid={uid},gid={uid},umask=022,utf8"),
+    "exfat": ("exfat", "uid={uid},gid={uid},umask=022"),
+}
+EDITIONS = ("regular", "developer", "gaming")
+AUTO_UPGRADES = security.AUTO_UPGRADES_TEXT.format(on=1)
+ZRAMSWAP = ("# PolyOS: compressed swap in RAM, used before the swap file (much faster than a disk)\n"
+            "ALGO=zstd\nPERCENT=50\nPRIORITY=100\n")
+LINUX_FS = ("ext4", "ext3", "ext2", "btrfs", "xfs", "f2fs")  # can hold /home (Unix permissions)
 
 
 class InstallError(Exception):
@@ -283,10 +305,14 @@ def validate_plan(plan: dict, existing_users: set[str] | None = None) -> dict:
     if not isinstance(plan, dict):
         raise InstallError("The install plan is missing.")
     mode = plan.get("mode")
-    if mode not in ("erase", "alongside"):
+    if mode not in ("erase", "alongside", "custom"):
         raise InstallError("Choose how to install PolyOS.")
+    layout = None
+    if mode == "custom":
+        layout = validate_layout(plan.get("wipe") or {}, plan.get("mounts") or [])
+        plan = {**plan, "disk": layout["disk"]}
     disk = plan.get("disk")
-    if not isinstance(disk, str) or not re.match(r"^/dev/[A-Za-z0-9/_-]+$", disk):
+    if not isinstance(disk, str) or not DEVICE_RE.match(disk):
         raise InstallError("Choose a disk.")
     user = plan.get("user") or {}
     username = str(user.get("username") or "")
@@ -312,15 +338,120 @@ def validate_plan(plan: dict, existing_users: set[str] | None = None) -> dict:
     appearance = plan.get("appearance") or {}
     theme = appearance.get("theme") if appearance.get("theme") in ("dark", "light") else "dark"
     accent = appearance.get("accent") if re.match(r"^#[0-9a-fA-F]{6}$", str(appearance.get("accent") or "")) else "#678fd9"
+    edition = plan.get("edition") or "regular"
+    if edition not in EDITIONS:
+        raise InstallError("Choose Regular, Developer or Gaming.")
     clean = {"mode": mode, "disk": disk, "hostname": hostname, "timezone": tz,
              "user": {"username": username, "fullName": full, "password": password, "recoveryKey": str(key)},
-             "appearance": {"theme": theme, "accent": accent.lower()}}
+             "appearance": {"theme": theme, "accent": accent.lower()}, "edition": edition,
+             # the edition's first-sign-in setup (apps, tools) runs once you're online
+             "extraSettings": {"edition": edition, "developerMode": edition == "developer",
+                               "showAllApps": edition == "developer", "gameMode": edition == "gaming",
+                               "editionSetup": edition == "regular"}}
+    if layout:
+        clean.update(layout)
     if mode == "alongside":
         size = plan.get("size")
         if not isinstance(size, int) or size < MIN_ROOT:
             raise InstallError(f"Give PolyOS at least {MIN_ROOT // GiB} GB.")
         clean["size"] = size
     return clean
+
+
+def firewall_conf(text: str) -> str:
+    """ufw.conf with the firewall enabled (ufw's defaults: nothing gets in, everything goes out)."""
+    if re.search(r"^ENABLED=", text, re.M):
+        return re.sub(r"^ENABLED=.*$", "ENABLED=yes", text, flags=re.M)
+    return text + ("" if text.endswith("\n") or not text else "\n") + "ENABLED=yes\n"
+
+
+def disk_of(device: str) -> str:
+    """/dev/sda3 -> /dev/sda, /dev/nvme0n1p2 -> /dev/nvme0n1 (the real parent is checked against lsblk)."""
+    m = re.match(r"^(/dev/(?:nvme\d+n\d+|mmcblk\d+|loop\d+|md\d+))p\d+$", device) or re.match(r"^(/dev/[a-z]+)\d+$", device)
+    return m.group(1) if m else device
+
+
+def _mount_ok(mount: str) -> bool:
+    return mount in SYSTEM_MOUNTS or mount == "swap" or bool(STORAGE_RE.match(mount))
+
+
+def validate_layout(wipe, mounts) -> dict:
+    """custom mode: {disk: target} drives to erase, and [{device, mount, format}] partitions to use."""
+    if not isinstance(wipe, dict) or not isinstance(mounts, list) or len(wipe) > 16 or len(mounts) > 32:
+        raise InstallError("Choose what to do with your drives.")
+    clean_wipe: dict[str, str] = {}
+    for disk, target in wipe.items():
+        if not isinstance(disk, str) or not DEVICE_RE.match(disk):
+            raise InstallError("One of the drives can't be used.")
+        if target not in WIPE_TARGETS and not (isinstance(target, str) and STORAGE_RE.match(target)):
+            raise InstallError("A whole drive can hold PolyOS (/), your files (/home) or extra storage (/mnt/…).")
+        clean_wipe[disk] = target
+    clean_mounts, devices = [], set()
+    for entry in mounts:
+        if not isinstance(entry, dict):
+            raise InstallError("Choose what to do with your partitions.")
+        device, mount, fmt = entry.get("device"), entry.get("mount"), entry.get("format")
+        if not isinstance(device, str) or not DEVICE_RE.match(device) or device in devices:
+            raise InstallError("A partition was chosen twice or can't be used.")
+        if not isinstance(mount, str) or not _mount_ok(mount):
+            raise InstallError(f"{device} can't be used for {mount}.")
+        if not isinstance(fmt, bool):
+            raise InstallError("Say whether to erase each partition.")
+        if mount in MUST_FORMAT and not fmt:
+            raise InstallError(f"The partition for {mount} has to be erased first.")
+        if disk_of(device) in clean_wipe:
+            raise InstallError(f"{device} is on a drive that will be erased.")
+        devices.add(device)
+        clean_mounts.append({"device": device, "mount": mount, "format": fmt})
+    targets = [*clean_wipe.values(), *(m["mount"] for m in clean_mounts if m["mount"] != "swap")]
+    if targets.count("/") != 1:
+        raise InstallError("Choose one drive or partition for PolyOS itself (/)." if "/" not in targets
+                           else "Only one drive or partition can hold PolyOS (/).")
+    dupes = sorted({t for t in targets if targets.count(t) > 1})
+    if dupes:
+        raise InstallError(f"Two places are set to {dupes[0]}. Each folder can come from one partition only.")
+    if sum(1 for m in clean_mounts if m["mount"] == "swap") > 1:
+        raise InstallError("Choose at most one swap partition.")
+    root_disk = next((d for d, t in clean_wipe.items() if t == "/"), None) or \
+        disk_of(next(m["device"] for m in clean_mounts if m["mount"] == "/"))
+    return {"disk": root_disk, "wipe": clean_wipe, "mounts": clean_mounts}
+
+
+def data_script(label: str) -> str:
+    """sfdisk input for a whole drive used as one ext4 partition (your files or storage)."""
+    return f"label: {label}\n" + (f"type={LINUX_GUID}, name=\"PolyOS data\"\n" if label == "gpt" else "type=83\n")
+
+
+def mount_order(entries: list[dict]) -> list[dict]:
+    """/ first, then parents before children (/home before /home/x); swap last."""
+    return sorted(entries, key=lambda e: (e["mount"] == "swap", e["mount"] != "/", e["mount"].count("/"), e["mount"]))
+
+
+def fstab_entries(entries: list[dict], uid: int = 1000, swapfile: bool = False) -> str:
+    """fstab from [{uuid, mount, fs, kept}]: kept foreign filesystems belong to you and never block booting."""
+    lines = ["# /etc/fstab: created by the PolyOS installer",
+             "# <file system>  <mount point>  <type>  <options>  <dump>  <pass>"]
+    for e in mount_order(entries):
+        src = f"UUID={e['uuid']}"
+        if e["mount"] == "swap":
+            lines.append(f"{src}  none  swap  sw  0  0")
+            continue
+        if e["mount"] == "/":
+            lines.append(f"{src}  /  ext4  errors=remount-ro  0  1")
+            continue
+        if e["mount"] == "/boot/efi":
+            lines.append(f"{src}  /boot/efi  vfat  umask=0077  0  1")
+            continue
+        fstype, opts = KEEP_FS.get(e["fs"], (e["fs"], "defaults"))
+        opts = opts.format(uid=uid)
+        storage = bool(STORAGE_RE.match(e["mount"]))
+        if storage:  # a missing or damaged extra drive must not stop the computer from starting
+            opts += ",nofail,x-systemd.device-timeout=10s"
+        passno = 2 if fstype in ("ext4", "ext3", "ext2") else 0
+        lines.append(f"{src}  {e['mount']}  {fstype}  {opts}  0  {passno}")
+    if swapfile:
+        lines.append("/swapfile  none  swap  sw  0  0")
+    return "\n".join(lines) + "\n"
 
 
 def erase_script(label: str, uefi: bool) -> str:
@@ -362,13 +493,10 @@ def efi_entries(text: str) -> dict[str, str]:
 
 
 def fstab(root_uuid: str, esp_uuid: str | None, swapfile: bool) -> str:
-    lines = ["# /etc/fstab: created by the PolyOS installer", "# <file system>  <mount point>  <type>  <options>  <dump>  <pass>",
-             f"UUID={root_uuid}  /  ext4  errors=remount-ro  0  1"]
+    entries = [{"uuid": root_uuid, "mount": "/", "fs": "ext4"}]
     if esp_uuid:
-        lines.append(f"UUID={esp_uuid}  /boot/efi  vfat  umask=0077  0  1")
-    if swapfile:
-        lines.append("/swapfile  none  swap  sw  0  0")
-    return "\n".join(lines) + "\n"
+        entries.append({"uuid": esp_uuid, "mount": "/boot/efi", "fs": "vfat"})
+    return fstab_entries(entries, swapfile=swapfile)
 
 
 def swap_bytes(ram: int) -> int:
@@ -512,7 +640,10 @@ class Installer:
         self.esp_is_new = False
         self.mounted: list[Path] = []
         self.windows_alongside = False
+        self.dual = plan["mode"] == "alongside"  # another system stays: show GRUB's menu
         self.disk_info: dict | None = None
+        self.all_disks: dict[str, dict] = {}
+        self.mounts: list[dict] = []  # {device, mount, format, fs, uuid}: everything that goes in fstab
 
     # ---- helpers ---------------------------------------------------------------------
     def step(self, progress: float, message: str) -> None:
@@ -539,19 +670,39 @@ class Installer:
         if self.disk == live_disk():
             raise InstallError("That's the drive PolyOS is running from. Choose another disk.")
         disks = {d["path"]: d for d in parse_lsblk(json.loads(self.r.run(["lsblk", "-J", "-b", "-p", "-o", LSBLK_COLUMNS]) or '{"blockdevices": []}'))}
-        if not self.dry and self.disk not in disks:
-            raise InstallError("That disk is no longer connected.")
+        self.all_disks = disks
+        involved = {self.disk, *self.plan.get("wipe", {}), *(self._parent(m["device"]) for m in self.plan.get("mounts", []))}
+        live = live_disk()
+        for path in involved:
+            if path == live:
+                raise InstallError("That's the drive PolyOS is running from. Choose another disk.")
+            if not self.dry and path not in disks:
+                raise InstallError("One of the drives you chose is no longer connected.")
         info = disks.get(self.disk)
         if info and info["size"] < MIN_ROOT:
             raise InstallError("That disk is too small for PolyOS.")
         self.disk_info = info
-        # anything on the disk that the live system mounted (e.g. automount) must go first
-        for part in (info or {}).get("partitions", []):
-            for mount in part["mounts"]:
-                if mount == "[SWAP]":
-                    self.r.run(["swapoff", part["path"]], check=False)
-                else:
-                    self.r.run(["umount", "-l", mount], check=False)
+        # anything on these disks that the live system mounted (e.g. automount) must go first
+        for path in involved:
+            for part in (disks.get(path) or {}).get("partitions", []):
+                for mount in part["mounts"]:
+                    if mount == "[SWAP]":
+                        self.r.run(["swapoff", part["path"]], check=False)
+                    else:
+                        self.r.run(["umount", "-l", mount], check=False)
+
+    def _parent(self, device: str) -> str:
+        for disk in self.all_disks.values():
+            if any(p["path"] == device for p in disk["partitions"]):
+                return disk["path"]
+        return disk_of(device)
+
+    def _partition(self, device: str) -> dict | None:
+        for disk in self.all_disks.values():
+            for part in disk["partitions"]:
+                if part["path"] == device:
+                    return part
+        return None
 
     def partition_erase(self) -> None:
         self.step(0.02, "Preparing the disk…")
@@ -561,12 +712,83 @@ class Installer:
         self.r.run(["sfdisk", "--wipe", "always", "--wipe-partitions", "always", "-q", self.disk],
                    input=erase_script(label, self.uefi), what="Creating partitions")
         self.settle()
+        self.esp_dev, self.root_dev, self.esp_is_new = self._erase_nodes(self.disk, label)
+
+    def _erase_nodes(self, disk: str, label: str) -> tuple[str | None, str, bool]:
+        """(ESP, root, ESP is new) on a disk partitioned with erase_script."""
         if self.uefi:
-            self.esp_dev, self.root_dev, self.esp_is_new = partition_node(self.disk, 1), partition_node(self.disk, 2), True
-        elif label == "gpt":
-            self.root_dev = partition_node(self.disk, 2)
-        else:
-            self.root_dev = partition_node(self.disk, 1)
+            return partition_node(disk, 1), partition_node(disk, 2), True
+        if label == "gpt":
+            return None, partition_node(disk, 2), False
+        return None, partition_node(disk, 1), False
+
+    def partition_custom(self) -> None:
+        """Erase the drives chosen for it, then check every partition chosen, before anything is formatted."""
+        wipe, chosen = self.plan["wipe"], self.plan["mounts"]
+        # check first: nothing is erased if any choice turns out to be impossible
+        for entry in chosen:
+            part = self._partition(entry["device"])
+            if part is None and not self.dry:
+                raise InstallError(f"{entry['device']} is no longer there. Look at your disks again.")
+            part = part or {"size": 64 * GiB, "fstype": "ext4", "parttype": ""}
+            if entry["mount"] == "/" and part["size"] < MIN_ROOT:
+                raise InstallError(f"{entry['device']} is too small for PolyOS. It needs at least {MIN_ROOT // GiB} GB.")
+            if entry["mount"] == "/boot/efi":
+                if part["size"] < MIN_ESP:
+                    raise InstallError(f"{entry['device']} is too small to be the EFI boot partition.")
+                if not entry["format"] and part["fstype"] != "vfat":
+                    raise InstallError(f"{entry['device']} isn't an EFI boot partition. Choose to erase it, or pick another one.")
+            if not entry["format"] and entry["mount"] not in ("swap", "/boot/efi"):
+                if part["fstype"] not in KEEP_FS:
+                    raise InstallError(f"{entry['device']} has no files PolyOS can read ({part['fstype'] or 'empty'}). "
+                                       "Choose to erase it instead.")
+                if entry["mount"] in ("/home", "/srv") and part["fstype"] not in LINUX_FS:
+                    raise InstallError(f"{entry['device']} uses {part['fstype']}, which can't hold {entry['mount']}. "
+                                       "Use it as extra storage, or erase it.")
+            if entry["mount"] == "swap" and not entry["format"] and part["fstype"] != "swap":
+                raise InstallError(f"{entry['device']} isn't a swap partition yet. Choose to erase it.")
+        # the whole drives
+        for disk, target in wipe.items():
+            info = self.all_disks.get(disk) or {"size": 500 * GiB}
+            label = "gpt" if (self.uefi or info["size"] > 2 * 1024 ** 4 or target != "/") else "dos"
+            self.step(0.02, f"Preparing {info.get('model') or disk}…")
+            self.r.run(["wipefs", "-a", "-f", disk], what="Clearing a drive")
+            script = erase_script(label, self.uefi) if target == "/" else data_script(label)
+            self.r.run(["sfdisk", "--wipe", "always", "--wipe-partitions", "always", "-q", disk],
+                       input=script, what="Creating partitions")
+            self.r.run(["partx", "-u", disk], check=False)
+            if target == "/":
+                self.esp_dev, self.root_dev, self.esp_is_new = self._erase_nodes(disk, label)
+            else:
+                self.mounts.append({"device": partition_node(disk, 1), "mount": target, "format": True, "fs": "ext4"})
+        self.r.run(["udevadm", "settle", "--timeout=15"], check=False)
+        for entry in chosen:
+            part = self._partition(entry["device"]) or {"fstype": "ext4", "parttype": ""}
+            if entry["mount"] == "/":
+                self.root_dev = entry["device"]
+            elif entry["mount"] == "/boot/efi":
+                self.esp_dev, self.esp_is_new = entry["device"], entry["format"]
+            else:
+                fs = "swap" if entry["mount"] == "swap" else "ext4" if entry["format"] else part["fstype"]
+                self.mounts.append({"device": entry["device"], "mount": entry["mount"], "format": entry["format"], "fs": fs})
+        if self.uefi and not self.esp_dev:  # use the EFI partition already on the PolyOS drive (or any drive)
+            candidates = [p for d in sorted(self.all_disks.values(), key=lambda d: d["path"] != self.disk)
+                          if d["path"] not in wipe  # (an erased drive's old EFI partition is gone)
+                          for p in d["partitions"] if is_esp(p, d["table"]) and p["size"] >= MIN_ESP]
+            if not candidates and not self.dry:
+                raise InstallError("This computer starts in UEFI mode and needs an EFI boot partition. "
+                                   "Choose one for /boot/efi, or let PolyOS erase a whole drive.")
+            self.esp_dev = candidates[0]["path"] if candidates else partition_node(self.disk, 1)
+        if not self.uefi and self.disk not in wipe:
+            info = self.all_disks.get(self.disk) or {}
+            if info.get("table") == "gpt" and not any(p["parttype"] == BIOS_BOOT_GUID.lower() for p in info["partitions"]):
+                raise InstallError("This computer starts in legacy BIOS mode, and the drive for PolyOS uses GPT without a "
+                                   "BIOS boot partition. Restart the USB drive in UEFI mode, or erase that whole drive.")
+        # keep other systems in the boot menu (and Windows' clock) when anything else stays
+        others = [guess_os(p, {}) for d in self.all_disks.values() for p in d["partitions"]
+                  if d["path"] not in wipe and p["path"] not in {m["device"] for m in chosen}]
+        self.windows_alongside = any("windows" in (o or "").lower() for o in others)
+        self.dual = any(others) or (self.esp_dev is not None and not self.esp_is_new)
 
     def partition_alongside(self) -> None:
         want = self.plan["size"]
@@ -642,21 +864,37 @@ class Installer:
         if existing_esp and not self.esp_dev:
             self.esp_dev = existing_esp["path"]
 
+    def _system_mounts(self) -> None:
+        """Put PolyOS's own partitions (from erase/alongside/custom) in front of the others."""
+        own = [{"device": self.root_dev, "mount": "/", "format": True, "fs": "ext4"}]
+        if self.esp_dev:
+            own.append({"device": self.esp_dev, "mount": "/boot/efi", "format": self.esp_is_new, "fs": "vfat"})
+        self.mounts = own + self.mounts
+
     def format_and_mount(self) -> None:
         self.step(0.07, "Formatting…")
-        self.r.run(["mkfs.ext4", "-F", "-q", "-L", "PolyOS", self.root_dev], what="Formatting the PolyOS partition")
-        if self.esp_dev and self.esp_is_new:
-            self.r.run(["mkfs.vfat", "-F", "32", "-n", "EFI", self.esp_dev], what="Formatting the EFI partition")
-        if not self.dry:
-            TARGET.mkdir(parents=True, exist_ok=True)
-        self.r.run(["mount", self.root_dev, str(TARGET)], what="Mounting the new system")
-        self.mounted.append(TARGET)
-        if self.esp_dev:
-            esp_mount = TARGET / "boot" / "efi"
+        self._system_mounts()
+        labels = {"/": "PolyOS", "/home": "Home", "/boot/efi": "EFI"}
+        for e in self.mounts:
+            if not e["format"]:
+                continue
+            name = labels.get(e["mount"]) or e["mount"].rsplit("/", 1)[-1][:16] or "Data"
+            if e["mount"] == "swap":
+                self.r.run(["mkswap", "-L", "swap", e["device"]], what=f"Making {e['device']} a swap partition")
+            elif e["fs"] == "vfat":
+                self.r.run(["mkfs.vfat", "-F", "32", "-n", "EFI", e["device"]], what="Formatting the EFI partition")
+            else:
+                self.r.run(["mkfs.ext4", "-F", "-q", "-L", name, e["device"]], what=f"Formatting {e['device']} for {e['mount']}")
+        # mounted now: PolyOS's own folders, and new storage (so it can be handed to you);
+        # storage you're keeping is only listed in fstab and left untouched until PolyOS starts
+        for e in mount_order(self.mounts):
+            if e["mount"] == "swap" or (STORAGE_RE.match(e["mount"]) and not e["format"]):
+                continue
+            where = TARGET if e["mount"] == "/" else TARGET / e["mount"].lstrip("/")
             if not self.dry:
-                esp_mount.mkdir(parents=True, exist_ok=True)
-            self.r.run(["mount", self.esp_dev, str(esp_mount)], what="Mounting the EFI partition")
-            self.mounted.append(esp_mount)
+                where.mkdir(parents=True, exist_ok=True)
+            self.r.run(["mount", e["device"], str(where)], what=f"Mounting {e['mount']}")
+            self.mounted.append(where)
 
     def copy_system(self) -> None:
         self.step(0.09, "Copying PolyOS to the disk…")
@@ -684,14 +922,18 @@ class Installer:
         self.step(0.70, "Setting up your computer…")
         plan = self.plan
         write = self._write
-        root_uuid = self._uuid(self.root_dev)
-        esp_uuid = self._uuid(self.esp_dev) if self.esp_dev else None
-        swap = swap_bytes(_ram_bytes())
-        if not self.dry:
+        for e in self.mounts:
+            e["uuid"] = self._uuid(e["device"])
+        self.swapfile = not any(e["mount"] == "swap" for e in self.mounts)
+        if self.swapfile and not self.dry:
+            swap = swap_bytes(_ram_bytes())
             self.r.run(["fallocate", "-l", str(swap), str(TARGET / "swapfile")], what="Creating the swap file")
             os.chmod(TARGET / "swapfile", 0o600)
             self.r.run(["mkswap", str(TARGET / "swapfile")], what="Creating the swap file")
-        write("etc/fstab", fstab(root_uuid, esp_uuid, swapfile=True))
+        for e in self.mounts:  # mount points for storage kept as it is
+            if STORAGE_RE.match(e["mount"]) and not self.dry:
+                (TARGET / e["mount"].lstrip("/")).mkdir(parents=True, exist_ok=True)
+        write("etc/fstab", fstab_entries(self.mounts, swapfile=self.swapfile))
         host = plan["hostname"]
         write("etc/hostname", host + "\n")
         write("etc/hosts", f"127.0.0.1\tlocalhost\n127.0.1.1\t{host}\n\n::1\tlocalhost ip6-localhost ip6-loopback\n"
@@ -761,6 +1003,21 @@ class Installer:
             self.chroot(["apt-get", "-y", "autoremove", "--purge"], check=False, timeout=900)
         self.chroot(["locale-gen"], check=False, timeout=300)
 
+    def system_defaults(self) -> None:
+        """Security and speed for the installed system: firewall on, automatic security updates,
+        compressed RAM swap, SSD trimming, and no waiting for the network while starting up."""
+        self.step(0.78, "Turning on security and speed settings…")
+        if self.dry or (TARGET / "etc/ufw/ufw.conf").exists():
+            ufw = "" if self.dry else (TARGET / "etc/ufw/ufw.conf").read_text()
+            self._write("etc/ufw/ufw.conf", firewall_conf(ufw))
+        if self.dry or (TARGET / "usr/bin/unattended-upgrade").exists():
+            self._write("etc/apt/apt.conf.d/20auto-upgrades", AUTO_UPGRADES)
+        if self.dry or (TARGET / "etc/default/zramswap").exists():
+            self._write("etc/default/zramswap", ZRAMSWAP)
+        for unit, state in (("fstrim.timer", "enable"), ("NetworkManager-wait-online.service", "disable"),
+                            ("ufw.service", "enable"), ("zramswap.service", "enable")):
+            self.chroot(["systemctl", state, unit], check=False)
+
     def create_user(self) -> None:
         self.step(0.80, "Creating your account…")
         user = self.plan["user"]
@@ -787,8 +1044,15 @@ class Installer:
             recovery.save_record(name, recovery.make_record(user["recoveryKey"]), root=TARGET)
         # PolyOS settings from the setup screens, plus the wallpapers in Pictures
         appearance = self.plan["appearance"]
-        settings = {"theme": appearance["theme"], "accent": appearance["accent"], "setupDone": False}
+        settings = {"theme": appearance["theme"], "accent": appearance["accent"], "setupDone": False,
+                    **self.plan.get("extraSettings", {})}
         home = f"home/{name}"
+        existing = TARGET / home / ".config/polyos/settings.json"
+        if not self.dry and existing.is_file():  # a kept /home: keep its PolyOS settings, run the welcome again
+            try:
+                settings = {**json.loads(existing.read_text("utf-8")), **settings, "theme": settings["theme"]}
+            except (OSError, ValueError):
+                pass
         self._write(f"{home}/.config/polyos/settings.json", json.dumps(settings, indent=2) + "\n")
         if not self.dry:
             walls = Path("/usr/share/polyos/wallpapers")
@@ -797,10 +1061,19 @@ class Installer:
             for wall in walls.glob("*.jpg") if walls.is_dir() else []:
                 shutil.copy2(wall, pics / wall.name)
         self.chroot(["chown", "-R", f"{name}:{name}", f"/{home}"], what="Setting up your home folder")
+        for e in self.mounts:  # new storage drives belong to you
+            if STORAGE_RE.match(e["mount"]) and e["format"]:
+                self.chroot(["chown", f"{name}:{name}", e["mount"]], check=False)
+        uid = 1000
+        if not self.dry:
+            out = self.chroot(["id", "-u", name], check=False).strip()
+            uid = int(out) if out.isdigit() else 1000
+        if uid != 1000 and any(e["fs"] in ("ntfs", "vfat", "exfat") and e["mount"] != "/boot/efi" for e in self.mounts):
+            self._write("etc/fstab", fstab_entries(self.mounts, uid=uid, swapfile=self.swapfile))
 
     def bootloader(self) -> None:
         self.step(0.86, "Installing the boot loader…")
-        dual = self.plan["mode"] == "alongside"
+        dual = self.dual
         self._write("etc/default/grub",
                     "# Written by the PolyOS installer. Run update-grub after editing.\n"
                     "GRUB_DEFAULT=0\n"
@@ -853,7 +1126,9 @@ class Installer:
         if not _have("efibootmgr") or not self.esp_dev:
             return
         entries = efi_entries(self.r.run(["efibootmgr"], check=False))
-        number = next((p["number"] for p in (self.disk_info or {}).get("partitions", []) if p["path"] == self.esp_dev), None)
+        part = self._partition(self.esp_dev)
+        esp_disk = self._parent(self.esp_dev) if part else (self.disk if self.esp_is_new else disk_of(self.esp_dev))
+        number = part["number"] if part and part.get("number") else None
         if number is None:
             m = re.search(r"(\d+)$", self.esp_dev)
             number = int(m.group(1)) if m else 1
@@ -862,7 +1137,7 @@ class Installer:
                 self.r.run(["efibootmgr", "-q", "-b", num, "-B"], check=False)
         loader = "\\EFI\\debian\\shimx64.efi" if (self.dry or (TARGET / "boot/efi/EFI/debian/shimx64.efi").exists()) \
             else "\\EFI\\debian\\grubx64.efi"
-        self.r.run(["efibootmgr", "-q", "-c", "-d", self.disk, "-p", str(number), "-L", "PolyOS", "-l", loader], check=False)
+        self.r.run(["efibootmgr", "-q", "-c", "-d", esp_disk, "-p", str(number), "-L", "PolyOS", "-l", loader], check=False)
         if self.dry or "PolyOS" in efi_entries(self.r.run(["efibootmgr"], check=False)).values():
             for num, label in entries.items():
                 if label.lower() == "debian":
@@ -891,6 +1166,8 @@ class Installer:
             self.preflight()
             if self.plan["mode"] == "erase":
                 self.partition_erase()
+            elif self.plan["mode"] == "custom":
+                self.partition_custom()
             else:
                 self.partition_alongside()
             if not self.root_dev:
@@ -900,6 +1177,7 @@ class Installer:
             self.configure()
             self.bind_mounts()
             self.packages()
+            self.system_defaults()
             self.create_user()
             self.bootloader()
             self.step(0.97, "Cleaning up…")

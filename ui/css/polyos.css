@@ -1524,3 +1524,68 @@ html[data-surface="camera"] { background: #000; }
   position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); max-width: 80%; padding: 10px 18px; border-radius: 999px;
   background: rgba(30, 30, 32, 0.92); font-size: 13px; animation: rise 0.18s var(--ease);
 }
+
+/* ---- setup: editions and the custom drive chooser ------------------------------------------ */
+.su-editions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; max-width: 760px; }
+.su-edition {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 20px 18px 22px;
+  text-align: left; border-radius: 22px; border: 2px solid transparent; background: var(--su-raised-2, rgba(255, 255, 255, 0.08));
+  color: inherit; transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.su-edition:hover { background: color-mix(in srgb, var(--accent) 16%, var(--su-raised-2, rgba(255, 255, 255, 0.08))); }
+.su-edition:active { transform: scale(0.98); }
+.su-edition.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.su-edition b { font-family: var(--display); font-weight: 600; font-size: 19px; }
+.su-edition small { color: var(--su-text-2); font-size: 13.5px; line-height: 1.45; }
+.su-edition-ico { display: grid; place-items: center; width: 46px; height: 46px; margin-bottom: 6px; border-radius: 15px; background: var(--accent); color: #fff; font-size: 24px; }
+.su-edition-check { position: absolute; top: 14px; right: 14px; color: var(--accent-text); font-size: 20px; }
+@media (max-width: 860px) { .su-editions { grid-template-columns: 1fr; } }
+.su-drives { display: grid; gap: 12px; max-width: 720px; max-height: 42vh; overflow-y: auto; padding-right: 4px; }
+.su-drive { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 18px; background: var(--su-raised-2, rgba(255, 255, 255, 0.08)); }
+.su-drive-head { display: flex; align-items: center; gap: 12px; }
+.su-drive-head .su-disk-text { flex: 1; }
+.su-part { display: flex; align-items: center; gap: 12px; margin-left: 38px; padding: 8px 10px; border-radius: 12px; background: rgba(0, 0, 0, 0.18); }
+.su-part-text { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.su-part-text b { font-size: 14px; font-weight: 600; }
+.su-part-text small { color: var(--su-text-2); font-size: 12.5px; }
+.su-role { width: auto; max-width: 290px; height: 38px; font-size: 13.5px; padding: 0 12px; }
+.su-plan { max-width: 720px; margin-top: 14px; padding: 12px 16px; border-radius: 16px; background: rgba(0, 0, 0, 0.22); }
+.su-plan b { font-family: var(--display); font-size: 14px; }
+.su-summary { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13.5px; }
+.su-summary li { display: flex; align-items: center; gap: 8px; }
+.su-summary .ico { font-size: 15px; }
+.su-summary li.erase { color: #f1a1a1; }
+.su-summary li.use .ico { color: var(--success); }
+.su-summary li.keep { color: var(--su-text-2); }
+
+/* ---- app packs (Gaming, Developer), security checkup ------------------------------------- */
+.pack { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
+.pack-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.pack-app { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--pill); cursor: default; }
+.pack-app:hover { background: var(--hover); }
+.pack-app input { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+.pack-app img { width: 32px; height: 32px; flex: none; }
+.pack-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pack-text b { font-size: 13.5px; font-weight: 600; }
+.pack-text small { color: var(--text-2); font-size: 12px; line-height: 1.35; }
+.pack-src, .pack-done { flex: none; font-size: 11px; font-weight: 600; color: var(--text-3); }
+.pack-done { color: var(--success); }
+.pack-app.installed { opacity: 0.75; }
+.pack-bar { height: 6px; border-radius: 999px; background: var(--pill); overflow: hidden; }
+.pack-bar span { display: block; height: 100%; width: 3%; border-radius: inherit; background: var(--accent); transition: width 0.4s var(--ease); }
+.pack-status { font-size: 13px; color: var(--text-2); }
+.pack-status.error { color: var(--danger); }
+.pack-actions { display: flex; justify-content: flex-end; }
+.setup .pack { padding: 0; max-width: 760px; }
+.setup .pack-list { max-height: 38vh; overflow-y: auto; }
+.setup .pack-app { background: var(--su-raised-2); }
+.checkup { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; padding: 12px 14px; }
+.check-item { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border-radius: 14px; background: var(--pill); }
+.check-item > .ico { font-size: 20px; margin-top: 1px; }
+.check-item span { display: flex; flex-direction: column; min-width: 0; }
+.check-item b { font-size: 13.5px; font-weight: 600; }
+.check-item small { color: var(--text-2); font-size: 12px; line-height: 1.35; }
+.check-item.ok > .ico { color: var(--success); }
+.check-item.warn > .ico { color: #f5c26b; }
+.check-item.unknown > .ico { color: var(--text-3); }
+.prose code { padding: 1px 6px; border-radius: 6px; background: var(--pill); font-size: 12.5px; }

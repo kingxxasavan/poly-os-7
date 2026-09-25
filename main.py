@@ -80,7 +80,8 @@ PACKAGES = {
             "brightnessctl", "lxpolkit | mate-polkit", "xfce4-notifyd", "tumbler", "playerctl",
             "xfce4-screenshooter", "fonts-noto-color-emoji", "network-manager-gnome", "pavucontrol",
             "arandr", "ristretto", "file-roller", "gvfs-backends", "plymouth", "plymouth-label", "evince",
-            "flatpak", "bluez", "blueman", "usbutils", "isenkram-cli", "mokutil", "libxss1",
+            "flatpak", "bluez", "blueman", "usbutils", "isenkram-cli", "mokutil", "libxss1", "ufw",
+            "unattended-upgrades", "zram-tools", "gamemode",
             "power-profiles-daemon", "gstreamer1.0-plugins-good", "gstreamer1.0-plugins-base", "gstreamer1.0-libav",
         ],
         "summary": "PolyOS desktop environment (complete)",
@@ -163,6 +164,7 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
             # Firefox draws a normal title bar (with PolyOS's close button) instead of tabs in the title bar
             (data / "firefox/policies.json", "etc/firefox/policies/policies.json", 0o644),
             (data / "systemd/50-polyos.conf", "usr/lib/systemd/system.conf.d/50-polyos.conf", 0o644),
+            (data / "systemd/journald-polyos.conf", "usr/lib/systemd/journald.conf.d/50-polyos.conf", 0o644),
             copyright_file,
         ]
     files = [
@@ -186,6 +188,7 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         (ROOT / "ui/img/settings.svg", "usr/share/icons/hicolor/scalable/apps/polyos-settings.svg", 0o644),
         (ROOT / "ui/img/files.svg", "usr/share/icons/hicolor/scalable/apps/polyos-files.svg", 0o644),
         (ROOT / "ui/img/logo.svg", "usr/share/icons/hicolor/scalable/apps/polyos-setup.svg", 0o644),
+        (ROOT / "ui/img/cloud-gaming.svg", "usr/share/icons/hicolor/scalable/apps/polyos-cloud-gaming.svg", 0o644),
         *[(ROOT / f"ui/img/{n}.svg", f"usr/share/icons/hicolor/scalable/apps/polyos-{n}.svg", 0o644)
           for n in ("taskmgr", "drivers", "store", "camera")],
         # Poppins (SIL OFL 1.1) for window titles and the login screen, not just the web UI

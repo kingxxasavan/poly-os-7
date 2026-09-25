@@ -84,7 +84,13 @@ this step.
 
 | Piece | What it does |
 |---|---|
-| **Installer** | The PolyOS 7 setup on the live USB: "Cryptic Software presents", the falling pinwheel and 7, the crystal welcome, then *Install PolyOS 7* (whole disk) or *Dual boot* (next to Windows or Linux, shrinking it if needed), terms, account, dark/light appearance, disk choice, progress, restart. Calamares stays as the *Advanced installer* |
+| **Installer** | The PolyOS 7 setup on the live USB: "Cryptic Software presents", the falling pinwheel and 7, the crystal welcome, then *Install PolyOS 7* (whole disk), *Dual boot* (next to Windows or Linux, shrinking it if needed) or *Custom*, terms, edition, account, dark/light appearance, disk choice, progress, restart. Calamares stays as the *Advanced installer* |
+| **Custom install** | Choose what every drive and partition is for: erase a drive for PolyOS, your files (/home) or extra storage; or use existing partitions for PolyOS (/), /home (keeping its files), the EFI boot partition, swap, or storage at /mnt/NAME (NTFS drives too). Anything left on *Keep* isn't touched, and a summary lists every erase before you confirm. Impossible choices are refused before anything is erased |
+| **Editions** | *Regular*, *Developer* or *Gaming*, picked while installing; the edition's apps are offered at first sign-in and can be added any time in Settings |
+| **Gaming** | Steam, Bottles (Wine for Windows games), Heroic, Lutris, ProtonUp-Qt, GameMode, Discord; cloud gaming shortcuts (GeForce NOW, Xbox Cloud Gaming, Amazon Luna, Boosteroid) that open in Chrome/Chromium when installed; `vm.max_map_count` raised like SteamOS; **Game Mode**: while a game is full screen, the performance power mode, no idle lock or sleep, slower status polling, background helpers at low priority, and the compositor steps aside |
+| **Developer** | Developer mode: files in `~/.config/polyos/ui/` replace PolyOS's built-in interface files (`css/user.css` is added to every screen), `~/PolyOS-UI` holds a copy of the originals, right-click *Inspect Element* on PolyOS screens, *Reload the interface*; Git, build tools, Python, Node.js, VS Code. `polyos-ctl dev off` (Ctrl+Alt+T) undoes a broken change |
+| **Security** | Firewall (ufw) on by default, automatic security updates, a security checkup (firewall, updates, lock screen, recovery key, AppArmor, Secure Boot), lock screen slows down password guessing (a wait after 5 wrong tries, doubling each time) |
+| **Speed** | Compressed RAM swap (zram), SSD trim, capped system log, no waiting for the network at startup, full-screen apps bypass the compositor, one shared event connection for all PolyOS screens |
 | **First sign-in** | Welcome back, Wi-Fi, drivers, Vara API key, a quick tour |
 | **Dock** | Pinwheel (Home Menu), pinned and running apps, status, clock, launcher grid; right-click an app for Close, Force close and Task Manager |
 | **Home Menu** | PolyOS 7 layout: date and calendar cards, Ask Vara, Run CMD, brightness and volume sliders, pinned and recent apps, power, launcher |
@@ -95,7 +101,7 @@ this step.
 | **Task Manager** | Apps and processes with CPU and memory, End task and Force close, live CPU/memory/disk/network graphs |
 | **Driver Manager** | Finds NVIDIA, AMD and Intel graphics, Wi-Fi (including Broadcom), Bluetooth and sound hardware and installs the right drivers and firmware from Debian |
 | **PolyMarket** | Curated store: Chrome, Discord, Spotify, Steam, VS Code, LibreOffice, GIMP, OBS and more from Debian and Flathub |
-| **Settings** | Appearance (dark/light, accent, desktop and lock screen wallpapers), Taskbar & Desktop (floating or edge-to-edge taskbar, center/left, auto-hide, widgets button, date, pinned apps, desktop shortcuts), Wi-Fi, Sound, Display, Power & Performance (Power saver / Balanced / Performance / Maximum, screen-off and sleep timers), Account (password, recovery key, sign-in options), Privacy & Security (lock on sleep, lock screen news, camera and microphone access, activity history), Vara, About |
+| **Settings** | Appearance (dark/light, accent, desktop and lock screen wallpapers), Gaming, Developer (with developer mode on), Taskbar & Desktop (floating or edge-to-edge taskbar, center/left, auto-hide, widgets button, date, pinned apps, desktop shortcuts), Wi-Fi, Sound, Display, Power & Performance (Power saver / Balanced / Performance / Maximum, screen-off and sleep timers), Account (password, recovery key, sign-in options), Privacy & Security (lock on sleep, lock screen news, camera and microphone access, activity history), Vara, About |
 | **Camera** | Photos and videos from the webcam (self-timer, mirror, switch camera), saved to Pictures › Camera. Only listed on computers with a camera |
 | **Ask Vara** | Assistant: runs simple requests on the PC ("open firefox", "volume 40", "turn wifi off") and answers the rest with an AI model; uses your Ollama Cloud (or other) API key |
 | **Login screen** | PolyOS 7 design over the blurred amethyst crystal: big stacked clock, date, *Performance: Optimal*, news and notification tiles, *Click to Enter Password*, then your name, "Enter your password", *Forgot Password* and *Next*. Falls back to the stock greeter if it can't start |
@@ -171,6 +177,7 @@ settings. The live session changes nothing on the disk until you run the install
 | `Super+I` | Settings |
 | `Super+E` / `Super+T` / `Super+B` | Files / Terminal / Browser |
 | `Super+L` | Lock |
+| `Ctrl+Alt+T` | Terminal (works even if the PolyOS interface is broken: `polyos-ctl dev off`) |
 | `Super+D` | Show desktop |
 | `Super+←` `Super+→` `Super+↑` `Super+↓` | Snap left/right, maximize, restore/minimize |
 | `Alt+Tab` · `Alt+F4` | Switch · close windows |
@@ -197,6 +204,12 @@ closing apps.
 
 ## Current limits
 
+- Custom installs use existing partitions or whole drives; they don't create or resize single
+  partitions (Dual boot does that, or use the Advanced installer). Disk encryption isn't offered yet.
+- Edition apps come from Debian and Flathub, so the first sign-in needs the internet. Packages a
+  Debian release doesn't have are skipped and named in the result.
+- Developer-mode overrides replace whole files; after a PolyOS update, compare your copies with
+  `~/PolyOS-UI` (Settings > Developer > Copy to my files).
 - X11 only; Wayland would mean replacing Openbox and libwnck. The taskbar and popups use the
   primary monitor; the wallpaper stretches across every monitor.
 - Full-screen apps (videos, games, F11) cover the taskbar. Maximized windows stop above it

@@ -101,6 +101,8 @@ class DesktopShell(Backend):
         self._idle = None
         self._idle_slept = False
         self._camera = power.has_camera()
+        self._game_active = False  # Game Mode: a full-screen game is in front
+        self._poll_interval = 2.0
 
     # ==== startup ==========================================================================
     def start(self, base_url: str) -> None:
@@ -158,7 +160,7 @@ class DesktopShell(Backend):
     def _view(self, query: str, transparent: bool) -> WebKit2.WebView:
         view = WebKit2.WebView.new_with_user_content_manager(self._ucm)
         prefs = view.get_settings()
-        prefs.set_enable_developer_extras(self.debug)
+        prefs.set_enable_developer_extras(self.debug or self.settings.get("devInspector"))
         prefs.set_enable_write_console_messages_to_stdout(True)
         color = Gdk.RGBA()
         if transparent:
@@ -166,7 +168,8 @@ class DesktopShell(Backend):
         else:
             color.parse(SOLID_BG)
         view.set_background_color(color)
-        view.connect("context-menu", lambda *_: not self.debug)
+        # right-click > Inspect Element only for debugging or with Settings > Developer > Inspector
+        view.connect("context-menu", lambda *_: not (self.debug or self.settings.get("devInspector")))
         view.connect("decide-policy", self._on_decide_policy)
         view.connect("web-process-terminated", self._on_web_crash)
         if query.startswith("surface=camera"):
@@ -280,12 +283,42 @@ class DesktopShell(Backend):
         if full == self._fullscreen_app:
             return
         self._fullscreen_app = full
+        self._set_game_mode(full and self.settings.get("gameMode"))
         if full:
             self.panel.hide()
         else:
             self.panel.show_all()
             self.panel.stick()
             self._place_panel()
+
+    # ---- Game Mode ------------------------------------------------------------------------------
+    BACKGROUND_TASKS = ("tumblerd", "tracker-miner-fs-3", "tracker-extract-3", "baloo_file", "gvfsd-metadata",
+                        "xfce4-notifyd", "blueman-applet", "nm-applet", "evolution-data-server")
+
+    def _set_game_mode(self, active: bool) -> None:
+        """A full-screen game: performance power mode, no idle lock or sleep, and PolyOS's own
+        background work (status polling, thumbnails, indexing) steps back until it closes."""
+        if active == self._game_active:
+            return
+        self._game_active = active
+        self._poll_interval = 10.0 if active else 2.0
+        self.bus.publish("gamemode", active=active)
+        log.info("game mode %s", "on" if active else "off")
+
+        def work():
+            chosen = self.settings.get("powerMode")
+            if not active:
+                power.apply_mode(chosen)  # back to the mode picked in Settings
+                return
+            if chosen not in ("performance", "maximum"):
+                power.apply_mode("performance")
+            # background helpers yield the processor to the game (they keep the lower priority
+            # until they restart: an unprivileged process can't raise it again, and that's harmless)
+            for name in self.BACKGROUND_TASKS:
+                rc, out = system.run(["pgrep", "-u", str(os.getuid()), "-x", name], 2)
+                if rc == 0 and out.split():
+                    system.run(["renice", "-n", "10", "-p", *out.split()], 2)
+        threading.Thread(target=work, daemon=True).start()
 
     def _x_time(self) -> int:
         try:
@@ -677,7 +710,7 @@ class DesktopShell(Backend):
 
     def _poll_loop(self) -> None:
         tick = 0
-        while not self._poll_stop.wait(2.0):
+        while not self._poll_stop.wait(self._poll_interval):
             tick += 1
             parts = ["volume"]
             if tick % 3 == 0:
@@ -738,7 +771,7 @@ class DesktopShell(Backend):
     def _idle_tick(self):
         """Lock when the screen turns off, and sleep after the chosen idle time (not on the live USB)."""
         idle = self._idle.idle_ms() if self._idle else None
-        if idle is None:
+        if idle is None or self._game_active:  # a game with a controller has no keyboard/mouse input
             return True
         settings = self.settings.snapshot()
         screen_off, sleep_after = power.timers(settings)
@@ -831,13 +864,16 @@ class DesktopShell(Backend):
         from . import pamauth
 
         with self._unlock_lock:
+            self.unlock_throttle.check()
             try:
                 ok = pamauth.authenticate(getpass.getuser(), password)
             except OSError as exc:
                 log.error("PAM unavailable: %s", exc)
                 raise ApiError("Unlocking isn't working. Restart the computer.", 500) from None
             if not ok:
+                self.unlock_throttle.failed()
                 raise ApiError("That password isn't right. Try again.", 403)
+            self.unlock_throttle.succeeded()
         GLib.idle_add(self._unlock_main)
         return {"ok": True}
 

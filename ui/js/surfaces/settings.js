@@ -3,7 +3,7 @@
 
 import { withAdmin } from '../admin.js';
 import { api, launch, on, params, power, saveSettings, withToken } from '../api.js';
-import { errorText, group, row, slider, toggle, wifiPanel } from '../components.js';
+import { errorText, group, packPanel, row, slider, toggle, wifiPanel } from '../components.js';
 import { formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
 
 const PAGES = [
@@ -15,6 +15,8 @@ const PAGES = [
   ['power', 'Power & Performance', 'bolt'],
   ['account', 'Account', 'user'],
   ['privacy', 'Privacy & Security', 'shield'],
+  ['gaming', 'Gaming', 'gamepad'],
+  ['developer', 'Developer', 'code'],
   ['vara', 'Vara', 'chat'],
   ['about', 'About', 'info'],
 ];
@@ -436,9 +438,52 @@ const pages = {
     const clear = h('button.btn', 'Clear activity history');
     clear.addEventListener('click', () => saveSettings({ recent: [] })
       .then(() => { note.textContent = 'Cleared.'; }, (e) => errorText(err, e.message)));
+    const checkup = h('div.checkup');
+    const firewall = toggle(false, (v) => setSecurity('firewall', v), 'Firewall');
+    const updates = toggle(false, (v) => setSecurity('updates', v), 'Automatic security updates');
+    const secNote = h('p.muted.small.pad', { hidden: true });
+    async function setSecurity(what, on) {
+      errorText(err, '');
+      try {
+        await withAdmin(() => api.post('/api/security', { what, on }),
+          { title: 'Security', text: 'Enter your password to change this.' });
+        secNote.hidden = false;
+        secNote.textContent = 'Working on it…';
+      } catch (e) {
+        if (!e.cancelled) errorText(err, e.message);
+        loadSecurity();
+      }
+    }
+    function loadSecurity() {
+      api.get('/api/security').then((st) => {
+        const item = (ok, title, good, bad, unknown) => h('div.check-item', { class: ok === null || ok === undefined ? 'unknown' : ok ? 'ok' : 'warn' },
+          icon(ok ? 'check' : ok === false ? 'info' : 'shield'), h('span', h('b', title), h('small', ok === null || ok === undefined ? unknown : ok ? good : bad)));
+        checkup.replaceChildren(
+          item(st.firewall, 'Firewall', 'On: other computers can’t connect in', 'Off: turn it on below', 'Not installed'),
+          item(st.updates, 'Security updates', 'Installed automatically', 'Off: turn them on below', 'Not set up'),
+          item(st.lockOnSleep, 'Lock screen', 'Your password is needed after sleep', 'Off: anyone can use the computer after sleep', ''),
+          item(st.recoveryKey, 'Recovery key', 'Set: you can reset a forgotten password', 'None: make one in Account', 'Made while installing'),
+          item(st.apparmor, 'App protection (AppArmor)', 'On: apps are kept to what they need', 'Off', 'Not available'),
+          item(st.secureBoot, 'Secure Boot', 'On: only signed software starts the computer', 'Off in your firmware settings', 'Not available on this computer'));
+        firewall.set(!!st.firewall);
+        updates.set(!!st.updates);
+      }, (e) => errorText(err, e.message));
+    }
+    loadSecurity();
+    const offSecurity = on('security', () => { secNote.hidden = true; loadSecurity(); });
+    const offJob = on('job', (e) => {
+      if (e.job.kind !== 'security') return;
+      secNote.hidden = e.job.state === 'done';
+      secNote.textContent = e.job.state === 'failed' ? e.job.error : e.job.message;
+    });
     page.append(
       pageHead('Privacy & Security', 'Choose what PolyOS remembers, shows and lets apps use.'),
       err,
+      group('Security checkup', checkup),
+      group('Protection',
+        row('Firewall', 'Blocks other computers from connecting to this one. Your apps still reach the internet.', firewall),
+        row('Automatic security updates', 'Installs Debian’s security fixes in the background every day', updates),
+        secNote),
       group('Lock screen',
         row('Lock when the computer sleeps', 'And when the screen turns off on its own. Your password is needed to get back in.', lockSleep),
         row('Show news and performance on the lock screen', 'Anyone who sees the screen can read them', lockNews)),
@@ -463,6 +508,74 @@ const pages = {
       mic.set(cur.micAccess);
       recent.set(cur.keepRecent);
     }
+    update();
+    return { update: (_st, changed) => changed.has('settings') && update(), close: () => { offSecurity(); offJob(); } };
+  },
+
+  gaming(page, store) {
+    const s = () => store.state.settings;
+    const err = h('div.error-text', { hidden: true });
+    const gameMode = toggle(s().gameMode, (v) => save({ gameMode: v }, err), 'Game Mode');
+    const cloud = h('div.cloud-list', h('p.muted.small.pad', 'Loading…'));
+    const loadCloud = () => api.get('/api/gaming/cloud').then(({ services, installed }) => {
+      cloud.replaceChildren(...services.map((svc) => {
+        const on = toggle(installed.includes(svc.id), (v) => {
+          const next = v ? [...new Set([...installed, svc.id])] : installed.filter((i) => i !== svc.id);
+          api.post('/api/gaming/cloud', { services: next }).then(loadCloud, (e) => errorText(err, e.message));
+        }, svc.name);
+        return row(svc.name, svc.summary, on);
+      }));
+    }, (e) => errorText(err, e.message));
+    loadCloud();
+    page.append(
+      pageHead('Gaming', 'Games from Steam, Windows games with Wine, cloud gaming and Game Mode.'),
+      err,
+      group('Game Mode',
+        row('Game Mode', 'When a game is full screen: the performance power mode, no sleeping or locking, and PolyOS’s background work steps back until you close it.', gameMode)),
+      group('Gaming apps', packPanel('gaming')),
+      group('Cloud gaming', h('p.muted.small.pad', 'Stream games from the cloud: no downloads, and they run well on any computer. '
+        + 'Turn a service on to add it to your apps. They work best with Google Chrome (PolyMarket).'), cloud),
+      group('Tips', h('p.prose',
+        'Windows games in Steam: Steam > Settings > Compatibility > “Enable Steam Play for all other titles” (Proton). ',
+        'Add “gamemoderun %command%” to a game’s Launch Options for GameMode. ',
+        'Other Windows games and apps: open Bottles and create a “Gaming” bottle. ',
+        'Graphics drivers: Settings > About > Driver Manager.')),
+    );
+    return { update: (_st, changed) => changed.has('settings') && gameMode.set(s().gameMode) };
+  },
+
+  developer(page, store) {
+    const s = () => store.state.settings;
+    const err = h('div.error-text', { hidden: true });
+    const note = h('span.muted.small');
+    const devMode = toggle(s().developerMode, (v) => save({ developerMode: v }, err), 'Developer mode');
+    const inspector = toggle(s().devInspector, (v) => save({ devInspector: v }, err), 'Inspect element');
+    const act = (action, label, ico) => h('button.btn', {
+      onclick: () => api.post('/api/dev', { action }).then((r) => {
+        note.textContent = action === 'reset' ? (r.path ? `Your changes were moved to ${r.path}.` : 'Nothing to reset.') : '';
+      }, (e) => errorText(err, e.message)),
+    }, icon(ico), label);
+    const reload = h('button.btn.primary', { onclick: () => api.post('/api/shell/restart', {}).catch((e) => errorText(err, e.message)) },
+      icon('refresh'), 'Reload the interface');
+    page.append(
+      pageHead('Developer', 'Change PolyOS itself: its look, its screens and its code.'),
+      err,
+      group(null,
+        row('Developer mode', 'Files in your interface folder replace PolyOS’s built-in ones, on every screen', devMode),
+        row('Inspect element', 'Right-click any PolyOS screen to open the web inspector (after reloading the interface)', inspector)),
+      group('Change the interface',
+        row('Your interface folder', 'css/user.css is added to every screen. Copy any other file here, with the same path, to replace it.',
+          act('folder', 'Open folder', 'folder')),
+        row('PolyOS’s interface', 'A fresh copy of the built-in files in ~/PolyOS-UI, to read and copy from', act('source', 'Copy to my files', 'download')),
+        row('Apply your changes', 'Reloads the taskbar, desktop and menus. Your apps keep running.', reload),
+        row('Undo everything', 'Moves your interface folder aside (nothing is deleted)', act('reset', 'Reset', 'restart'))),
+      h('div.btn-row', note),
+      group('Coding tools', packPanel('developer')),
+      group('If something breaks', h('p.prose',
+        'Press Ctrl+Alt+T for a terminal and run ', h('code', 'polyos-ctl dev off'),
+        '. PolyOS goes back to its built-in interface; your files stay in ~/.config/polyos/ui.')),
+    );
+    const update = () => { devMode.set(s().developerMode); inspector.set(s().devInspector); };
     update();
     return { update: (_st, changed) => changed.has('settings') && update() };
   },
@@ -532,17 +645,20 @@ const pages = {
   about(page, store) {
     const { version, hostname } = store.state;
     const specs = h('div');
+    const devMode = toggle(store.state.settings.developerMode, (v) => save({ developerMode: v }), 'Developer mode');
+    const edition = { regular: 'Regular', developer: 'Developer', gaming: 'Gaming' }[store.state.settings.edition] || 'Regular';
     page.append(
       h('div.about-hero',
         h('img', { src: '/img/logo.svg', alt: '' }),
-        h('div', h('h1', 'PolyOS'), h('p.muted', `Version ${version}`))),
+        h('div', h('h1', 'PolyOS'), h('p.muted', `Version ${version} · ${edition} edition`))),
       specs,
       group('Tools',
         row('Task Manager', 'See what’s running and end apps that stopped responding (Ctrl+Shift+Esc)',
           h('button.btn', { onclick: () => api.post('/api/open', { app: 'taskmgr' }) }, 'Open', icon('external'))),
         row('Driver Manager', 'Install graphics, Wi-Fi and other drivers',
           h('button.btn', { onclick: () => api.post('/api/open', { app: 'drivers' }) }, 'Open', icon('external'))),
-        row('PolyMarket', 'Get trusted apps', h('button.btn', { onclick: () => api.post('/api/open', { app: 'store' }) }, 'Open', icon('external')))),
+        row('PolyMarket', 'Get trusted apps', h('button.btn', { onclick: () => api.post('/api/open', { app: 'store' }) }, 'Open', icon('external'))),
+        row('Developer mode', 'Change PolyOS’s own interface. Adds the Developer page to Settings.', devMode)),
       group('Credits', h('p.prose', CREDITS, ' ',
         h('a', { href: 'https://scratch.mit.edu/users/PolyOS/', target: '_blank', rel: 'noopener' }, 'PolyOS on Scratch'), '.')),
       group('License', h('p.prose',
@@ -582,9 +698,14 @@ export function mount(root, store) {
     nav.append(btn);
   }
 
+  const syncNav = () => { buttons.get('developer').hidden = !store.state.settings.developerMode; };
+  syncNav();
+  store.subscribe((_st, changed) => { if (changed.has('settings')) syncNav(); });
+
   function go(id) {
     if (!pages[id]) id = 'appearance';
     if (id === current) return;
+    pageApi?.close?.();
     current = id;
     for (const [key, btn] of buttons) btn.classList.toggle('active', key === id);
     page.replaceChildren();

@@ -6,6 +6,8 @@
     polyos-admin drivers PACKAGE...        driver packages (names must match drivers.DRIVER_PACKAGE_RE)
     polyos-admin account FILE              for the sudo user: {"password"} and/or {"recoveryKey"} (file deleted)
     polyos-admin reboot                    restart right away (after installing, from the live USB)
+    polyos-admin pack NAME ID...           an edition's apps (gaming, developer), only ids in its catalog pack
+    polyos-admin security firewall|updates on|off   the firewall (ufw) and automatic security updates
 
 Every command prints JSON lines: {"progress": 0..1, "message": "..."} while it works,
 {"result": ...} for data, and {"error": "..."} (exit status 1) when it fails.
@@ -159,6 +161,85 @@ def store_action(action: str, app_id: str) -> None:
     emit({"progress": 1.0, "message": "Done."})
 
 
+GAMING_SYSCTL = Path("/etc/sysctl.d/80-polyos-gaming.conf")
+# SteamOS's value: some Windows games (through Proton) crash with Debian's default
+GAMING_SYSCTL_TEXT = "# PolyOS Gaming: memory maps many games need (SteamOS uses the same value)\nvm.max_map_count = 2147483642\n"
+
+
+def has_candidate(package: str) -> bool:
+    """True when apt can install this package from the configured sources."""
+    out = subprocess.run(["apt-cache", "policy", package], capture_output=True, text=True, timeout=60,
+                         env={**os.environ, **APT_ENV}).stdout
+    m = re.search(r"Candidate:\s*(\S+)", out)
+    return bool(m) and m.group(1) != "(none)"
+
+
+def pack_install(name: str, ids: list[str]) -> None:
+    """Install an edition's apps: every id must be in that catalog pack (the UI can't add others)."""
+    data = store.load()
+    apps = store.validate(data)
+    pack = store.pack(data, name)
+    if pack is None:
+        raise AdminError("That edition doesn't exist.")
+    allowed = {aid for aid, _default in pack["apps"]}
+    bad = [i for i in ids if i not in allowed]
+    if bad or not ids:
+        raise AdminError(f"Not part of {pack['name']}: {', '.join(bad) or '(nothing chosen)'}")
+    chosen = [apps[i] for i in dict.fromkeys(ids)]
+    debs = [p for a in chosen if a["source"] == "debian" for p in a["packages"]]
+    refs = [a["ref"] for a in chosen if a["source"] == "flathub"]
+    skipped: list[str] = []
+    if debs:
+        apt_update()
+        available = [p for p in debs if has_candidate(p)]
+        skipped = [p for p in debs if p not in available]
+        if available:
+            apt(["install", *available], start=0.1)
+    if refs:
+        emit({"progress": 0.4, "message": "Connecting to Flathub…"})
+        flatpak(["remote-add", "--if-not-exists", "--system", "flathub", store.FLATHUB_URL])
+        for n, ref in enumerate(refs):
+            emit({"progress": 0.4 + 0.55 * n / len(refs), "message": f"Installing {ref.rsplit('.', 1)[-1]} ({n + 1} of {len(refs)})…"})
+            flatpak(["install", "--system", "-y", "--noninteractive", "flathub", ref])
+    if name == "gaming":
+        GAMING_SYSCTL.write_text(GAMING_SYSCTL_TEXT)
+        subprocess.run(["sysctl", "-q", "-p", str(GAMING_SYSCTL)], check=False, capture_output=True, timeout=30)
+    if skipped:
+        emit({"log": f"not available from Debian here: {', '.join(skipped)}"})
+    emit({"progress": 1.0, "message": f"{pack['name']} is ready." + (f" Skipped (not in this Debian): {', '.join(skipped)}." if skipped else "")})
+
+
+def security(what: str, state: str) -> None:
+    """Turn the firewall (ufw: nothing gets in, everything goes out) or automatic security updates on or off."""
+    from . import security as sec
+
+    if state not in ("on", "off"):
+        raise AdminError("Say on or off.")
+    on = state == "on"
+    if what == "firewall":
+        if not shutil.which("ufw"):
+            if not on:
+                return emit({"progress": 1.0, "message": "The firewall is off."})
+            apt_update()
+            apt(["install", "ufw"], start=0.1)
+        steps = [["ufw", "default", "deny", "incoming"], ["ufw", "default", "allow", "outgoing"], ["ufw", "--force", "enable"]] \
+            if on else [["ufw", "disable"]]
+        for args in steps:
+            proc = subprocess.run(args, capture_output=True, text=True, timeout=60)
+            if proc.returncode != 0:
+                raise AdminError((proc.stderr or proc.stdout).strip().splitlines()[-1] if (proc.stderr or proc.stdout).strip()
+                                 else "The firewall couldn't be changed.")
+        emit({"progress": 1.0, "message": f"The firewall is {state}."})
+    elif what == "updates":
+        if on and not Path("/usr/bin/unattended-upgrade").exists():
+            apt_update()
+            apt(["install", "unattended-upgrades"], start=0.1)
+        sec.AUTO_UPGRADES.write_text(sec.AUTO_UPGRADES_TEXT.format(on=1 if on else 0))
+        emit({"progress": 1.0, "message": f"Automatic security updates are {state}."})
+    else:
+        raise AdminError("Unknown security setting.")
+
+
 def drivers_install(packages: list[str]) -> None:
     bad = [p for p in packages if not drivers.DRIVER_PACKAGE_RE.match(p)]
     if bad or not packages:
@@ -232,6 +313,10 @@ def main(argv: list[str] | None = None) -> int:
             account(Path(rest[0]))
         elif cmd == "reboot":
             reboot()
+        elif cmd == "pack" and len(rest) >= 2:
+            pack_install(rest[0], rest[1:])
+        elif cmd == "security" and len(rest) == 2:
+            security(rest[0], rest[1])
         else:
             raise AdminError(f"Unknown command: {' '.join(argv)}")
         return 0

@@ -180,6 +180,20 @@ class PlanValidationTests(unittest.TestCase):
             with self.subTest(over=over), self.assertRaises(InstallError):
                 installer.validate_plan(self.plan(**over))
 
+    def test_editions(self):
+        self.assertEqual(installer.validate_plan(self.plan())["edition"], "regular")
+        gaming = installer.validate_plan(self.plan(edition="gaming"))
+        self.assertTrue(gaming["extraSettings"]["gameMode"])
+        self.assertFalse(gaming["extraSettings"]["editionSetup"])  # its apps are offered at first sign-in
+        dev = installer.validate_plan(self.plan(edition="developer"))
+        self.assertTrue(dev["extraSettings"]["developerMode"])
+        with self.assertRaises(InstallError):
+            installer.validate_plan(self.plan(edition="hacker"))
+        # settings can't be smuggled in through the plan: they follow from the edition alone
+        smuggled = installer.validate_plan(self.plan(extraSettings={"developerMode": True, "setupDone": True}))
+        self.assertEqual(smuggled["extraSettings"]["developerMode"], False)
+        self.assertNotIn("setupDone", smuggled["extraSettings"])
+
     def test_blank_password_allowed(self):
         clean = installer.validate_plan(self.plan(user={"fullName": "", "username": "andrew", "password": ""}))
         self.assertEqual(clean["user"]["fullName"], "andrew")
@@ -206,3 +220,107 @@ class DryRunTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CustomLayoutTests(unittest.TestCase):
+    """Custom mode: the person chooses what each drive and partition is for."""
+
+    def plan(self, wipe=None, mounts=None):
+        return {"mode": "custom", "hostname": "t-polyos", "timezone": "UTC", "wipe": wipe or {}, "mounts": mounts or [],
+                "user": {"fullName": "T", "username": "tester", "password": "pw"},
+                "appearance": {"theme": "dark", "accent": "#678fd9"}}
+
+    def test_valid_layouts(self):
+        clean = installer.validate_plan(self.plan(wipe={"/dev/nvme0n1": "/", "/dev/sda": "/home"}))
+        self.assertEqual(clean["disk"], "/dev/nvme0n1")
+        clean = installer.validate_plan(self.plan(mounts=[
+            {"device": "/dev/nvme0n1p5", "mount": "/", "format": True},
+            {"device": "/dev/nvme0n1p1", "mount": "/boot/efi", "format": False},
+            {"device": "/dev/sdb1", "mount": "/home", "format": False},
+            {"device": "/dev/sdb2", "mount": "/mnt/games", "format": True},
+            {"device": "/dev/nvme0n1p6", "mount": "swap", "format": True}]))
+        self.assertEqual(clean["disk"], "/dev/nvme0n1")
+        self.assertEqual(len(clean["mounts"]), 5)
+
+    def test_rejected_layouts(self):
+        root = {"device": "/dev/sda2", "mount": "/", "format": True}
+        bad = [
+            {"mounts": []},  # nowhere for PolyOS
+            {"wipe": {"/dev/sda": "/"}, "mounts": [{"device": "/dev/sdb1", "mount": "/", "format": True}]},  # two roots
+            {"mounts": [{"device": "/dev/sda2", "mount": "/", "format": False}]},  # / must be erased
+            {"mounts": [root, {"device": "/dev/sda3", "mount": "/etc", "format": True}]},  # not a place
+            {"mounts": [root, {"device": "/dev/sda3", "mount": "/mnt/../../etc", "format": True}]},
+            {"mounts": [root, {"device": "/dev/sda2", "mount": "/home", "format": True}]},  # same partition twice
+            {"mounts": [root, {"device": "/dev/sda3", "mount": "/home", "format": True},
+                        {"device": "/dev/sda4", "mount": "/home", "format": False}]},  # /home twice
+            {"wipe": {"/dev/sdb": "/"}, "mounts": [{"device": "/dev/sdb2", "mount": "/home", "format": True}]},  # on an erased drive
+            {"wipe": {"/dev/sdb; reboot": "/"}},
+            {"wipe": {"/dev/sdb": "/boot"}},
+            {"mounts": [root, {"device": "/dev/sda3", "mount": "/home", "format": "yes"}]},
+        ]
+        for over in bad:
+            with self.subTest(over=over), self.assertRaises(InstallError):
+                installer.validate_plan(self.plan(**over))
+
+    def test_disk_of(self):
+        self.assertEqual(installer.disk_of("/dev/sda12"), "/dev/sda")
+        self.assertEqual(installer.disk_of("/dev/nvme1n1p3"), "/dev/nvme1n1")
+        self.assertEqual(installer.disk_of("/dev/mmcblk0p2"), "/dev/mmcblk0")
+
+    def test_fstab_for_kept_drives(self):
+        text = installer.fstab_entries([
+            {"uuid": "home", "mount": "/home", "fs": "ext4"},
+            {"uuid": "root", "mount": "/", "fs": "ext4"},
+            {"uuid": "win", "mount": "/mnt/windows", "fs": "ntfs"},
+            {"uuid": "sw", "mount": "swap", "fs": "swap"},
+        ], uid=1001)
+        lines = [ln for ln in text.splitlines() if not ln.startswith("#")]
+        self.assertTrue(lines[0].startswith("UUID=root  /  ext4"))  # / before everything
+        self.assertIn("UUID=home  /home  ext4  defaults  0  2", text)
+        win = next(ln for ln in lines if "/mnt/windows" in ln)
+        self.assertIn("ntfs3", win)
+        self.assertIn("uid=1001", win)
+        self.assertIn("nofail", win)  # an unplugged drive never blocks starting up
+        self.assertIn("UUID=sw  none  swap", text)
+        self.assertNotIn("/swapfile", text)
+
+    def test_custom_dry_run(self):
+        events = []
+        plan = installer.validate_plan(self.plan(wipe={"/dev/sdc": "/mnt/storage"}, mounts=[
+            {"device": "/dev/sda3", "mount": "/", "format": True},
+            {"device": "/dev/sda1", "mount": "/boot/efi", "format": False},
+            {"device": "/dev/sdb1", "mount": "/home", "format": False}]))
+        esp = part("/dev/sda1", 1, 300 * MiB, "vfat", installer.ESP_GUID.lower())
+        disks = [disk(parts=[esp, part("/dev/sda2", 2, 200 * GiB), part("/dev/sda3", 3, 100 * GiB, "ext4", installer.LINUX_GUID.lower())]),
+                 {**disk(size=1000 * GiB, parts=[part("/dev/sdb1", 1, 900 * GiB, "ext4", installer.LINUX_GUID.lower())]), "path": "/dev/sdb"},
+                 {**disk(size=2000 * GiB, table=None), "path": "/dev/sdc"}]
+        with mock.patch.object(installer, "live_disk", return_value="/dev/sdz"), \
+                mock.patch.object(installer, "parse_lsblk", return_value=disks), \
+                mock.patch("pathlib.Path.is_dir", return_value=True):
+            inst = installer.Installer(plan, events.append, dry_run=True)
+            inst.run()
+        commands = [e["log"].replace("\\", "/") for e in events if "log" in e]
+        joined = "\n".join(commands)
+        self.assertTrue(events[-1].get("done"), joined)
+        self.assertTrue(inst.dual)  # Windows (sda2) stays: GRUB shows its menu
+        self.assertTrue(inst.windows_alongside)
+        self.assertIn("wipefs -a -f /dev/sdc", joined)
+        self.assertIn("mkfs.ext4 -F -q -L PolyOS /dev/sda3", joined)
+        self.assertIn("mkfs.ext4 -F -q -L storage /dev/sdc1", joined)
+        for untouched in ("/dev/sda1", "/dev/sdb1"):  # kept: mounted, never formatted or wiped
+            self.assertFalse(any(("mkfs" in c or "wipefs" in c) and untouched in c for c in commands), untouched)
+        self.assertNotIn("wipefs -a -f /dev/sda\n", joined + "\n")
+        mounts = [c for c in commands if c.startswith("$ mount /dev")]
+        self.assertTrue(mounts[0].startswith("$ mount /dev/sda3 /mnt/polyos-target"), mounts)
+        self.assertTrue(any("/dev/sdb1 /mnt/polyos-target/home" in c for c in mounts), mounts)
+
+    def test_custom_refuses_before_erasing(self):
+        plan = installer.validate_plan(self.plan(wipe={"/dev/sdc": "/home"}, mounts=[
+            {"device": "/dev/sda2", "mount": "/", "format": True}]))  # far too small
+        disks = [disk(parts=[part("/dev/sda2", 2, 8 * GiB, "ext4")]), {**disk(table=None), "path": "/dev/sdc"}]
+        events = []
+        with mock.patch.object(installer, "live_disk", return_value="/dev/sdz"), \
+                mock.patch.object(installer, "parse_lsblk", return_value=disks), \
+                self.assertRaises(InstallError):
+            installer.Installer(plan, events.append, dry_run=True).run()
+        self.assertFalse(any("wipefs" in e.get("log", "") for e in events))

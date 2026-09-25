@@ -75,9 +75,27 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("what", choices=["terminal", "files", "browser"])
     sub.add_parser("restart", help="restart the shell (apps keep running)")
     sub.add_parser("status", help="print the shell state as JSON")
+    p = sub.add_parser("cloud", help="open a cloud gaming service (geforcenow, xcloud, luna, boosteroid)")
+    p.add_argument("service")
+    p = sub.add_parser("dev", help="developer mode: on | off (off also rescues a broken interface)")
+    p.add_argument("state", choices=["on", "off"])
     args = parser.parse_args(argv)
 
+    if args.command == "cloud":  # needs no shell: just the browser
+        from . import gaming
+
+        try:
+            gaming.open_cloud(args.service)
+        except (ValueError, OSError) as exc:
+            print(f"polyos-ctl: {exc}", file=sys.stderr)
+            return 1
+        return 0
     try:
+        if args.command == "dev":
+            call("POST", "/api/settings", {"developerMode": args.state == "on"})
+            if args.state == "off":
+                call("POST", "/api/shell/restart", {})
+            return 0
         if args.command == "start-menu":  # the Windows key: open the Home Menu, or close any open menu
             call("POST", "/api/popup", {"view": "start", "toggle": True})
         elif args.command == "popup":
@@ -124,6 +142,11 @@ def fallback(args, reason: str) -> int:
             system.power(args.action)
         elif args.command == "run":
             system.run_default(args.what)
+        elif args.command == "dev":  # the shell is down (maybe a broken override): edit the file directly
+            from .core import Settings
+
+            Settings(paths.config_dir() / "settings.json").update({"developerMode": args.state == "on"})
+            print(f"Developer mode is {args.state}. Sign out and back in, or run: polyos-ctl restart")
         else:
             print(f"polyos-ctl: {reason}", file=sys.stderr)
             return 1

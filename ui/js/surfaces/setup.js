@@ -1,12 +1,12 @@
 // PolyOS 7 setup, after the Scratch original: "Cryptic Software presents", the pinwheel falls
 // into place, the striped 7 slides in, and the crystal backdrop says welcome. Then:
-//   live USB:      It's time to get started (install / dual boot) → Terms → Account → Appearance
-//                  → Where to install → installing → restart
-//   first sign-in: Wi-Fi → Drivers → Vara → Tour → done
+//   live USB:      It's time to get started (install / dual boot / custom) → Terms → Edition
+//                  → Account → Appearance → Where to install → installing → restart
+//   first sign-in: Wi-Fi → Drivers → your edition's apps → Vara → Tour → done
 
 import { withAdmin, watchJobs } from '../admin.js';
 import { api, launch, saveSettings, withToken } from '../api.js';
-import { wifiPanel } from '../components.js';
+import { packPanel, wifiPanel } from '../components.js';
 import { fill, formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
 
 const GB = 1000 ** 3;
@@ -30,6 +30,26 @@ const FALLBACK_ZONES = ['America/New_York', 'America/Chicago', 'America/Denver',
   'America/Anchorage', 'Pacific/Honolulu', 'America/Toronto', 'America/Mexico_City', 'America/Sao_Paulo', 'Europe/London',
   'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid', 'Africa/Lagos', 'Africa/Johannesburg', 'Asia/Dubai', 'Asia/Kolkata',
   'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul', 'Australia/Sydney', 'UTC'];
+
+// PolyOS editions, chosen while installing. Each one's apps are added at first sign-in (online).
+export const EDITIONS = [
+  ['regular', 'Regular', 'Everything most people need: the PolyOS desktop, Firefox, Files and PolyMarket.', 'star'],
+  ['developer', 'Developer', 'Change PolyOS itself: edit its interface, inspect it, and get coding tools (Git, Python, Node.js, VS Code).', 'code'],
+  ['gaming', 'Gaming', 'Steam, Wine for Windows games, Heroic, Lutris, cloud gaming, drivers and Game Mode, set up for play.', 'gamepad'],
+];
+// Custom install: what an existing partition can become (value -> [label, mount, erase]).
+const ROLES = {
+  keep: ['Keep as it is', null, false],
+  root: ['PolyOS (/) · erase', '/', true],
+  'home-keep': ['Your files (/home) · keep what’s on it', '/home', false],
+  'home-format': ['Your files (/home) · erase', '/home', true],
+  'storage-keep': ['Extra storage · keep what’s on it', 'storage', false],
+  'storage-format': ['Extra storage · erase', 'storage', true],
+  efi: ['EFI boot partition (/boot/efi)', '/boot/efi', false],
+  swap: ['Swap · erase', 'swap', true],
+};
+const LINUX_FS = ['ext4', 'ext3', 'ext2', 'btrfs', 'xfs', 'f2fs'];
+const READABLE_FS = [...LINUX_FS, 'ntfs', 'vfat', 'exfat'];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -74,7 +94,8 @@ export function mount(root, store) {
   bg.style.backgroundImage = `url("${withToken('/wallpaper/builtin/polyos-crystal.jpg')}")`;
 
   const plan = {
-    mode: 'erase', disk: null, size: null, hostname: '', timezone: guessZone(),
+    mode: 'erase', disk: null, size: null, hostname: '', timezone: guessZone(), edition: 'regular',
+    wipe: {}, roles: {}, // custom mode: drive -> what it's erased for; partition -> ROLES key
     user: { fullName: '', username: '', password: '' },
     appearance: { theme: store.state.settings.theme || 'dark', accent: store.state.settings.accent },
   };
@@ -134,8 +155,8 @@ export function mount(root, store) {
   }
 
   // ---- steps ---------------------------------------------------------------------------
-  const installSteps = [start, terms, account, appearance, target, installing];
-  const welcomeSteps = [connect, drivers, vara, tour, done];
+  const installSteps = [start, terms, edition, account, appearance, target, installing];
+  const welcomeSteps = [connect, drivers, editionApps, vara, tour, done];
   const steps = live ? installSteps : welcomeSteps;
   let step = 0;
 
@@ -148,9 +169,9 @@ export function mount(root, store) {
     card.classList.add('enter');
     card.classList.toggle('light', live && plan.appearance.theme === 'light' && steps[step] === appearance);
     fill(card, ...steps[step](), h('img.su-seven', { src: '/img/seven.svg', alt: '' }));
-    const count = live ? 5 : steps.length;
+    const count = live ? installSteps.length - 1 : steps.length;
     fill(pills, ...Array.from({ length: count }, (_, i) => h('span', { class: i < step ? 'done' : i === step ? 'on' : '' })));
-    pills.hidden = live && step >= 5;
+    pills.hidden = live && step >= count;
     card.querySelector('[autofocus]')?.focus();
   }
 
@@ -175,7 +196,9 @@ export function mount(root, store) {
         option('Install PolyOS 7', 'Start a fresh install.', h('img', { src: '/img/logo-white.svg', alt: '' }),
           () => { plan.mode = 'erase'; go(1); }),
         option('Dual boot', 'Boot along Windows or Linux.', h('span.su-dual', icon('window'), icon('window')),
-          () => { plan.mode = 'alongside'; go(1); })),
+          () => { plan.mode = 'alongside'; go(1); }),
+        option('Custom', 'Choose which drives to use and which to keep.', h('span.su-dual', icon('disk')),
+          () => { plan.mode = 'custom'; go(1); })),
       h('div.su-foot', ...extra),
     ];
   }
@@ -186,6 +209,20 @@ export function mount(root, store) {
       h('div.su-terms', { tabindex: '0' }, h('p', TERMS),
         h('small', '*PolyOS™ is a trademark of PIXAPoLY Software. The full license texts are in /usr/share/common-licenses on the installed system.')),
       nav(next('I Agree', () => go(step + 1), { primary: true })),
+    ];
+  }
+
+  function edition() {
+    const cards = EDITIONS.map(([id, name, text, ico]) => h('button.su-edition', {
+      class: plan.edition === id ? 'on' : '', role: 'radio', 'aria-checked': String(plan.edition === id),
+      onclick: () => { plan.edition = id; go(step); },
+    }, h('span.su-edition-ico', icon(ico)), h('b', name), h('small', text), plan.edition === id ? h('span.su-edition-check', icon('check')) : null));
+    return [
+      ...head('How will you use PolyOS?', 'Pick an edition. You can add the others later in Settings.'),
+      h('div.su-editions', { role: 'radiogroup', 'aria-label': 'Edition' }, cards),
+      plan.edition === 'regular' ? null : h('p.su-note', icon('info'),
+        'Its apps are downloaded the first time you sign in, so connect to the internet then.'),
+      nav(next()),
     ];
   }
 
@@ -296,6 +333,7 @@ export function mount(root, store) {
       loadProbe();
       return [...head(title, sub), h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'Looking at your disks…'), nav(h('span'))];
     }
+    if (plan.mode === 'custom') return customTarget();
     const usable = probe.disks.filter((d) => (erase ? d.canErase : d.alongside.possible));
     if (!usable.length) {
       const reasons = probe.disks.filter((d) => !d.isLive).map((d) => h('li', h('b', `${d.model} (${formatBytes(d.size)})`), ': ',
@@ -353,10 +391,129 @@ export function mount(root, store) {
     return [...head(title, sub), ...body, nav(install)];
   }
 
+  // Custom: every drive and partition, and what each one becomes.
+  function customLayout() {
+    const wipe = {};
+    const mounts = [];
+    const names = new Set();
+    const storageName = (label) => {
+      const base = (label || 'data').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, '').slice(0, 24) || 'data';
+      let name = base;
+      for (let i = 2; names.has(name); i += 1) name = `${base}-${i}`;
+      names.add(name);
+      return `/mnt/${name}`;
+    };
+    for (const d of probe.disks) {
+      const use = plan.wipe[d.path];
+      if (use) wipe[d.path] = use === 'storage' ? storageName(d.model) : use;
+    }
+    for (const d of probe.disks) {
+      if (plan.wipe[d.path]) continue;
+      for (const p of d.partitions) {
+        const role = plan.roles[p.path];
+        if (!role || role === 'keep') continue;
+        const [, where, erase] = ROLES[role];
+        mounts.push({ device: p.path, mount: where === 'storage' ? storageName(p.label || p.os) : where, format: erase });
+      }
+    }
+    return { wipe, mounts };
+  }
+
+  function customProblem({ wipe, mounts }) {
+    const targets = [...Object.values(wipe), ...mounts.filter((m) => m.mount !== 'swap').map((m) => m.mount)];
+    const roots = targets.filter((t) => t === '/').length;
+    if (!roots) return 'Choose a drive or partition for PolyOS itself.';
+    if (roots > 1) return 'Only one drive or partition can hold PolyOS.';
+    const twice = targets.find((t, i) => targets.indexOf(t) !== i);
+    if (twice) return `Two places are set to ${twice}.`;
+    if (mounts.filter((m) => m.mount === 'swap').length > 1) return 'Choose at most one swap partition.';
+    if (probe.uefi && !Object.values(wipe).includes('/') && !mounts.some((m) => m.mount === '/boot/efi')
+        && !probe.disks.some((d) => !wipe[d.path] && d.partitions.some((p) => p.esp))) {
+      return 'This computer needs an EFI boot partition. Choose one, or erase a whole drive for PolyOS.';
+    }
+    return null;
+  }
+
+  function customTarget() {
+    const disks = probe.disks.filter((d) => !d.isLive && !d.readonly);
+    const summary = h('ul.su-summary');
+    const err = h('div.su-error', { hidden: true });
+    const understood = h('input', { type: 'checkbox' });
+    const install = next('Install', () => startInstall(), { primary: true, disabled: true });
+    const refresh = () => {
+      const layout = customLayout();
+      const problem = customProblem(layout);
+      err.textContent = problem || '';
+      err.hidden = !problem;
+      const lines = [];
+      for (const d of disks) {
+        const use = layout.wipe[d.path];
+        if (use) lines.push(h('li.erase', icon('trash'), `Erase ${d.model} (${formatBytes(d.size)}) for ${use === '/' ? 'PolyOS' : use}`));
+        for (const p of d.partitions) {
+          const m = layout.mounts.find((x) => x.device === p.path);
+          const name = `${p.label || p.os || p.path.replace('/dev/', '')} (${formatBytes(p.size)})`;
+          if (m) lines.push(h('li', { class: m.format ? 'erase' : 'use' }, icon(m.format ? 'trash' : 'check'),
+            `${m.format ? 'Erase' : 'Use'} ${name} as ${m.mount === '/' ? 'PolyOS (/)' : m.mount}`));
+          else if (!use && (p.os || p.fstype)) lines.push(h('li.keep', icon('lock'), `Keep ${name}${p.os ? `: ${p.os}` : ''}`));
+        }
+      }
+      const rank = (li) => (li.classList.contains('erase') ? 0 : li.classList.contains('use') ? 1 : 2);
+      lines.sort((x, y) => rank(x) - rank(y)); // erasing first, so it can't be missed
+      fill(summary, lines.length ? lines : h('li.keep', 'Nothing is chosen yet.'));
+      install.disabled = !!problem || !understood.checked;
+    };
+    understood.addEventListener('change', refresh);
+    const cards = disks.map((d) => {
+      const whole = h('select.su-input.su-role', { 'aria-label': `Use ${d.model} for` },
+        [['', d.partitions.length ? 'Choose per partition' : 'Don’t use'], ['/', 'Erase · install PolyOS here'],
+          ['/home', 'Erase · your files (/home)'], ['storage', 'Erase · extra storage']]
+          .map(([v, t]) => h('option', { value: v, selected: (plan.wipe[d.path] || '') === v, disabled: v === '/' && !d.canErase }, t)));
+      whole.addEventListener('change', () => {
+        if (whole.value) plan.wipe[d.path] = whole.value;
+        else delete plan.wipe[d.path];
+        go(step);
+      });
+      const parts = plan.wipe[d.path] ? [] : d.partitions.map((p) => {
+        const fs = p.fstype || '';
+        const allowed = Object.keys(ROLES).filter((r) => r === 'keep'
+          || (r === 'root' && p.size >= probe.minBytes && !p.esp)
+          || (r === 'home-keep' && LINUX_FS.includes(fs))
+          || (r === 'home-format' && !p.esp)
+          || (r === 'storage-keep' && READABLE_FS.includes(fs) && !p.esp)
+          || (r === 'storage-format' && !p.esp)
+          || (r === 'efi' && p.esp)
+          || (r === 'swap' && !p.esp && p.size <= 64 * GB));
+        const select = h('select.su-input.su-role', { 'aria-label': `Use ${p.path} for` },
+          allowed.map((r) => h('option', { value: r, selected: (plan.roles[p.path] || 'keep') === r }, ROLES[r][0])));
+        select.addEventListener('change', () => { plan.roles[p.path] = select.value; refresh(); });
+        return h('div.su-part',
+          h('span.su-part-text', h('b', p.label || p.os || p.path.replace('/dev/', '')),
+            h('small', [formatBytes(p.size), fs || 'empty', p.os, p.esp ? 'EFI' : null].filter(Boolean).join(' · '))),
+          select);
+      });
+      return h('div.su-drive',
+        h('div.su-drive-head', h('span.su-disk-ico', icon(d.transport === 'usb' || d.removable ? 'download' : 'disk')),
+          h('span.su-disk-text', h('b', d.model), h('small', `${formatBytes(d.size)}${d.oses.length ? ` · ${d.oses.join(', ')}` : ''}`)),
+          whole),
+        ...parts);
+    });
+    refresh();
+    return [
+      ...head('Choose drives and partitions', 'Decide what each drive is for. Anything you leave as “Keep” isn’t touched.'),
+      h('div.su-drives', cards),
+      h('div.su-plan', h('b', 'What will happen'), summary),
+      err,
+      h('label.su-check', understood, h('span', 'I’ve backed up my files and checked the list above.')),
+      nav(install),
+    ];
+  }
+
   async function startInstall() {
     plan.user.recoveryKey = plan.user.recoveryKey || recoveryKey();
     const payload = { mode: plan.mode, disk: plan.disk, hostname: plan.hostname, timezone: plan.timezone,
-      user: plan.user, appearance: plan.appearance, ...(plan.mode === 'alongside' ? { size: plan.size } : {}) };
+      user: plan.user, appearance: plan.appearance, edition: plan.edition,
+      ...(plan.mode === 'alongside' ? { size: plan.size } : {}),
+      ...(plan.mode === 'custom' ? customLayout() : {}) };
     installJob = { state: 'running', progress: 0, message: 'Getting ready for installation…' };
     go(steps.indexOf(installing));
     try {
@@ -478,6 +635,33 @@ export function mount(root, store) {
     return [...head('Drivers', 'PolyOS checks your graphics, Wi-Fi and other hardware and installs what works best.'),
       list, status, nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Skip'), installBtn, next())];
   }
+
+  // The edition chosen while installing: offer its apps now that PolyOS is online.
+  function editionApps() {
+    const chosen = store.state.settings.edition;
+    const pack = chosen === 'regular' ? null : chosen;
+    const [, name, text] = EDITIONS.find((e) => e[0] === chosen) || EDITIONS[0];
+    if (!pack) {
+      const more = (id, title, sub, ico) => h('button.su-option', { onclick: () => { extra = id; go(step); } },
+        h('span.su-option-text', h('b', title), h('small', sub)), h('span.su-dual', icon(ico)));
+      if (extra) {
+        return [...head(extra === 'gaming' ? 'Gaming apps' : 'Developer tools', 'Pick what to install. You can add more in Settings anytime.'),
+          packPanel(extra, { compact: true }), nav(h('button.su-link', { onclick: () => { extra = null; go(step); } }, 'Back to choices'), next())];
+      }
+      return [...head('Add more to PolyOS?', 'Optional: set up gaming or coding now. Both are in Settings later too.'),
+        h('div.su-options', more('gaming', 'Gaming', 'Steam, Wine, Heroic and cloud gaming', 'gamepad'),
+          more('developer', 'Developer', 'Git, Python, Node.js and VS Code', 'code')),
+        nav(next('Skip'))];
+    }
+    const online = store.state.system.network.kind && store.state.system.network.kind !== 'none';
+    return [
+      ...head(`Your ${name} edition`, text),
+      online ? null : h('p.su-note', icon('wifiOff'), 'You’re offline. Go back to connect, or set this up later in Settings.'),
+      packPanel(pack, { compact: true, onDone: () => saveSettings({ editionSetup: true }).catch(() => {}) }),
+      nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Later'), next()),
+    ];
+  }
+  let extra = null;
 
   function vara() {
     const key = h('input.su-input', { type: 'password', placeholder: 'Paste your API key', autocomplete: 'off', 'aria-label': 'API key' });

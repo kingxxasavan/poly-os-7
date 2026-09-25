@@ -75,6 +75,12 @@ DEFAULTS: dict = {
     "cameraAccess": True,
     "micAccess": True,
     "keepRecent": True,  # remember recently opened apps for the Home Menu
+    # Editions (chosen while installing; Settings > Gaming / Developer)
+    "edition": "regular",  # "regular" | "developer" | "gaming"
+    "editionSetup": True,  # False until the edition's apps were offered at first sign-in
+    "developerMode": False,  # ~/.config/polyos/ui overrides the interface; Settings > Developer
+    "devInspector": False,  # right-click > Inspect Element on PolyOS screens (after reloading the interface)
+    "gameMode": True,  # full-screen games get the performance mode; PolyOS pauses its background work
 }
 POWER_MODES = ("saver", "balanced", "performance", "maximum")
 SCREEN_OFF_CHOICES = (0, 1, 2, 3, 5, 10, 15, 30, 60)
@@ -178,6 +184,11 @@ VALIDATORS = {
     "cameraAccess": _bool,
     "micAccess": _bool,
     "keepRecent": _bool,
+    "edition": _choice("regular", "developer", "gaming"),
+    "editionSetup": _bool,
+    "developerMode": _bool,
+    "devInspector": _bool,
+    "gameMode": _bool,
     "pinned": _pinned,
     "recent": _pinned,
     "setupDone": _bool,

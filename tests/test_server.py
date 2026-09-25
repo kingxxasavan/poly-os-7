@@ -173,6 +173,34 @@ class ServerTests(unittest.TestCase):
         finally:
             self.request("POST", "/api/settings", {"cameraAccess": True})
 
+    def test_editions_cloud_security(self):
+        packs = json.loads(self.request("GET", "/api/packs")[1])["packs"]
+        self.assertIn("steam", [a["id"] for a in packs["gaming"]["apps"]])
+        self.assertEqual(self.request("POST", "/api/packs/install", {"pack": "gaming", "apps": ["vscode"]})[0], 400)
+        status, body, _ = self.request("POST", "/api/gaming/cloud", {"services": ["geforcenow"]})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(json.loads(body)["installed"], ["geforcenow"])
+        state = json.loads(self.request("GET", "/api/state")[1])
+        self.assertIn("polyos-cloud-geforcenow.desktop", [a["id"] for a in state["apps"]])
+        self.assertEqual(self.request("POST", "/api/gaming/cloud", {"services": []})[0], 200)
+        self.assertEqual(self.request("POST", "/api/gaming/cloud", {"services": ["evil"]})[0], 400)
+        sec = json.loads(self.request("GET", "/api/security")[1])
+        self.assertIn("firewall", sec)
+        self.assertEqual(self.request("POST", "/api/security", {"what": "sshd", "on": True})[0], 400)
+
+    def test_developer_mode_overrides_ui(self):
+        config = Path(self.tmp.name)  # the settings file lives here, so ui/ overrides do too
+        (config / "ui" / "css").mkdir(parents=True, exist_ok=True)
+        (config / "ui" / "css" / "user.css").write_text(":root { --accent: #ff00aa; }")
+        (config / "ui" / "made-up.js").write_text("alert(1)")
+        try:
+            self.assertNotIn(b"ff00aa", self.request("GET", "/css/user.css", token=None)[1])  # off by default
+            self.request("POST", "/api/settings", {"developerMode": True})
+            self.assertIn(b"ff00aa", self.request("GET", "/css/user.css", token=None)[1])
+            self.assertEqual(self.request("GET", "/made-up.js", token=None)[0], 404)  # only replaces real files
+        finally:
+            self.request("POST", "/api/settings", {"developerMode": False})
+
     def test_new_settings_and_power(self):
         ok = {"taskbarStyle": "full", "taskbarAlign": "left", "taskbarAutoHide": True, "powerMode": "maximum",
               "screenOff": 5, "sleepAfter": 0, "desktopIcons": ["firefox-esr.desktop"], "desktopOpen": "single"}
@@ -216,6 +244,8 @@ class GreeterServerTests(unittest.TestCase):
                 self.assertEqual(get("/api/performance"), 200)
                 self.assertEqual(get("/wallpaper/lock"), 200)
                 self.assertEqual(get("/api/camera"), 404)
+                self.assertEqual(get("/api/packs"), 404)
+                self.assertEqual(get("/api/dev", "POST", {"action": "folder"}), 404)
                 self.assertEqual(get("/api/files/places"), 404)
                 self.assertEqual(get("/api/launch", "POST", {"id": "firefox-esr.desktop"}), 404)
                 self.assertEqual(get("/api/run-command", "POST", {"command": "mousepad"}), 404)

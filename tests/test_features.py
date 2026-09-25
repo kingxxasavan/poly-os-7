@@ -270,3 +270,93 @@ class PowerTests(unittest.TestCase):
         self.assertEqual(panel_margin({"taskbarStyle": "full", "taskbarAutoHide": False}), DOCK_HEIGHT)
         self.assertEqual(panel_margin({"taskbarStyle": "full", "taskbarAutoHide": True}), 0)
         self.assertEqual(dock_geometry({"taskbarStyle": "full"}, 1920, 1080), (0, 1080 - DOCK_HEIGHT, 1920, DOCK_HEIGHT))
+
+
+class EditionTests(unittest.TestCase):
+    def test_catalog_packs(self):
+        data = store.load()
+        apps = store.validate(data)
+        for name in ("gaming", "developer"):
+            pack = store.pack(data, name)
+            self.assertTrue(all(aid in apps for aid, _ in pack["apps"]))
+        gaming = {aid for aid, _ in store.pack(data, "gaming")["apps"]}
+        self.assertTrue({"steam", "bottles", "heroic", "gamemode"} <= gaming)
+        broken = json.loads(json.dumps(data))
+        broken["packs"]["gaming"]["apps"].append(["not-an-app", True])
+        with self.assertRaises(store.CatalogError):
+            store.validate(broken)
+
+    def test_admin_pack_only_installs_pack_apps(self):
+        with self.assertRaises(admin.AdminError):
+            admin.pack_install("gaming", ["vscode"])  # in the catalog, but not a gaming app
+        with self.assertRaises(admin.AdminError):
+            admin.pack_install("hacking", ["steam"])
+        with self.assertRaises(admin.AdminError):
+            admin.pack_install("gaming", [])
+
+    def test_cloud_shortcuts(self):
+        from polyos import gaming
+
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            self.assertEqual(gaming.set_shortcuts(home, ["geforcenow", "xcloud"]), ["geforcenow", "xcloud"])
+            text = (gaming.apps_dir(home) / "polyos-cloud-xcloud.desktop").read_text()
+            self.assertIn("Exec=polyos-ctl cloud xcloud", text)
+            self.assertEqual(gaming.set_shortcuts(home, ["xcloud"]), ["xcloud"])
+        have = lambda exe: exe == "chromium"  # noqa: E731
+        self.assertEqual(gaming.browser_command("https://x", have, set())[:2], ["chromium", "--app=https://x"])
+        self.assertEqual(gaming.browser_command("https://x", have, {"com.google.Chrome"})[:3],
+                         ["flatpak", "run", "com.google.Chrome"])
+        self.assertEqual(gaming.browser_command("https://x", lambda e: False, set()), ["xdg-open", "https://x"])
+        with self.assertRaises(ValueError):
+            gaming.open_cloud("../../bin/sh")
+
+    def test_developer_overrides(self):
+        from polyos import devmode
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "config"
+            self.assertIsNone(devmode.resolve(config, "css/polyos.css"))
+            base = devmode.prepare(config)
+            self.assertTrue((base / "css" / "user.css").is_file())
+            self.assertEqual(devmode.resolve(config, "css/user.css"), (base / "css" / "user.css").resolve())
+            (Path(tmp) / "secret.txt").write_text("x")
+            self.assertIsNone(devmode.resolve(config, "../../secret.txt"))  # never outside the folder
+            aside = devmode.reset(config)
+            self.assertTrue(aside.name.startswith("ui-off-"))
+            self.assertIsNone(devmode.resolve(config, "css/user.css"))
+
+
+class SecurityTests(unittest.TestCase):
+    def test_parsers(self):
+        from polyos import installer, security
+
+        self.assertTrue(security.firewall_enabled("# ufw\nENABLED=yes\nLOGLEVEL=low\n"))
+        self.assertFalse(security.firewall_enabled("ENABLED=no\n"))
+        self.assertTrue(security.updates_enabled(security.AUTO_UPGRADES_TEXT.format(on=1)))
+        self.assertFalse(security.updates_enabled(security.AUTO_UPGRADES_TEXT.format(on=0)))
+        self.assertIn("ENABLED=yes", installer.firewall_conf("ENABLED=no\nLOGLEVEL=low\n"))
+        self.assertNotIn("ENABLED=no", installer.firewall_conf("ENABLED=no\n"))
+
+    def test_unlock_throttle(self):
+        from polyos import security
+        from polyos.core import ApiError
+
+        now = [0.0]
+        t = security.Throttle(limit=3, wait=30, clock=lambda: now[0])
+        for _ in range(2):
+            t.check()
+            t.failed()
+        t.check()  # the third try is still allowed
+        t.failed()
+        with self.assertRaises(ApiError) as caught:
+            t.check()
+        self.assertEqual(caught.exception.status, 429)
+        now[0] = 31
+        t.check()
+        t.failed()  # a fourth wrong password doubles the wait
+        now[0] = 31 + 59
+        with self.assertRaises(ApiError):
+            t.check()
+        t.succeeded()
+        t.check()

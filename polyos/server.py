@@ -118,6 +118,9 @@ GET_API = {
     "/api/performance": lambda be, q: be.performance(),
     "/api/camera": lambda be, q: be.camera_status(),
     "/api/power/modes": lambda be, q: be.power_modes(),
+    "/api/packs": lambda be, q: be.packs(),
+    "/api/gaming/cloud": lambda be, q: be.cloud_gaming(),
+    "/api/security": lambda be, q: be.security_status(),
     "/api/widgets/data": lambda be, q: be.widgets.data(),
     "/api/widgets/weather": lambda be, q: be.widgets.weather(),
     "/api/widgets/geocode": lambda be, q: {"results": be.widgets.geocode(_q(q, "q") or "")},
@@ -138,6 +141,14 @@ def _obj(body: dict, key: str) -> dict:
     value = body.get(key)
     if not isinstance(value, dict):
         raise ApiError(f"'{key}' must be an object")
+    return value
+
+
+def _str_list_any(body: dict, key: str) -> list[str]:
+    """A list of short names that may be empty (e.g. turning every choice off)."""
+    value = body.get(key)
+    if not isinstance(value, list) or len(value) > 20 or not all(isinstance(v, str) and 0 < len(v) <= 60 for v in value):
+        raise ApiError(f"'{key}' must be a list of names")
     return value
 
 
@@ -201,6 +212,10 @@ POST_API = {
     "/api/account/password": lambda be, b: be.account_password(_password({"password": b.get("current", "")}), _str(b, "password", 256)),
     "/api/account/recovery-key": lambda be, b: be.account_recovery_key(),
     "/api/lock": lambda be, b: be.lock(),
+    "/api/packs/install": lambda be, b: be.pack_install(_str(b, "pack", 30), _names(b, "apps")),
+    "/api/gaming/cloud": lambda be, b: be.cloud_gaming_set(_str_list_any(b, "services")),
+    "/api/security": lambda be, b: be.security_set(_choice(b, "what", ("firewall", "updates")), bool(_opt_bool(b, "on"))),
+    "/api/dev": lambda be, b: be.dev_action(_choice(b, "action", ("folder", "source", "reset"))),
     "/api/lock/unlock": lambda be, b: be.lock_unlock(_password(b)),
     "/api/lock/recover": lambda be, b: be.lock_recover(_str(b, "key", 64), _str(b, "password", 256)),
     "/api/greeter/recover": lambda be, b: be.greeter_recover(_str(b, "user", 64), _str(b, "key", 64), _str(b, "password", 256)),
@@ -384,6 +399,10 @@ class _Handler(BaseHTTPRequestHandler):
         if (rel in DEV_ONLY and not self.app.dev) or not target.is_relative_to(self.app.ui_dir) \
                 or not target.is_file():
             raise ApiError("not found", 404)
+        # developer mode: the person's own copy of this file, from ~/.config/polyos/ui
+        override = getattr(self.app.backend, "ui_override", None)
+        if override is not None and self.app.allow is None:
+            target = override(rel) or target
         data = target.read_bytes()
         headers = {}
         if target.suffix == ".html":

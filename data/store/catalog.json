@@ -1,99 +1,862 @@
 {
-  "comment": "PolyMarket: apps PolyOS offers to install. Only these can be installed through polyos-admin. source=debian installs Debian packages with apt; source=flathub installs from Flathub. 'desktop' lists the launcher ids to open after installing; 'icons' are icon-theme names tried in order.",
+  "comment": "PolyMarket: apps PolyOS offers to install. Only these can be installed through polyos-admin. source=debian installs Debian packages with apt; source=flathub installs from Flathub. 'desktop' lists the launcher ids to open after installing; 'icons' are icon-theme names tried in order. 'packs' are the Gaming and Developer editions: sets of these apps installed together (true = picked by default).",
   "categories": [
-    ["featured", "Discover"],
-    ["browsers", "Browsers"],
-    ["social", "Chat & Social"],
-    ["media", "Music & Video"],
-    ["games", "Games"],
-    ["productivity", "Productivity"],
-    ["creativity", "Creativity"],
-    ["developer", "Developer"],
-    ["utilities", "Utilities"]
+    [
+      "featured",
+      "Discover"
+    ],
+    [
+      "browsers",
+      "Browsers"
+    ],
+    [
+      "social",
+      "Chat & Social"
+    ],
+    [
+      "media",
+      "Music & Video"
+    ],
+    [
+      "games",
+      "Games"
+    ],
+    [
+      "productivity",
+      "Productivity"
+    ],
+    [
+      "creativity",
+      "Creativity"
+    ],
+    [
+      "developer",
+      "Developer"
+    ],
+    [
+      "utilities",
+      "Utilities"
+    ]
   ],
   "apps": [
-    {"id": "firefox", "name": "Firefox", "category": "browsers", "source": "debian", "packages": ["firefox-esr"], "desktop": ["firefox-esr.desktop"], "icons": ["firefox-esr", "firefox"], "system": true,
-     "summary": "Fast, private web browser from Mozilla.", "description": "Firefox ESR is the browser PolyOS ships with: tracking protection, sync across devices and thousands of add-ons."},
-    {"id": "chromium", "name": "Chromium", "category": "browsers", "source": "debian", "packages": ["chromium"], "desktop": ["chromium.desktop"], "icons": ["chromium", "chromium-browser"],
-     "summary": "The open-source browser behind Google Chrome.", "description": "Chromium runs Chrome web apps and extensions, without Google's own services built in."},
-    {"id": "chrome", "name": "Google Chrome", "category": "browsers", "source": "flathub", "ref": "com.google.Chrome", "desktop": ["com.google.Chrome.desktop"], "icons": ["google-chrome", "com.google.Chrome"], "featured": true,
-     "summary": "Google's browser, with sign-in and sync.", "description": "Sign in with your Google account to bring your bookmarks, passwords and extensions from your other computers."},
-    {"id": "brave", "name": "Brave", "category": "browsers", "source": "flathub", "ref": "com.brave.Browser", "desktop": ["com.brave.Browser.desktop"], "icons": ["brave-browser", "brave", "com.brave.Browser"],
-     "summary": "Privacy browser that blocks ads and trackers.", "description": "Brave blocks ads and trackers by default and runs Chrome extensions."},
-
-    {"id": "discord", "name": "Discord", "category": "social", "source": "flathub", "ref": "com.discordapp.Discord", "desktop": ["com.discordapp.Discord.desktop"], "icons": ["discord", "com.discordapp.Discord"], "featured": true,
-     "summary": "Voice, video and text chat with friends.", "description": "Hang out in servers, voice channels and DMs with your friends and communities."},
-    {"id": "telegram", "name": "Telegram", "category": "social", "source": "flathub", "ref": "org.telegram.desktop", "desktop": ["org.telegram.desktop.desktop"], "icons": ["telegram", "org.telegram.desktop", "telegram-desktop"],
-     "summary": "Fast messaging that syncs across devices.", "description": "Chats, groups and channels that stay in sync with your phone."},
-    {"id": "signal", "name": "Signal", "category": "social", "source": "flathub", "ref": "org.signal.Signal", "desktop": ["org.signal.Signal.desktop"], "icons": ["signal-desktop", "signal", "org.signal.Signal"],
-     "summary": "Private messaging, end-to-end encrypted.", "description": "Link Signal to your phone to send encrypted messages and calls from your computer."},
-    {"id": "zoom", "name": "Zoom", "category": "social", "source": "flathub", "ref": "us.zoom.Zoom", "desktop": ["us.zoom.Zoom.desktop"], "icons": ["Zoom", "zoom", "us.zoom.Zoom"],
-     "summary": "Video meetings and classes.", "description": "Join and host video meetings, share your screen and chat."},
-    {"id": "thunderbird", "name": "Thunderbird", "category": "social", "source": "debian", "packages": ["thunderbird"], "desktop": ["thunderbird.desktop", "org.mozilla.Thunderbird.desktop"], "icons": ["thunderbird"],
-     "summary": "Email and calendar from Mozilla.", "description": "Read all your email accounts in one place, with a calendar and address book."},
-
-    {"id": "spotify", "name": "Spotify", "category": "media", "source": "flathub", "ref": "com.spotify.Client", "desktop": ["com.spotify.Client.desktop"], "icons": ["spotify", "spotify-client", "com.spotify.Client"], "featured": true,
-     "summary": "Millions of songs and podcasts.", "description": "Stream music and podcasts, and pick up where you left off on your phone."},
-    {"id": "vlc", "name": "VLC", "category": "media", "source": "debian", "packages": ["vlc"], "desktop": ["vlc.desktop"], "icons": ["vlc"], "featured": true,
-     "summary": "Plays almost any video or music file.", "description": "VLC plays nearly every video and audio format, DVDs and network streams."},
-    {"id": "obs", "name": "OBS Studio", "category": "media", "source": "debian", "packages": ["obs-studio"], "desktop": ["com.obsproject.Studio.desktop", "obs.desktop"], "icons": ["com.obsproject.Studio", "obs"],
-     "summary": "Record your screen and stream live.", "description": "Record and stream with scenes, webcams, audio mixing and transitions."},
-    {"id": "audacity", "name": "Audacity", "category": "media", "source": "debian", "packages": ["audacity"], "desktop": ["audacity.desktop", "org.audacityteam.Audacity.desktop"], "icons": ["audacity"],
-     "summary": "Record and edit audio.", "description": "Record voice-overs and podcasts, cut and mix tracks, and clean up noise."},
-    {"id": "kdenlive", "name": "Kdenlive", "category": "media", "source": "debian", "packages": ["kdenlive"], "desktop": ["org.kde.kdenlive.desktop"], "icons": ["kdenlive", "org.kde.kdenlive"],
-     "summary": "Video editor with a timeline.", "description": "Edit videos on a multi-track timeline with effects, titles and transitions."},
-
-    {"id": "steam", "name": "Steam", "category": "games", "source": "flathub", "ref": "com.valvesoftware.Steam", "desktop": ["com.valvesoftware.Steam.desktop"], "icons": ["steam", "com.valvesoftware.Steam"], "featured": true,
-     "summary": "Thousands of games, many of them for Linux.", "description": "Buy and play games. Proton runs many Windows games on PolyOS too."},
-    {"id": "prism", "name": "Prism Launcher", "category": "games", "source": "flathub", "ref": "org.prismlauncher.PrismLauncher", "desktop": ["org.prismlauncher.PrismLauncher.desktop"], "icons": ["org.prismlauncher.PrismLauncher", "prismlauncher"],
-     "summary": "Play Minecraft: Java Edition with mods.", "description": "Sign in with your Microsoft account to play Minecraft: Java Edition, with easy mod packs."},
-    {"id": "heroic", "name": "Heroic Games Launcher", "category": "games", "source": "flathub", "ref": "com.heroicgameslauncher.hgl", "desktop": ["com.heroicgameslauncher.hgl.desktop"], "icons": ["com.heroicgameslauncher.hgl", "heroic"],
-     "summary": "Your Epic and GOG games.", "description": "Play the games you own on the Epic Games Store, GOG and Amazon."},
-    {"id": "supertuxkart", "name": "SuperTuxKart", "category": "games", "source": "debian", "packages": ["supertuxkart"], "desktop": ["supertuxkart.desktop"], "icons": ["supertuxkart"],
-     "summary": "Free kart racing game.", "description": "Race against friends or the computer on dozens of tracks."},
-
-    {"id": "libreoffice", "name": "LibreOffice", "category": "productivity", "source": "debian", "packages": ["libreoffice-writer", "libreoffice-calc", "libreoffice-impress", "libreoffice-gtk3"], "desktop": ["libreoffice-startcenter.desktop", "libreoffice-writer.desktop"], "icons": ["libreoffice-startcenter", "libreoffice-main"], "featured": true,
-     "summary": "Documents, spreadsheets and presentations.", "description": "Writer, Calc and Impress open and save Word, Excel and PowerPoint files."},
-    {"id": "onlyoffice", "name": "ONLYOFFICE", "category": "productivity", "source": "flathub", "ref": "org.onlyoffice.desktopeditors", "desktop": ["org.onlyoffice.desktopeditors.desktop"], "icons": ["onlyoffice-desktopeditors", "org.onlyoffice.desktopeditors"],
-     "summary": "Office suite that looks like Microsoft Office.", "description": "Edit Word, Excel and PowerPoint files with a familiar ribbon layout."},
-    {"id": "obsidian", "name": "Obsidian", "category": "productivity", "source": "flathub", "ref": "md.obsidian.Obsidian", "desktop": ["md.obsidian.Obsidian.desktop"], "icons": ["obsidian", "md.obsidian.Obsidian"],
-     "summary": "Notes that link together.", "description": "Take notes in Markdown files and connect ideas with links and graphs."},
-    {"id": "calculator", "name": "Calculator", "category": "productivity", "source": "debian", "packages": ["gnome-calculator"], "desktop": ["org.gnome.Calculator.desktop"], "icons": ["org.gnome.Calculator", "accessories-calculator"],
-     "summary": "Basic, scientific and programming calculator.", "description": "Everyday math, scientific functions, unit and currency conversion."},
-    {"id": "pdf", "name": "Document Viewer", "category": "productivity", "source": "debian", "packages": ["evince"], "desktop": ["org.gnome.Evince.desktop"], "icons": ["org.gnome.Evince", "evince"],
-     "summary": "Open PDFs and fill in forms.", "description": "Read PDFs, search them and fill in PDF forms."},
-
-    {"id": "gimp", "name": "GIMP", "category": "creativity", "source": "debian", "packages": ["gimp"], "desktop": ["org.gimp.GIMP.desktop", "gimp.desktop"], "icons": ["gimp", "org.gimp.GIMP"],
-     "summary": "Photo editing and digital art.", "description": "Retouch photos, paint and make graphics with layers, masks and filters."},
-    {"id": "krita", "name": "Krita", "category": "creativity", "source": "debian", "packages": ["krita"], "desktop": ["org.kde.krita.desktop"], "icons": ["krita", "org.kde.krita"],
-     "summary": "Painting app for artists.", "description": "Digital painting with brush engines, drawing tablet support and animation."},
-    {"id": "inkscape", "name": "Inkscape", "category": "creativity", "source": "debian", "packages": ["inkscape"], "desktop": ["org.inkscape.Inkscape.desktop"], "icons": ["inkscape", "org.inkscape.Inkscape"],
-     "summary": "Vector graphics and logos.", "description": "Design logos, icons, posters and diagrams as scalable SVG."},
-    {"id": "blender", "name": "Blender", "category": "creativity", "source": "debian", "packages": ["blender"], "desktop": ["blender.desktop"], "icons": ["blender"],
-     "summary": "3D modeling, animation and rendering.", "description": "Model, sculpt, animate and render in 3D, and edit video."},
-    {"id": "turbowarp", "name": "TurboWarp", "category": "creativity", "source": "flathub", "ref": "org.turbowarp.TurboWarp", "desktop": ["org.turbowarp.TurboWarp.desktop"], "icons": ["org.turbowarp.TurboWarp", "turbowarp"], "featured": true,
-     "summary": "Scratch, but faster. Where PolyOS began.", "description": "Build and run Scratch projects offline, with a compiler that makes them much faster."},
-
-    {"id": "vscode", "name": "Visual Studio Code", "category": "developer", "source": "flathub", "ref": "com.visualstudio.code", "desktop": ["com.visualstudio.code.desktop"], "icons": ["com.visualstudio.code", "visual-studio-code", "vscode", "code"], "featured": true,
-     "summary": "Code editor from Microsoft.", "description": "Edit code in any language, with extensions, Git and a built-in terminal."},
-    {"id": "git", "name": "Git", "category": "developer", "source": "debian", "packages": ["git"], "desktop": [], "icons": ["git", "github-desktop"],
-     "summary": "Version control, for the terminal.", "description": "Track changes to your code and work with GitHub. Use it from the Terminal."},
-    {"id": "nodejs", "name": "Node.js", "category": "developer", "source": "debian", "packages": ["nodejs", "npm"], "desktop": [], "icons": ["nodejs", "node"],
-     "summary": "JavaScript outside the browser, with npm.", "description": "Run JavaScript and install packages with npm. Use it from the Terminal."},
-    {"id": "geany", "name": "Geany", "category": "developer", "source": "debian", "packages": ["geany"], "desktop": ["geany.desktop", "org.geany.Geany.desktop"], "icons": ["geany"],
-     "summary": "Light, fast code editor.", "description": "A quick editor with syntax highlighting, a file browser and build commands."},
-
-    {"id": "timeshift", "name": "Timeshift", "category": "utilities", "source": "debian", "packages": ["timeshift"], "desktop": ["timeshift-gtk.desktop"], "icons": ["timeshift"],
-     "summary": "Snapshots to undo system changes.", "description": "Take snapshots of the system and roll back if an update or change breaks something."},
-    {"id": "keepassxc", "name": "KeePassXC", "category": "utilities", "source": "debian", "packages": ["keepassxc"], "desktop": ["org.keepassxc.KeePassXC.desktop"], "icons": ["keepassxc", "org.keepassxc.KeePassXC"],
-     "summary": "Password manager that stays on your PC.", "description": "Keep your passwords in an encrypted file only you can open."},
-    {"id": "bitwarden", "name": "Bitwarden", "category": "utilities", "source": "flathub", "ref": "com.bitwarden.desktop", "desktop": ["com.bitwarden.desktop.desktop"], "icons": ["bitwarden", "com.bitwarden.desktop"],
-     "summary": "Password manager that syncs everywhere.", "description": "Store passwords in your Bitwarden vault and use them on every device."},
-    {"id": "localsend", "name": "LocalSend", "category": "utilities", "source": "flathub", "ref": "org.localsend.localsend_app", "desktop": ["org.localsend.localsend_app.desktop"], "icons": ["org.localsend.localsend_app", "localsend"],
-     "summary": "Send files to nearby phones and PCs.", "description": "Share files with phones and computers on the same Wi-Fi, no cable or account needed."},
-    {"id": "disks", "name": "Disks", "category": "utilities", "source": "debian", "packages": ["gnome-disk-utility"], "desktop": ["org.gnome.DiskUtility.desktop"], "icons": ["org.gnome.DiskUtility", "gnome-disks"],
-     "summary": "Format USB drives and check disks.", "description": "Format and name drives, check disk health and write disk images."},
-    {"id": "printers", "name": "Printers", "category": "utilities", "source": "debian", "packages": ["system-config-printer", "cups"], "desktop": ["system-config-printer.desktop"], "icons": ["printer", "system-config-printer"],
-     "summary": "Add and manage printers.", "description": "Set up network and USB printers."}
-  ]
+    {
+      "id": "firefox",
+      "name": "Firefox",
+      "category": "browsers",
+      "source": "debian",
+      "packages": [
+        "firefox-esr"
+      ],
+      "desktop": [
+        "firefox-esr.desktop"
+      ],
+      "icons": [
+        "firefox-esr",
+        "firefox"
+      ],
+      "system": true,
+      "summary": "Fast, private web browser from Mozilla.",
+      "description": "Firefox ESR is the browser PolyOS ships with: tracking protection, sync across devices and thousands of add-ons."
+    },
+    {
+      "id": "chromium",
+      "name": "Chromium",
+      "category": "browsers",
+      "source": "debian",
+      "packages": [
+        "chromium"
+      ],
+      "desktop": [
+        "chromium.desktop"
+      ],
+      "icons": [
+        "chromium",
+        "chromium-browser"
+      ],
+      "summary": "The open-source browser behind Google Chrome.",
+      "description": "Chromium runs Chrome web apps and extensions, without Google's own services built in."
+    },
+    {
+      "id": "chrome",
+      "name": "Google Chrome",
+      "category": "browsers",
+      "source": "flathub",
+      "ref": "com.google.Chrome",
+      "desktop": [
+        "com.google.Chrome.desktop"
+      ],
+      "icons": [
+        "google-chrome",
+        "com.google.Chrome"
+      ],
+      "featured": true,
+      "summary": "Google's browser, with sign-in and sync.",
+      "description": "Sign in with your Google account to bring your bookmarks, passwords and extensions from your other computers."
+    },
+    {
+      "id": "brave",
+      "name": "Brave",
+      "category": "browsers",
+      "source": "flathub",
+      "ref": "com.brave.Browser",
+      "desktop": [
+        "com.brave.Browser.desktop"
+      ],
+      "icons": [
+        "brave-browser",
+        "brave",
+        "com.brave.Browser"
+      ],
+      "summary": "Privacy browser that blocks ads and trackers.",
+      "description": "Brave blocks ads and trackers by default and runs Chrome extensions."
+    },
+    {
+      "id": "discord",
+      "name": "Discord",
+      "category": "social",
+      "source": "flathub",
+      "ref": "com.discordapp.Discord",
+      "desktop": [
+        "com.discordapp.Discord.desktop"
+      ],
+      "icons": [
+        "discord",
+        "com.discordapp.Discord"
+      ],
+      "featured": true,
+      "summary": "Voice, video and text chat with friends.",
+      "description": "Hang out in servers, voice channels and DMs with your friends and communities."
+    },
+    {
+      "id": "telegram",
+      "name": "Telegram",
+      "category": "social",
+      "source": "flathub",
+      "ref": "org.telegram.desktop",
+      "desktop": [
+        "org.telegram.desktop.desktop"
+      ],
+      "icons": [
+        "telegram",
+        "org.telegram.desktop",
+        "telegram-desktop"
+      ],
+      "summary": "Fast messaging that syncs across devices.",
+      "description": "Chats, groups and channels that stay in sync with your phone."
+    },
+    {
+      "id": "signal",
+      "name": "Signal",
+      "category": "social",
+      "source": "flathub",
+      "ref": "org.signal.Signal",
+      "desktop": [
+        "org.signal.Signal.desktop"
+      ],
+      "icons": [
+        "signal-desktop",
+        "signal",
+        "org.signal.Signal"
+      ],
+      "summary": "Private messaging, end-to-end encrypted.",
+      "description": "Link Signal to your phone to send encrypted messages and calls from your computer."
+    },
+    {
+      "id": "zoom",
+      "name": "Zoom",
+      "category": "social",
+      "source": "flathub",
+      "ref": "us.zoom.Zoom",
+      "desktop": [
+        "us.zoom.Zoom.desktop"
+      ],
+      "icons": [
+        "Zoom",
+        "zoom",
+        "us.zoom.Zoom"
+      ],
+      "summary": "Video meetings and classes.",
+      "description": "Join and host video meetings, share your screen and chat."
+    },
+    {
+      "id": "thunderbird",
+      "name": "Thunderbird",
+      "category": "social",
+      "source": "debian",
+      "packages": [
+        "thunderbird"
+      ],
+      "desktop": [
+        "thunderbird.desktop",
+        "org.mozilla.Thunderbird.desktop"
+      ],
+      "icons": [
+        "thunderbird"
+      ],
+      "summary": "Email and calendar from Mozilla.",
+      "description": "Read all your email accounts in one place, with a calendar and address book."
+    },
+    {
+      "id": "spotify",
+      "name": "Spotify",
+      "category": "media",
+      "source": "flathub",
+      "ref": "com.spotify.Client",
+      "desktop": [
+        "com.spotify.Client.desktop"
+      ],
+      "icons": [
+        "spotify",
+        "spotify-client",
+        "com.spotify.Client"
+      ],
+      "featured": true,
+      "summary": "Millions of songs and podcasts.",
+      "description": "Stream music and podcasts, and pick up where you left off on your phone."
+    },
+    {
+      "id": "vlc",
+      "name": "VLC",
+      "category": "media",
+      "source": "debian",
+      "packages": [
+        "vlc"
+      ],
+      "desktop": [
+        "vlc.desktop"
+      ],
+      "icons": [
+        "vlc"
+      ],
+      "featured": true,
+      "summary": "Plays almost any video or music file.",
+      "description": "VLC plays nearly every video and audio format, DVDs and network streams."
+    },
+    {
+      "id": "obs",
+      "name": "OBS Studio",
+      "category": "media",
+      "source": "debian",
+      "packages": [
+        "obs-studio"
+      ],
+      "desktop": [
+        "com.obsproject.Studio.desktop",
+        "obs.desktop"
+      ],
+      "icons": [
+        "com.obsproject.Studio",
+        "obs"
+      ],
+      "summary": "Record your screen and stream live.",
+      "description": "Record and stream with scenes, webcams, audio mixing and transitions."
+    },
+    {
+      "id": "audacity",
+      "name": "Audacity",
+      "category": "media",
+      "source": "debian",
+      "packages": [
+        "audacity"
+      ],
+      "desktop": [
+        "audacity.desktop",
+        "org.audacityteam.Audacity.desktop"
+      ],
+      "icons": [
+        "audacity"
+      ],
+      "summary": "Record and edit audio.",
+      "description": "Record voice-overs and podcasts, cut and mix tracks, and clean up noise."
+    },
+    {
+      "id": "kdenlive",
+      "name": "Kdenlive",
+      "category": "media",
+      "source": "debian",
+      "packages": [
+        "kdenlive"
+      ],
+      "desktop": [
+        "org.kde.kdenlive.desktop"
+      ],
+      "icons": [
+        "kdenlive",
+        "org.kde.kdenlive"
+      ],
+      "summary": "Video editor with a timeline.",
+      "description": "Edit videos on a multi-track timeline with effects, titles and transitions."
+    },
+    {
+      "id": "steam",
+      "name": "Steam",
+      "category": "games",
+      "source": "flathub",
+      "ref": "com.valvesoftware.Steam",
+      "desktop": [
+        "com.valvesoftware.Steam.desktop"
+      ],
+      "icons": [
+        "steam",
+        "com.valvesoftware.Steam"
+      ],
+      "featured": true,
+      "summary": "Thousands of games, many of them for Linux.",
+      "description": "Buy and play games. Proton runs many Windows games on PolyOS too."
+    },
+    {
+      "id": "prism",
+      "name": "Prism Launcher",
+      "category": "games",
+      "source": "flathub",
+      "ref": "org.prismlauncher.PrismLauncher",
+      "desktop": [
+        "org.prismlauncher.PrismLauncher.desktop"
+      ],
+      "icons": [
+        "org.prismlauncher.PrismLauncher",
+        "prismlauncher"
+      ],
+      "summary": "Play Minecraft: Java Edition with mods.",
+      "description": "Sign in with your Microsoft account to play Minecraft: Java Edition, with easy mod packs."
+    },
+    {
+      "id": "heroic",
+      "name": "Heroic Games Launcher",
+      "category": "games",
+      "source": "flathub",
+      "ref": "com.heroicgameslauncher.hgl",
+      "desktop": [
+        "com.heroicgameslauncher.hgl.desktop"
+      ],
+      "icons": [
+        "com.heroicgameslauncher.hgl",
+        "heroic"
+      ],
+      "summary": "Your Epic and GOG games.",
+      "description": "Play the games you own on the Epic Games Store, GOG and Amazon."
+    },
+    {
+      "id": "supertuxkart",
+      "name": "SuperTuxKart",
+      "category": "games",
+      "source": "debian",
+      "packages": [
+        "supertuxkart"
+      ],
+      "desktop": [
+        "supertuxkart.desktop"
+      ],
+      "icons": [
+        "supertuxkart"
+      ],
+      "summary": "Free kart racing game.",
+      "description": "Race against friends or the computer on dozens of tracks."
+    },
+    {
+      "id": "libreoffice",
+      "name": "LibreOffice",
+      "category": "productivity",
+      "source": "debian",
+      "packages": [
+        "libreoffice-writer",
+        "libreoffice-calc",
+        "libreoffice-impress",
+        "libreoffice-gtk3"
+      ],
+      "desktop": [
+        "libreoffice-startcenter.desktop",
+        "libreoffice-writer.desktop"
+      ],
+      "icons": [
+        "libreoffice-startcenter",
+        "libreoffice-main"
+      ],
+      "featured": true,
+      "summary": "Documents, spreadsheets and presentations.",
+      "description": "Writer, Calc and Impress open and save Word, Excel and PowerPoint files."
+    },
+    {
+      "id": "onlyoffice",
+      "name": "ONLYOFFICE",
+      "category": "productivity",
+      "source": "flathub",
+      "ref": "org.onlyoffice.desktopeditors",
+      "desktop": [
+        "org.onlyoffice.desktopeditors.desktop"
+      ],
+      "icons": [
+        "onlyoffice-desktopeditors",
+        "org.onlyoffice.desktopeditors"
+      ],
+      "summary": "Office suite that looks like Microsoft Office.",
+      "description": "Edit Word, Excel and PowerPoint files with a familiar ribbon layout."
+    },
+    {
+      "id": "obsidian",
+      "name": "Obsidian",
+      "category": "productivity",
+      "source": "flathub",
+      "ref": "md.obsidian.Obsidian",
+      "desktop": [
+        "md.obsidian.Obsidian.desktop"
+      ],
+      "icons": [
+        "obsidian",
+        "md.obsidian.Obsidian"
+      ],
+      "summary": "Notes that link together.",
+      "description": "Take notes in Markdown files and connect ideas with links and graphs."
+    },
+    {
+      "id": "calculator",
+      "name": "Calculator",
+      "category": "productivity",
+      "source": "debian",
+      "packages": [
+        "gnome-calculator"
+      ],
+      "desktop": [
+        "org.gnome.Calculator.desktop"
+      ],
+      "icons": [
+        "org.gnome.Calculator",
+        "accessories-calculator"
+      ],
+      "summary": "Basic, scientific and programming calculator.",
+      "description": "Everyday math, scientific functions, unit and currency conversion."
+    },
+    {
+      "id": "pdf",
+      "name": "Document Viewer",
+      "category": "productivity",
+      "source": "debian",
+      "packages": [
+        "evince"
+      ],
+      "desktop": [
+        "org.gnome.Evince.desktop"
+      ],
+      "icons": [
+        "org.gnome.Evince",
+        "evince"
+      ],
+      "summary": "Open PDFs and fill in forms.",
+      "description": "Read PDFs, search them and fill in PDF forms."
+    },
+    {
+      "id": "gimp",
+      "name": "GIMP",
+      "category": "creativity",
+      "source": "debian",
+      "packages": [
+        "gimp"
+      ],
+      "desktop": [
+        "org.gimp.GIMP.desktop",
+        "gimp.desktop"
+      ],
+      "icons": [
+        "gimp",
+        "org.gimp.GIMP"
+      ],
+      "summary": "Photo editing and digital art.",
+      "description": "Retouch photos, paint and make graphics with layers, masks and filters."
+    },
+    {
+      "id": "krita",
+      "name": "Krita",
+      "category": "creativity",
+      "source": "debian",
+      "packages": [
+        "krita"
+      ],
+      "desktop": [
+        "org.kde.krita.desktop"
+      ],
+      "icons": [
+        "krita",
+        "org.kde.krita"
+      ],
+      "summary": "Painting app for artists.",
+      "description": "Digital painting with brush engines, drawing tablet support and animation."
+    },
+    {
+      "id": "inkscape",
+      "name": "Inkscape",
+      "category": "creativity",
+      "source": "debian",
+      "packages": [
+        "inkscape"
+      ],
+      "desktop": [
+        "org.inkscape.Inkscape.desktop"
+      ],
+      "icons": [
+        "inkscape",
+        "org.inkscape.Inkscape"
+      ],
+      "summary": "Vector graphics and logos.",
+      "description": "Design logos, icons, posters and diagrams as scalable SVG."
+    },
+    {
+      "id": "blender",
+      "name": "Blender",
+      "category": "creativity",
+      "source": "debian",
+      "packages": [
+        "blender"
+      ],
+      "desktop": [
+        "blender.desktop"
+      ],
+      "icons": [
+        "blender"
+      ],
+      "summary": "3D modeling, animation and rendering.",
+      "description": "Model, sculpt, animate and render in 3D, and edit video."
+    },
+    {
+      "id": "turbowarp",
+      "name": "TurboWarp",
+      "category": "creativity",
+      "source": "flathub",
+      "ref": "org.turbowarp.TurboWarp",
+      "desktop": [
+        "org.turbowarp.TurboWarp.desktop"
+      ],
+      "icons": [
+        "org.turbowarp.TurboWarp",
+        "turbowarp"
+      ],
+      "featured": true,
+      "summary": "Scratch, but faster. Where PolyOS began.",
+      "description": "Build and run Scratch projects offline, with a compiler that makes them much faster."
+    },
+    {
+      "id": "vscode",
+      "name": "Visual Studio Code",
+      "category": "developer",
+      "source": "flathub",
+      "ref": "com.visualstudio.code",
+      "desktop": [
+        "com.visualstudio.code.desktop"
+      ],
+      "icons": [
+        "com.visualstudio.code",
+        "visual-studio-code",
+        "vscode",
+        "code"
+      ],
+      "featured": true,
+      "summary": "Code editor from Microsoft.",
+      "description": "Edit code in any language, with extensions, Git and a built-in terminal."
+    },
+    {
+      "id": "git",
+      "name": "Git",
+      "category": "developer",
+      "source": "debian",
+      "packages": [
+        "git"
+      ],
+      "desktop": [],
+      "icons": [
+        "git",
+        "github-desktop"
+      ],
+      "summary": "Version control, for the terminal.",
+      "description": "Track changes to your code and work with GitHub. Use it from the Terminal."
+    },
+    {
+      "id": "nodejs",
+      "name": "Node.js",
+      "category": "developer",
+      "source": "debian",
+      "packages": [
+        "nodejs",
+        "npm"
+      ],
+      "desktop": [],
+      "icons": [
+        "nodejs",
+        "node"
+      ],
+      "summary": "JavaScript outside the browser, with npm.",
+      "description": "Run JavaScript and install packages with npm. Use it from the Terminal."
+    },
+    {
+      "id": "geany",
+      "name": "Geany",
+      "category": "developer",
+      "source": "debian",
+      "packages": [
+        "geany"
+      ],
+      "desktop": [
+        "geany.desktop",
+        "org.geany.Geany.desktop"
+      ],
+      "icons": [
+        "geany"
+      ],
+      "summary": "Light, fast code editor.",
+      "description": "A quick editor with syntax highlighting, a file browser and build commands."
+    },
+    {
+      "id": "timeshift",
+      "name": "Timeshift",
+      "category": "utilities",
+      "source": "debian",
+      "packages": [
+        "timeshift"
+      ],
+      "desktop": [
+        "timeshift-gtk.desktop"
+      ],
+      "icons": [
+        "timeshift"
+      ],
+      "summary": "Snapshots to undo system changes.",
+      "description": "Take snapshots of the system and roll back if an update or change breaks something."
+    },
+    {
+      "id": "keepassxc",
+      "name": "KeePassXC",
+      "category": "utilities",
+      "source": "debian",
+      "packages": [
+        "keepassxc"
+      ],
+      "desktop": [
+        "org.keepassxc.KeePassXC.desktop"
+      ],
+      "icons": [
+        "keepassxc",
+        "org.keepassxc.KeePassXC"
+      ],
+      "summary": "Password manager that stays on your PC.",
+      "description": "Keep your passwords in an encrypted file only you can open."
+    },
+    {
+      "id": "bitwarden",
+      "name": "Bitwarden",
+      "category": "utilities",
+      "source": "flathub",
+      "ref": "com.bitwarden.desktop",
+      "desktop": [
+        "com.bitwarden.desktop.desktop"
+      ],
+      "icons": [
+        "bitwarden",
+        "com.bitwarden.desktop"
+      ],
+      "summary": "Password manager that syncs everywhere.",
+      "description": "Store passwords in your Bitwarden vault and use them on every device."
+    },
+    {
+      "id": "localsend",
+      "name": "LocalSend",
+      "category": "utilities",
+      "source": "flathub",
+      "ref": "org.localsend.localsend_app",
+      "desktop": [
+        "org.localsend.localsend_app.desktop"
+      ],
+      "icons": [
+        "org.localsend.localsend_app",
+        "localsend"
+      ],
+      "summary": "Send files to nearby phones and PCs.",
+      "description": "Share files with phones and computers on the same Wi-Fi, no cable or account needed."
+    },
+    {
+      "id": "disks",
+      "name": "Disks",
+      "category": "utilities",
+      "source": "debian",
+      "packages": [
+        "gnome-disk-utility"
+      ],
+      "desktop": [
+        "org.gnome.DiskUtility.desktop"
+      ],
+      "icons": [
+        "org.gnome.DiskUtility",
+        "gnome-disks"
+      ],
+      "summary": "Format USB drives and check disks.",
+      "description": "Format and name drives, check disk health and write disk images."
+    },
+    {
+      "id": "printers",
+      "name": "Printers",
+      "category": "utilities",
+      "source": "debian",
+      "packages": [
+        "system-config-printer",
+        "cups"
+      ],
+      "desktop": [
+        "system-config-printer.desktop"
+      ],
+      "icons": [
+        "printer",
+        "system-config-printer"
+      ],
+      "summary": "Add and manage printers.",
+      "description": "Set up network and USB printers."
+    },
+    {
+      "id": "bottles",
+      "name": "Bottles (Wine)",
+      "category": "games",
+      "source": "flathub",
+      "ref": "com.usebottles.bottles",
+      "desktop": [
+        "com.usebottles.bottles.desktop"
+      ],
+      "icons": [
+        "com.usebottles.bottles",
+        "bottles",
+        "wine"
+      ],
+      "summary": "Run Windows apps and games with Wine.",
+      "description": "Bottles sets up Wine for you: install a Windows game or app into its own bottle, with the right runner and fixes, and play it from PolyOS."
+    },
+    {
+      "id": "lutris",
+      "name": "Lutris",
+      "category": "games",
+      "source": "flathub",
+      "ref": "net.lutris.Lutris",
+      "desktop": [
+        "net.lutris.Lutris.desktop"
+      ],
+      "icons": [
+        "net.lutris.Lutris",
+        "lutris"
+      ],
+      "summary": "All your games in one library.",
+      "description": "Install and play games from Battle.net, EA, Ubisoft, GOG, emulators and more with community install scripts."
+    },
+    {
+      "id": "protonup",
+      "name": "ProtonUp-Qt",
+      "category": "games",
+      "source": "flathub",
+      "ref": "net.davidotek.pupgui2",
+      "desktop": [
+        "net.davidotek.pupgui2.desktop"
+      ],
+      "icons": [
+        "net.davidotek.pupgui2",
+        "protonup-qt"
+      ],
+      "summary": "Newer Proton and Wine versions for Steam and Lutris.",
+      "description": "Add community builds like Proton-GE, which fix many Windows games in Steam, Lutris and Heroic."
+    },
+    {
+      "id": "gamemode",
+      "name": "GameMode",
+      "category": "games",
+      "source": "debian",
+      "packages": [
+        "gamemode"
+      ],
+      "desktop": [],
+      "icons": [
+        "gamemode",
+        "applications-games"
+      ],
+      "summary": "Gives games the computer's full speed while they run.",
+      "description": "Feral's GameMode: games that ask for it (and Steam with “gamemoderun %command%”) get the processor's performance mode and priority."
+    },
+    {
+      "id": "devtools",
+      "name": "Build tools",
+      "category": "developer",
+      "source": "debian",
+      "packages": [
+        "build-essential",
+        "python3-venv",
+        "python3-pip",
+        "curl",
+        "jq"
+      ],
+      "desktop": [],
+      "icons": [
+        "applications-development",
+        "utilities-terminal"
+      ],
+      "summary": "Compilers, Python environments and command-line tools.",
+      "description": "GCC, make, Python venv and pip, curl and jq: what most coding projects expect to find."
+    }
+  ],
+  "packs": {
+    "gaming": {
+      "name": "Gaming",
+      "summary": "Steam, Windows games with Wine, game launchers and Game Mode.",
+      "apps": [
+        [
+          "steam",
+          true
+        ],
+        [
+          "bottles",
+          true
+        ],
+        [
+          "heroic",
+          true
+        ],
+        [
+          "lutris",
+          false
+        ],
+        [
+          "protonup",
+          true
+        ],
+        [
+          "gamemode",
+          true
+        ],
+        [
+          "discord",
+          false
+        ],
+        [
+          "prism",
+          false
+        ]
+      ]
+    },
+    "developer": {
+      "name": "Developer",
+      "summary": "Git, compilers, Python, Node.js and a code editor.",
+      "apps": [
+        [
+          "git",
+          true
+        ],
+        [
+          "devtools",
+          true
+        ],
+        [
+          "nodejs",
+          true
+        ],
+        [
+          "vscode",
+          true
+        ],
+        [
+          "geany",
+          false
+        ]
+      ]
+    }
+  }
 }

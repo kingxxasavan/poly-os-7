@@ -40,6 +40,13 @@ flatpak
 evince
 power-profiles-daemon
 libxss1
+
+# Security and speed on the installed system: firewall, automatic security updates,
+# compressed RAM swap (zram), GameMode for the Gaming edition
+ufw
+unattended-upgrades
+zram-tools
+gamemode
 gstreamer1.0-plugins-good
 gstreamer1.0-libav
 bluez
