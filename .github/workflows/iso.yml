@@ -1,5 +1,7 @@
 # Builds the PolyOS live ISO on GitHub's servers (Debian inside a privileged container).
-# Run it from the Actions tab ("Run workflow") or by pushing a tag like v0.1.0.
+# Run it from the Actions tab ("Run workflow") for a test build (a 14-day download on the run),
+# or push a tag like v0.5.0 to publish it as a GitHub Release: the website's Download button
+# always offers the newest release.
 name: Build PolyOS ISO
 
 on:
@@ -12,6 +14,9 @@ on:
         default: trixie
   push:
     tags: ["v*"]
+
+permissions:
+  contents: write  # publishing releases
 
 jobs:
   iso:
@@ -40,10 +45,45 @@ jobs:
           "
           ls -lh dist/
 
-      - name: Upload the ISO
+      - name: Upload the ISO (test builds; tagged builds become a release below)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
           name: polyos-${{ env.DIST }}-amd64-iso
           path: dist/*.iso
           compression-level: 0
           retention-days: 14
+
+      - name: Checksums (and parts, if the ISO is over GitHub's 2 GB per-file limit)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          cd dist
+          sudo chown "$(id -u):$(id -g)" . ./*.iso
+          sha256sum ./*.iso | sed 's#\./##' > SHA256SUMS
+          iso=$(ls *.iso)
+          if [ "$(stat -c %s "$iso")" -gt 2000000000 ]; then
+            split -b 1900M -d -a 1 "$iso" "$iso.part"
+            sha256sum "$iso".part* >> SHA256SUMS
+            rm "$iso"
+            echo "PARTS=yes" >> "$GITHUB_ENV"
+          fi
+          ls -lh
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PolyOS ${{ github.ref_name }}
+          files: |
+            dist/*.iso
+            dist/*.iso.part*
+            dist/SHA256SUMS
+          body: |
+            **PolyOS 7 for Debian ${{ github.ref_name }}** (Debian ${{ env.DIST }}, 64-bit PC)
+
+            1. Download the `.iso` below${{ env.PARTS && ' (in parts: join them with `cat polyos-*.part* > polyos.iso` on Linux/macOS, or `copy /b part0+part1 polyos.iso` on Windows)' || '' }}.
+            2. Write it to a USB drive (8 GB or more) with balenaEtcher, or Rufus in DD mode.
+            3. Start the computer from the USB drive, try PolyOS, and choose **Install PolyOS 7**.
+
+            Check the download against `SHA256SUMS`. Full notes: see the commits since the last release.
+          generate_release_notes: true

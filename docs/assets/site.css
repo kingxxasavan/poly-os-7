@@ -225,3 +225,27 @@ code { padding: 2px 7px; border-radius: 7px; background: var(--card-2); font: 0.
 .footer span { display: flex; align-items: center; gap: 8px; margin-right: auto; color: var(--text-2); font-family: var(--display); }
 .footer a { color: var(--text-2); text-decoration: none; }
 .footer a:hover { color: var(--text); }
+
+/* ---- download --------------------------------------------------------------------- */
+.download {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 28px; align-items: center; margin-bottom: 22px; padding: 30px;
+  border-radius: 28px; border: 1px solid rgba(103, 143, 217, 0.45);
+  background: linear-gradient(135deg, rgba(103, 143, 217, 0.22), rgba(155, 127, 224, 0.16) 55%, var(--card));
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+}
+.dl-logo { width: 84px; height: 84px; filter: drop-shadow(0 10px 30px rgba(103, 143, 217, 0.45)); }
+.dl-main h3 { font-size: 28px; font-weight: 700; }
+.dl-version { color: var(--accent-text); font-weight: 600; font-size: 0.8em; }
+.dl-meta { margin: 4px 0 16px; color: var(--text-2); }
+.dl-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn.big { height: 54px; padding: 0 28px; font-size: 16.5px; }
+.dl-note { margin: 14px 0 0; color: var(--text-3); font-size: 14px; }
+.dl-links { margin: 4px 0 0; font-size: 14px; }
+.dl-needs { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; min-width: 250px; }
+.dl-needs li { display: flex; flex-direction: column; padding: 10px 14px; border-radius: 14px; background: rgba(0, 0, 0, 0.22); }
+.dl-needs b { font: 600 14.5px var(--display); }
+.dl-needs span { color: var(--text-3); font-size: 13px; }
+@media (max-width: 900px) {
+  .download { grid-template-columns: 1fr; padding: 24px; }
+  .dl-logo { width: 64px; height: 64px; }
+}

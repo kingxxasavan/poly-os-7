@@ -24,6 +24,13 @@ into a real desktop that installs and boots on a PC, on top of Debian.
 | **Editions** | Regular, Developer (change PolyOS's own interface) and Gaming (Steam, Wine, Heroic, Lutris, cloud gaming, Game Mode) |
 | **Security and speed** | Firewall and security updates on by default, a security checkup, lock screen guessing protection; zram, SSD trim, faster startup |
 
+## Download
+
+The website's **Download** button always offers the newest
+[release](https://github.com/kingxxasavan/poly-os-7/releases/latest): it asks GitHub for the
+latest release when the page loads, so publishing a release (push a tag like `v0.6.0`, see the
+main README) updates the site with no changes here.
+
 ## Screenshots
 
 | Login | Sign in | Lock screen |
