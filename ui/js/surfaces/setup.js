@@ -6,7 +6,7 @@
 
 import { withAdmin, watchJobs } from '../admin.js';
 import { api, launch, saveSettings, withToken } from '../api.js';
-import { packPanel, wifiPanel } from '../components.js';
+import { VARA_PROVIDERS, packPanel, providerFor, wifiPanel } from '../components.js';
 import { fill, formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
 
 const GB = 1000 ** 3;
@@ -34,7 +34,7 @@ const FALLBACK_ZONES = ['America/New_York', 'America/Chicago', 'America/Denver',
 // PolyOS editions, chosen while installing. Each one's apps are added at first sign-in (online).
 export const EDITIONS = [
   ['regular', 'Regular', 'Everything most people need: the PolyOS desktop, Firefox, Files and PolyMarket.', 'star'],
-  ['developer', 'Developer', 'Change PolyOS itself: edit its interface, inspect it, and get coding tools (Git, Python, Node.js, VS Code).', 'code'],
+  ['developer', 'Developer', 'Change PolyOS itself, and get coding tools: Git, Python and its libraries, Node.js, VS Code, Docker and Blender.', 'code'],
   ['gaming', 'Gaming', 'Steam, Wine for Windows games, Heroic, Lutris, cloud gaming, drivers and Game Mode, set up for play.', 'gamepad'],
 ];
 // Custom install: what an existing partition can become (value -> [label, mount, erase]).
@@ -820,7 +820,7 @@ export function mount(root, store) {
       }
       return [...head('Add more to PolyOS?', 'Optional: set up gaming or coding now. Both are in Settings later too.'),
         h('div.su-options', more('gaming', 'Gaming', 'Steam, Wine, Heroic and cloud gaming', 'gamepad'),
-          more('developer', 'Developer', 'Git, Python, Node.js and VS Code', 'code')),
+          more('developer', 'Developer', 'Git, Python libraries, Node.js, VS Code and Docker', 'code')),
         nav(next('Skip'))];
     }
     const online = store.state.system.network.kind && store.state.system.network.kind !== 'none';
@@ -834,6 +834,7 @@ export function mount(root, store) {
     ];
   }
   let extra = null;
+  let varaProvider = VARA_PROVIDERS[0];
   let packJob = null; // the edition's apps, installing in the background while setup carries on
 
   // "Install and continue": start installing what's ticked, then go on (nothing ticked just goes on)
@@ -861,7 +862,8 @@ export function mount(root, store) {
       status.hidden = false;
       status.textContent = 'Checking the key…';
       try {
-        await api.post('/api/vara/config', { apiKey: key.value.trim() });
+        await api.post('/api/vara/config', { apiKey: key.value.trim(), endpoint: varaProvider.endpoint, model: varaProvider.model,
+          provider: providerFor(varaProvider.endpoint) });
         const res = await api.post('/api/vara/test', {});
         status.textContent = `Vara is ready: “${res.reply}”`;
         setTimeout(() => go(step + 1), 900);
@@ -869,10 +871,20 @@ export function mount(root, store) {
         status.textContent = err.message;
       }
     };
+    const label = h('span');
+    const hint = h('small');
+    const pick = (p) => {
+      varaProvider = p;
+      label.textContent = `${p.label} API key`;
+      hint.textContent = `${p.keyHint} Other providers are in Settings > Vara.`;
+      chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.textContent === p.label));
+    };
+    const chips = h('div.su-chips', VARA_PROVIDERS.map((p) => h('button.su-chip', { onclick: () => pick(p) }, p.label)));
+    pick(varaProvider);
     return [
-      h('div.su-vara-head', h('img', { src: '/img/vara.png', alt: '' }), h('div', ...head('Meet Vara', 'Vara is the PolyOS assistant. Ask it to open apps, change settings or answer questions.'))),
-      h('label.su-field.wide', h('span', 'Ollama Cloud API key'), key,
-        h('small', 'Create a free key at ollama.com (Settings → Keys). You can use OpenAI or another provider in Settings > Vara.')),
+      h('div.su-vara-head', h('img', { src: '/img/vara.png', alt: '' }), h('div', ...head('Meet Vara', 'Vara is the PolyOS agent: it opens apps and changes settings, and builds code, 3D models and robot projects with you.'))),
+      chips,
+      h('label.su-field.wide', label, key, hint),
       status,
       nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Later'), next('Next', save)),
     ];

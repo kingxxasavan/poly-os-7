@@ -1,0 +1,9 @@
+#!/bin/sh
+# Vara's Claude provider uses Anthropic's official Python library (polyos/vara_claude.py).
+# Debian doesn't package it, so it goes in PolyOS's own folder, which Vara adds to its import
+# path. If the download fails, the image is still built: Vara fetches the library into the
+# person's home folder the first time Claude is chosen.
+set -e
+python3 -m pip install --quiet --disable-pip-version-check --no-cache-dir --break-system-packages \
+    --target /usr/lib/polyos/vendor anthropic \
+    || echo "PolyOS: Anthropic's library wasn't pre-installed; Vara will fetch it when Claude is chosen."

@@ -45,6 +45,16 @@ flatpak
 nvidia-detect
 #endif
 
+# Coding basics on every PolyOS (Vara uses them too): git, Python's pip and venv, compilers
+git
+python3-pip
+python3-venv
+python3-dev
+build-essential
+curl
+wget
+jq
+
 # Everyday apps and hardware (webcam for the Camera app, power modes, idle timers)
 evince
 power-profiles-daemon

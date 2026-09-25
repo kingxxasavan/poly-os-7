@@ -241,6 +241,15 @@ export function wifiPanel(store, { compact = false } = {}) {
 
 // ---- editions: an app pack (Gaming, Developer) to pick from and install in one go ---------
 // Used by the welcome screens and Settings. onDone() runs after a successful install.
+// Vara's AI providers: an OpenAI-compatible API, or Claude through Anthropic's own API.
+export const VARA_PROVIDERS = [
+  { label: 'Ollama Cloud', endpoint: 'https://ollama.com/v1', model: 'gpt-oss:120b', keyHint: 'Free keys at ollama.com (Settings → Keys).' },
+  { label: 'OpenAI', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini', keyHint: 'Keys at platform.openai.com (API keys).' },
+  { label: 'NVIDIA', endpoint: 'https://integrate.api.nvidia.com/v1', model: 'meta/llama-3.3-70b-instruct', keyHint: 'Free keys at build.nvidia.com (Get API Key).' },
+  { label: 'Claude', endpoint: 'https://api.anthropic.com', model: 'claude-opus-5', keyHint: 'Keys at platform.claude.com (API keys).' },
+];
+export const providerFor = (url) => (/anthropic\.com/.test(url) ? 'claude' : 'openai');
+
 // external: the caller's own button installs (el.start()), as in first-sign-in setup's "Install and continue"
 export function packPanel(name, { onDone, compact = false, external = false } = {}) {
   const el = h('div.pack', h('p.muted.small.pad', 'Loading…'));

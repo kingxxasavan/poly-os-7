@@ -90,6 +90,7 @@ export const icons = {
   maximize: svg('<rect x="5.5" y="5.5" width="13" height="13" rx="2"/>'),
   disk: svg('<rect x="3.5" y="6" width="17" height="12" rx="2.5"/><path d="M7 14.5h4"/><circle cx="16.5" cy="14.5" r="1" fill="currentColor" stroke="none"/>'),
   bluetooth: svg('<path d="m7 7.5 10 9-5 4.5V3l5 4.5-10 9"/>'),
+  widgets: svg('<rect x="3.5" y="3.5" width="7.5" height="9" rx="2"/><rect x="13" y="3.5" width="7.5" height="5" rx="2"/><rect x="13" y="10.5" width="7.5" height="10" rx="2"/><rect x="3.5" y="14.5" width="7.5" height="6" rx="2"/>'),
   usb: svg('<rect x="7" y="9.5" width="10" height="11.5" rx="2.5"/><path d="M9 9.5V3.5h6v6"/><path d="M10.8 6h.01M13.2 6h.01"/>'),
   robot: svg('<rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V4.5M9.5 19v1.5M14.5 19v1.5M3 12.5v3M21 12.5v3"/><circle cx="12" cy="4" r="1"/><circle cx="9.5" cy="13" r="1.1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="13" r="1.1" fill="currentColor" stroke="none"/>'),
   cube: svg('<path d="M12 3.5 19.5 7.7v8.6L12 20.5l-7.5-4.2V7.7z"/><path d="M4.5 7.7 12 12l7.5-4.3M12 12v8.5"/>'),

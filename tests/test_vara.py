@@ -371,3 +371,93 @@ class SkillMemoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClaudeTests(unittest.TestCase):
+    """The Claude provider: conversation conversion, and a whole run against a fake Messages API."""
+
+    def test_conversation_conversion(self):
+        from polyos import vara_claude
+
+        transcript = [
+            {"role": "user", "content": "list my files"},
+            {"role": "assistant", "content": "Looking.", "tool_calls": [
+                {"id": "a", "type": "function", "function": {"name": "list_files", "arguments": "{}"}},
+                {"id": "b", "type": "function", "function": {"name": "read_file", "arguments": '{"path": "x"}'}}]},
+            {"role": "tool", "tool_call_id": "a", "content": "x.py"},
+            {"role": "tool", "tool_call_id": "b", "content": "Error: not found"},
+            {"role": "assistant", "content": "", "_claude": [{"type": "thinking", "thinking": "t", "signature": "s"},
+                                                            {"type": "text", "text": "Done."}]},
+        ]
+        msgs = vara_claude.to_messages(transcript)
+        self.assertEqual([m["role"] for m in msgs], ["user", "assistant", "user", "assistant"])
+        self.assertEqual([b["type"] for b in msgs[1]["content"]], ["text", "tool_use", "tool_use"])
+        self.assertEqual(msgs[1]["content"][2]["input"], {"path": "x"})
+        results = msgs[2]["content"]  # both results in one user message
+        self.assertEqual([(r["tool_use_id"], r.get("is_error", False)) for r in results], [("a", False), ("b", True)])
+        self.assertEqual(msgs[3]["content"][0], {"type": "thinking", "thinking": "t", "signature": "s"})  # unchanged
+        reply = vara_claude.from_blocks([{"type": "thinking", "thinking": "hmm", "signature": "s"},
+                                         {"type": "text", "text": "Hi"},
+                                         {"type": "tool_use", "id": "t1", "name": "remember", "input": {"note": "n"}}])
+        self.assertEqual((reply["content"], reply["reasoning"]), ("Hi", "hmm"))
+        self.assertEqual(json.loads(reply["tool_calls"][0]["function"]["arguments"]), {"note": "n"})
+        tools = vara_claude.to_tools([vara_tools.TOOLS["read_file"].schema()])
+        self.assertEqual(tools[0]["name"], "read_file")
+        self.assertIn("path", tools[0]["input_schema"]["properties"])
+
+    def test_a_run_against_a_fake_messages_api(self):
+        try:
+            import anthropic  # noqa: F401
+        except ImportError:
+            self.skipTest("Anthropic's library isn't installed here")
+        requests, headers = [], []
+        replies = [
+            {"content": [{"type": "thinking", "thinking": "Check the workspace first.", "signature": "sig1"},
+                         {"type": "tool_use", "id": "toolu_1", "name": "list_files", "input": {"path": "."}}],
+             "stop_reason": "tool_use"},
+            {"content": [{"type": "text", "text": "Your workspace has robot.py."}], "stop_reason": "end_turn"},
+        ]
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                requests.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+                headers.append({k.lower(): v for k, v in self.headers.items()})
+                reply = replies.pop(0)
+                data = json.dumps({"id": "msg_1", "type": "message", "role": "assistant", "model": "claude-opus-5",
+                                   "stop_sequence": None, "usage": {"input_tokens": 10, "output_tokens": 5}, **reply}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            backend = MockBackend(Settings(root / "settings.json"), EventBus(), home=root / "home")
+            (backend.files.home / "Projects").mkdir(exist_ok=True)
+            (backend.files.home / "Projects" / "robot.py").write_text("print(1)\n")
+            backend.vara.config.update(f"http://127.0.0.1:{server.server_address[1]}", "claude-opus-5", "sk-ant-test",
+                                       provider="claude")
+            backend.vara.chat(backend, "what's in my workspace?")
+            state = backend.vara.wait(30)
+        self.assertEqual(state["history"][-1]["content"], "Your workspace has robot.py.")
+        self.assertIn("thought", [i["role"] for i in state["history"]])
+        first, second = requests
+        self.assertEqual(first["model"], "claude-opus-5")
+        self.assertEqual(first["fallbacks"], "default")
+        self.assertEqual(first["thinking"], {"type": "adaptive", "display": "summarized"})
+        self.assertIn("server-side-fallback-2026-07-01", headers[0].get("anthropic-beta", ""))
+        self.assertEqual(headers[0].get("x-api-key"), "sk-ant-test")
+        self.assertIn("Workspace (default project folder)", first["system"])
+        self.assertTrue(any(t["name"] == "list_files" for t in first["tools"]))
+        replayed = second["messages"][-2]["content"]  # the thinking block goes back unchanged
+        self.assertEqual(replayed[0], {"type": "thinking", "thinking": "Check the workspace first.", "signature": "sig1"})
+        result = second["messages"][-1]["content"][0]
+        self.assertEqual((result["type"], result["tool_use_id"]), ("tool_result", "toolu_1"))
+        self.assertIn("robot.py", result["content"])

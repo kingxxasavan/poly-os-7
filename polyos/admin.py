@@ -150,6 +150,8 @@ def store_action(action: str, app_id: str) -> None:
         if app["source"] == "debian":
             apt_update()
             apt(["install", *app["packages"]], start=0.1)
+            if "docker.io" in app["packages"]:
+                join_group("docker")
         else:
             emit({"progress": 0.03, "message": "Connecting to Flathub…"})
             flatpak(["remote-add", "--if-not-exists", "--system", "flathub", store.FLATHUB_URL])
@@ -180,6 +182,13 @@ def has_candidate(package: str) -> bool:
     return bool(m) and m.group(1) != "(none)"
 
 
+def join_group(group: str) -> None:
+    """Add the person who asked (sudo's SUDO_USER) to a group, e.g. docker, so it works without sudo."""
+    user = os.environ.get("SUDO_USER", "")
+    if user and user != "root" and re.match(r"^[a-z_][a-z0-9_-]{0,31}$", user):
+        subprocess.run(["usermod", "-aG", group, user], check=False, capture_output=True, timeout=30)
+
+
 def pack_install(name: str, ids: list[str]) -> None:
     """Install an edition's apps: every id must be in that catalog pack (the UI can't add others)."""
     data = store.load()
@@ -204,6 +213,8 @@ def pack_install(name: str, ids: list[str]) -> None:
         skipped = [p for p in debs if p not in available]
         if available:
             apt(["install", *available], start=0.1)
+        if "docker.io" in available:
+            join_group("docker")
     if refs:
         emit({"progress": 0.4, "message": "Connecting to Flathub…"})
         flatpak(["remote-add", "--if-not-exists", "--system", "flathub", store.FLATHUB_URL])

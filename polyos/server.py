@@ -198,7 +198,7 @@ POST_API = {
     "/api/vara/reset": lambda be, b: be.vara.reset(),
     "/api/vara/config": lambda be, b: be.vara.config.update(
         _opt_str(b, "endpoint"), _opt_str(b, "model"), b.get("apiKey") if isinstance(b.get("apiKey"), str) else None,
-        _opt_str(b, "workspace"), _opt_str(b, "approval")),
+        _opt_str(b, "workspace"), _opt_str(b, "approval"), _opt_str(b, "provider")),
     "/api/vara/approve": lambda be, b: be.vara.approve(_str(b, "id", 80), _choice(b, "decision", ("allow", "always", "deny"))),
     "/api/vara/stop": lambda be, b: be.vara.stop(),
     "/api/vara/forget": lambda be, b: {"memory": be.vara.memory.forget(_opt_int(b, "index"))},

@@ -1013,6 +1013,10 @@ select.su-input option { background: #202024; color: #fff; }
 .su-note .ico { font-size: 16px; margin-top: 1px; }
 .su-warn { display: flex; align-items: center; gap: 10px; margin: 16px 0 4px; max-width: 560px; color: #f1a1a1; font-weight: 600; font-size: 14px; }
 .su-check { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 14px; cursor: default; }
+.su-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.su-chip { height: 34px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--su-line); background: var(--su-raised); color: inherit; font-size: 13.5px; }
+.su-chip:hover { background: var(--su-raised-2); }
+.su-chip.on { background: var(--accent); border-color: transparent; color: #fff; }
 /* "Where do you want to install PolyOS?": the Windows Setup style drive list */
 .su-ptable { display: grid; margin-top: 18px; max-height: 300px; overflow-y: auto; border: 1px solid var(--su-line); border-radius: 16px; background: var(--su-raised); }
 .su-prow { display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 0.8fr); align-items: center; gap: 12px;

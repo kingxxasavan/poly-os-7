@@ -38,10 +38,10 @@ export function mount(root, store) {
   const clock = h('button.dbtn.clock', { 'aria-label': 'Calendar' });
   const apps = h('button.dbtn.apps-btn', { title: 'All apps', 'aria-label': 'All apps' }, icon('apps'));
   // Weather and the widgets board, like the left end of the Windows 11 taskbar
-  const weather = h('button.dbtn.weather-btn', { title: 'Widgets (Win+W)', 'aria-label': 'Widgets' }, icon('sparkle'));
+  const weather = h('button.dbtn.weather-btn', { title: 'Widgets (Win+W)', 'aria-label': 'Widgets' }, icon('widgets'));
   weather.addEventListener('click', () => openPopup('widgets', weather));
   const loadWeather = () => api.get('/api/widgets/weather').then((w) => {
-    if (!w.place || w.temp == null) return fill(weather, icon('sparkle'));
+    if (!w.place || w.temp == null) return fill(weather, icon('widgets'));
     const [desc, ico] = weatherLook(w.code, w.day);
     fill(weather, icon(ico), h('span.weather-text', h('b', `${Math.round(w.temp)}°`), h('small', desc)));
     weather.title = `${w.place.name}: ${desc}, ${Math.round(w.temp)}° (Win+W for widgets)`;
@@ -93,7 +93,7 @@ export function mount(root, store) {
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const it = el.item;
-      const count = (it.appId ? 2 : 0) + (it.windows.length ? 2 : 0) + 1;
+      const count = (it.appId ? 3 : 0) + (it.windows.length ? 2 : 0) + 1;
       openPopup('taskmenu', el, {
         data: { appId: it.appId, xids: it.windows.map((w) => w.xid) },
         height: 70 + count * 42 + 10,

@@ -1,4 +1,4 @@
-// Taskbar right-click menu: new window, pin/unpin, close.
+// Taskbar right-click menu: new window, pin/unpin, add to the desktop, close.
 
 import { api, closePopup, launch, saveSettings, windowAction, withToken } from '../api.js';
 import { h, icon } from '../ui.js';
@@ -22,6 +22,14 @@ export default function taskmenu(root, store, data) {
           pinned: pinned ? settings.pinned.filter((id) => id !== app.id) : [...settings.pinned, app.id],
         })),
       }, icon(pinned ? 'unpin' : 'pin'), pinned ? 'Unpin from dock' : 'Pin to dock'),
+    );
+    const onDesktop = settings.desktopIcons.includes(app.id);
+    items.push(
+      h('button.menu-item', {
+        onclick: () => done(saveSettings({
+          desktopIcons: onDesktop ? settings.desktopIcons.filter((id) => id !== app.id) : [...settings.desktopIcons, app.id],
+        })),
+      }, icon(onDesktop ? 'close' : 'monitor'), onDesktop ? 'Remove from desktop' : 'Add to desktop'),
     );
   }
   if (wins.length) {

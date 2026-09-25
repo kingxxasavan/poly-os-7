@@ -1,8 +1,9 @@
 """Ask Vara: the PolyOS assistant and agent.
 
 Simple requests ("open firefox", "volume 40", "turn wifi off", "lock") are handled right here on
-the computer. Everything else goes to a chat model through any OpenAI-compatible API (Ollama Cloud
-by default, with the person's own key), which works as an agent: it reasons about the request,
+the computer. Everything else goes to a chat model: any OpenAI-compatible API (Ollama Cloud by
+default, OpenAI, NVIDIA, or another), or Claude through Anthropic's own API (vara_claude.py),
+always with the person's own key. The model works as an agent: it reasons about the request,
 calls tools (files, terminal, git, Blender, OpenSCAD, ROS 2, arduino-cli, the desktop; see
 vara_tools.py), reads the results and carries on until the job is done, asking the person before
 anything that changes files or runs programs (Settings > Vara decides what needs a yes). It keeps
@@ -32,9 +33,11 @@ from .vara_skills import Memory, Skills
 from .vara_tools import READ, RUN, TOOLS, WRITE, ToolContext, ToolError, clip, inside, installed_programs
 
 # Vara talks to Ollama Cloud by default; each person adds their own API key (Settings > Vara
-# or first-run setup). Any OpenAI-compatible service works, including a local Ollama.
+# or first-run setup). OpenAI, NVIDIA and any other OpenAI-compatible service work the same way;
+# Claude uses Anthropic's own API (provider "claude").
 DEFAULT_CONFIG = {"endpoint": "https://ollama.com/v1", "model": "gpt-oss:120b", "apiKey": "",
-                  "workspace": "~/Projects", "approval": "ask"}
+                  "workspace": "~/Projects", "approval": "ask", "provider": "openai"}
+PROVIDERS = ("openai", "claude")  # an OpenAI-compatible API, or Anthropic's Messages API
 APPROVAL_MODES = ("ask", "workspace", "auto")  # ask before changes / edit the workspace freely / never ask
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 HISTORY_LIMIT = 80  # items shown in the chat
@@ -89,15 +92,18 @@ class VaraConfig:
         cfg = {k: data.get(k, v) if isinstance(data.get(k, v), str) else v for k, v in DEFAULT_CONFIG.items()}
         if cfg["approval"] not in APPROVAL_MODES:
             cfg["approval"] = "ask"
+        if cfg["provider"] not in PROVIDERS:
+            cfg["provider"] = "openai"
         return cfg
 
     def public(self) -> dict:
         cfg = self.load()
         return {"endpoint": cfg["endpoint"], "model": cfg["model"], "hasKey": bool(cfg["apiKey"]),
-                "needsKey": needs_key(cfg), "workspace": cfg["workspace"], "approval": cfg["approval"]}
+                "needsKey": needs_key(cfg), "workspace": cfg["workspace"], "approval": cfg["approval"],
+                "provider": cfg["provider"]}
 
     def update(self, endpoint: str | None, model: str | None, api_key: str | None,
-               workspace: str | None = None, approval: str | None = None) -> dict:
+               workspace: str | None = None, approval: str | None = None, provider: str | None = None) -> dict:
         with self._lock:
             cfg = self.load()
             if endpoint is not None:
@@ -119,6 +125,10 @@ class VaraConfig:
                 if approval not in APPROVAL_MODES:
                     raise ApiError("Choose when Vara asks first.")
                 cfg["approval"] = approval
+            if provider is not None:
+                if provider not in PROVIDERS:
+                    raise ApiError("Choose a provider.")
+                cfg["provider"] = provider
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -135,10 +145,17 @@ class NoToolSupport(RuntimeError):
 
 
 def request_model(cfg: dict, messages: list[dict], tools: list[dict] | None = None, timeout: float = 180) -> dict:
-    """One chat completion from an OpenAI-compatible endpoint; the reply message."""
+    """One chat completion (OpenAI-compatible, or Claude's Messages API); the reply message."""
     if needs_key(cfg):
         raise RuntimeError("Vara needs an API key to chat. Add yours in Settings > Vara (Ollama Cloud keys are free "
                            "at ollama.com). Simple requests like “open firefox” work without one.")
+    if cfg.get("provider") == "claude":
+        from . import vara_claude
+
+        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+        return vara_claude.request(cfg, system, [m for m in messages if m["role"] != "system"], tools, timeout)
+    # Vara's own bookkeeping (keys starting with _) stays here
+    messages = [{k: v for k, v in m.items() if not k.startswith("_")} for m in messages]
     body: dict = {"model": cfg["model"], "messages": messages, "stream": False}
     if tools:
         body["tools"] = tools
@@ -465,7 +482,8 @@ class Vara:
             calls = [c for c in reply.get("tool_calls") or [] if isinstance(c, dict) and c.get("function")]
             with self._lock:
                 self.messages.append({"role": "assistant", "content": text,
-                                      **({"tool_calls": calls} if calls else {})})
+                                      **({"tool_calls": calls} if calls else {}),
+                                      **({"_claude": reply["_claude"]} if reply.get("_claude") else {})})
             if thought:
                 self._add({"role": "thought", "content": clip(thought, 6000)})
             if not calls:

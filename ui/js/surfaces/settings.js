@@ -3,7 +3,7 @@
 
 import { withAdmin } from '../admin.js';
 import { api, launch, on, params, power, saveSettings, withToken } from '../api.js';
-import { errorText, group, packPanel, row, slider, toggle, wifiPanel } from '../components.js';
+import { VARA_PROVIDERS, errorText, group, packPanel, providerFor, row, slider, toggle, wifiPanel } from '../components.js';
 import { fill, formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
 
 const PAGES = [
@@ -581,19 +581,15 @@ const pages = {
   },
 
   vara(page) {
-    const PRESETS = [
-      ['Ollama Cloud', 'https://ollama.com/v1', 'gpt-oss:120b'],
-      ['OpenAI', 'https://api.openai.com/v1', 'gpt-4o-mini'],
-      ['Ollama on this PC', 'http://127.0.0.1:11434/v1', 'llama3.2'],
-    ];
+    const PRESETS = VARA_PROVIDERS;
     const err = h('div.error-text', { hidden: true });
     const note = h('span.muted.small');
-    const endpoint = h('input.input', { placeholder: 'http://127.0.0.1:11434/v1', spellcheck: 'false', 'aria-label': 'Endpoint' });
-    const model = h('input.input', { placeholder: 'llama3.2', spellcheck: 'false', 'aria-label': 'Model' });
+    const endpoint = h('input.input', { placeholder: 'https://ollama.com/v1', spellcheck: 'false', 'aria-label': 'Endpoint' });
+    const model = h('input.input', { placeholder: 'gpt-oss:120b', spellcheck: 'false', 'aria-label': 'Model' });
     const key = h('input.input', { type: 'password', placeholder: 'Paste your API key', autocomplete: 'off', 'aria-label': 'API key' });
-    const presets = h('div.swatches', PRESETS.map(([label, url, m]) => h('button.pill-btn', {
-      onclick: () => { endpoint.value = url; model.value = m; },
-    }, label)));
+    const presets = h('div.swatches', PRESETS.map((p) => h('button.pill-btn', {
+      onclick: () => { endpoint.value = p.endpoint; model.value = p.model; note.textContent = p.keyHint; },
+    }, p.label)));
     const saveBtn = h('button.btn.primary', 'Save');
     const testBtn = h('button.btn', 'Test connection');
     const load = () => api.get('/api/vara/config').then((c) => {
@@ -606,7 +602,8 @@ const pages = {
     saveBtn.addEventListener('click', async () => {
       errorText(err, '');
       try {
-        await api.post('/api/vara/config', { endpoint: endpoint.value, model: model.value, ...(key.value ? { apiKey: key.value } : {}) });
+        await api.post('/api/vara/config', { endpoint: endpoint.value, model: model.value, provider: providerFor(endpoint.value),
+          ...(key.value ? { apiKey: key.value } : {}) });
         note.textContent = 'Saved.';
         load();
       } catch (e) {
@@ -687,7 +684,7 @@ const pages = {
     page.append(
       pageHead('Vara', 'Your PolyOS agent for code, 3D models and robots, powered by the AI model you choose.'),
       err,
-      group('Quick setup', row('Provider', 'Fills in the address and a model; add your key for cloud services', presets)),
+      group('Quick setup', row('Provider', 'Fills in the address and a model; then add your key from that service', presets)),
       group('Connection',
         row('Endpoint', 'Any OpenAI-compatible API', h('div.slider-wrap.wide', endpoint)),
         row('Model', null, h('div.slider-wrap.wide', model)),
@@ -700,9 +697,7 @@ const pages = {
       group('Privacy', h('p.prose',
         'Simple requests like “open Firefox” or “volume 40” are handled on this computer. Other messages, and what Vara ',
         'reads while working (files, command output), go to the endpoint above; with a cloud provider they leave this computer, ',
-        'so don’t share passwords with Vara. Vara never opens SSH keys, saved passwords, browser data or its own API key. ',
-        'To keep everything on this computer instead, install Ollama (ollama.com), pull a model that can use tools (such as ',
-        'qwen3 or llama3.1) and choose “Ollama on this PC”.')),
+        'so don’t share passwords with Vara. Vara never opens SSH keys, saved passwords, browser data or its own API key.')),
     );
     load();
     loadAgent();

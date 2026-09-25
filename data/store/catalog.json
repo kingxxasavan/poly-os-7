@@ -724,6 +724,46 @@
       "description": "Run JavaScript and install packages with npm. Use it from the Terminal."
     },
     {
+      "id": "pylibs",
+      "name": "Python libraries",
+      "category": "developer",
+      "source": "debian",
+      "packages": [
+        "python3-numpy",
+        "python3-scipy",
+        "python3-matplotlib",
+        "python3-pandas",
+        "python3-requests",
+        "python3-serial",
+        "python3-pil",
+        "python3-yaml"
+      ],
+      "desktop": [],
+      "icons": [
+        "python",
+        "applications-development"
+      ],
+      "summary": "NumPy, SciPy, Matplotlib, pandas and more, ready to import.",
+      "description": "The libraries most Python projects reach for: maths and science (NumPy, SciPy), charts (Matplotlib), data (pandas), the web (requests), serial ports for Arduino and robots (pyserial), images (Pillow) and YAML."
+    },
+    {
+      "id": "docker",
+      "name": "Docker",
+      "category": "developer",
+      "source": "debian",
+      "packages": [
+        "docker.io",
+        "docker-compose"
+      ],
+      "desktop": [],
+      "icons": [
+        "docker",
+        "docker-desktop"
+      ],
+      "summary": "Run apps and services in containers.",
+      "description": "Docker and Docker Compose. You're added to the docker group, so it works without sudo after you sign out and in again."
+    },
+    {
       "id": "geany",
       "name": "Geany",
       "category": "developer",
@@ -925,7 +965,9 @@
         "build-essential",
         "python3-venv",
         "python3-pip",
+        "python3-dev",
         "curl",
+        "wget",
         "jq"
       ],
       "desktop": [],
@@ -933,8 +975,8 @@
         "applications-development",
         "utilities-terminal"
       ],
-      "summary": "Compilers, Python environments and command-line tools.",
-      "description": "GCC, make, Python venv and pip, curl and jq: what most coding projects expect to find."
+      "summary": "Compilers, Python pip and venv, and command-line tools (installed with PolyOS).",
+      "description": "GCC, make, Python venv and pip, curl, wget and jq: what most coding projects expect to find. PolyOS comes with them."
     }
   ],
   "packs": {
@@ -978,7 +1020,7 @@
     },
     "developer": {
       "name": "Developer",
-      "summary": "Git, compilers, Python, Node.js and a code editor.",
+      "summary": "Git, Python with pip and its main libraries, Node.js, VS Code and Docker; Blender and OpenSCAD if you want them.",
       "apps": [
         [
           "git",
@@ -989,12 +1031,28 @@
           true
         ],
         [
+          "pylibs",
+          true
+        ],
+        [
           "nodejs",
           true
         ],
         [
           "vscode",
           true
+        ],
+        [
+          "docker",
+          true
+        ],
+        [
+          "blender",
+          false
+        ],
+        [
+          "openscad",
+          false
         ],
         [
           "geany",
