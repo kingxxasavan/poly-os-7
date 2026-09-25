@@ -9,6 +9,9 @@ the desktop, dock, Home Menu, launcher, Files, Settings, Task Manager, Driver Ma
 PolyMarket app store, Ask Vara, the login and lock screen, the boot splash and the PolyOS 7
 installer on the live USB. This edition is presented by Cryptic Software.
 
+**See it:** [`docs/`](docs/) is the project website, with screenshots of everything so far
+(open `docs/index.html`, or publish it with GitHub Pages as described in [`docs/README.md`](docs/README.md)).
+
 ## How it fits together
 
 ```

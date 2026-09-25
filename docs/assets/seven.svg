@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="301.4 136.7 59.8 82.4">
+  <!-- The striped "7" from the PolyOS 7 setup screens (AndrewInput / PIXAPoLY, CC BY-SA 2.0). -->
+  <defs>
+    <linearGradient id="g" x1="302.15" y1="0" x2="360.37" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#g)" d="M356.70414,137.4732h3.66265l-19.92699,80.88015h-3.66267zM329.25568,151.5393l-0.8299,3.51653h-26.27705v-3.51653zM330.91625,144.50625l-0.83068,3.51653h-27.93686v-3.51653zM332.47913,137.4732l-0.68376,3.51653h-29.64668v-3.51653zM334.96966,137.4732h3.61499l-19.92699,80.88015h-3.615zM342.1981,137.4732h3.66344l-19.92699,80.88015h-3.66344zM349.47574,137.4732h3.61421l-19.92699,80.88015h-3.61421z"/>
+</svg>
