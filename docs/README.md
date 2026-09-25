@@ -18,7 +18,7 @@ into a real desktop that installs and boots on a PC, on top of Debian.
 | **Apps** | Files, Task Manager, Driver Manager, PolyMarket (49 apps from Debian and Flathub, with real icons), Camera |
 | **Vara, the AI agent** | Writes and runs code, makes OpenSCAD and Blender models, works with ROS 2 and Arduino; skills, memory, and your approval before any change |
 | **Settings** | Appearance, Taskbar & Desktop, Wi-Fi, Sound, Display, Power & Performance, Account, Privacy & Security, Gaming, Developer, Vara, About |
-| **Installer** | The PolyOS 7 setup: whole disk, dual boot next to Windows, or Custom (choose every drive and partition); a PolyOS boot menu on the USB drive (PCs and ARM64) |
+| **Installer** | The PolyOS 7 setup: “Where do you want to install PolyOS?” like Windows Setup (every drive and partition, Delete and New), dual boot next to Windows, or Advanced setup; a “remove the USB drive” message at the end; a PolyOS boot menu on the USB drive (PCs and ARM64) |
 | **Editions** | Regular, Developer (change PolyOS's own interface) and Gaming (Steam, Wine, Heroic, Lutris, cloud gaming, Game Mode) |
 | **Security and speed** | Firewall and security updates on by default, a security checkup, lock screen guessing protection; zram, SSD trim, faster startup |
 
@@ -60,9 +60,9 @@ both ISOs and publishes them (see the main README).
 |---|---|---|
 | ![](screenshots/thumbs/boot-menu.jpg) | ![](screenshots/thumbs/polymarket-making.jpg) | ![](screenshots/thumbs/launcher.jpg) |
 
-| Installer: start | Installer: editions | Installer: custom drives |
+| Installer: start | Installer: editions | Installer: drives and partitions |
 |---|---|---|
-| ![](screenshots/thumbs/installer-start.jpg) | ![](screenshots/thumbs/installer-edition.jpg) | ![](screenshots/thumbs/installer-custom.jpg) |
+| ![](screenshots/thumbs/installer-start.jpg) | ![](screenshots/thumbs/installer-edition.jpg) | ![](screenshots/thumbs/installer-drives.jpg) |
 
 All screenshots are full size in [`screenshots/`](screenshots/) (1440×900) with small copies in
 [`screenshots/thumbs/`](screenshots/thumbs/).

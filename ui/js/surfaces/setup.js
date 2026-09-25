@@ -49,6 +49,10 @@ const ROLES = {
   swap: ['Swap · erase', 'swap', true],
 };
 const LINUX_FS = ['ext4', 'ext3', 'ext2', 'btrfs', 'xfs', 'f2fs'];
+// partition types the drive screen names (GPT type GUIDs, lowercase as lsblk prints them)
+const MSR_GUID = 'e3c9e316-0b5c-4db8-817d-f92df00215ae';
+const WINRE_GUID = 'de94bba4-06d1-4d40-a16a-bfd50179d6ac';
+const BIOS_BOOT_GUID = '21686148-6449-6e6f-744e-656564454649';
 const READABLE_FS = [...LINUX_FS, 'ntfs', 'vfat', 'exfat'];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -94,7 +98,8 @@ export function mount(root, store) {
   bg.style.backgroundImage = `url("${withToken('/wallpaper/builtin/polyos-crystal.jpg')}")`;
 
   const plan = {
-    mode: 'erase', disk: null, size: null, hostname: '', timezone: guessZone(), edition: 'regular',
+    mode: 'pick', disk: null, size: null, hostname: '', timezone: guessZone(), edition: 'regular',
+    pick: null, // the drive screen: { kind: 'part' | 'space', disk, device | start }
     wipe: {}, roles: {}, // custom mode: drive -> what it's erased for; partition -> ROLES key
     user: { fullName: '', username: '', password: '' },
     appearance: { theme: store.state.settings.theme || 'dark', accent: store.state.settings.accent },
@@ -193,12 +198,10 @@ export function mount(root, store) {
     return [
       ...head('It’s time to get started.', 'Pick an option to continue installation or dual boot.'),
       h('div.su-options',
-        option('Install PolyOS 7', 'Start a fresh install.', h('img', { src: '/img/logo-white.svg', alt: '' }),
-          () => { plan.mode = 'erase'; go(1); }),
-        option('Dual boot', 'Boot along Windows or Linux.', h('span.su-dual', icon('window'), icon('window')),
-          () => { plan.mode = 'alongside'; go(1); }),
-        option('Custom', 'Choose which drives to use and which to keep.', h('span.su-dual', icon('disk')),
-          () => { plan.mode = 'custom'; go(1); })),
+        option('Install PolyOS 7', 'Choose a drive or partition, like Windows Setup.', h('img', { src: '/img/logo-white.svg', alt: '' }),
+          () => { plan.mode = 'pick'; go(1); }),
+        option('Dual boot', 'Next to Windows or Linux: PolyOS makes room by itself.', h('span.su-dual', icon('window'), icon('window')),
+          () => { plan.mode = 'alongside'; go(1); })),
       h('div.su-foot', ...extra),
     ];
   }
@@ -334,6 +337,7 @@ export function mount(root, store) {
       return [...head(title, sub), h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'Looking at your disks…'), nav(h('span'))];
     }
     if (plan.mode === 'custom') return customTarget();
+    if (plan.mode === 'pick') return drivesScreen();
     const usable = probe.disks.filter((d) => (erase ? d.canErase : d.alongside.possible));
     if (!usable.length) {
       const reasons = probe.disks.filter((d) => !d.isLive).map((d) => h('li', h('b', `${d.model} (${formatBytes(d.size)})`), ': ',
@@ -389,6 +393,166 @@ export function mount(root, store) {
     }
     if (probe.uefi && probe.secureBoot) body.push(h('p.su-note', icon('lock'), 'Secure Boot is on. PolyOS supports it.'));
     return [...head(title, sub), ...body, nav(install)];
+  }
+
+  // ---- "Where do you want to install PolyOS?": every drive's partitions and unallocated space,
+  // with Delete and New (applied right away, like Windows Setup); pick one and install there.
+  let driveBusy = null;   // "Deleting…" while a change is being made
+  let driveError = null;
+  let newFormFor = null;  // the unallocated space whose "New" size form is open
+  let confirm = null;     // { text, detail, action, label }: the delete / erase question
+
+  function partType(p) {
+    if (p.esp) return 'System (EFI)';
+    if (p.parttype === MSR_GUID) return 'Microsoft reserved';
+    if (p.parttype === WINRE_GUID) return 'Recovery';
+    if (p.parttype === BIOS_BOOT_GUID) return 'BIOS boot';
+    if (p.fstype === 'swap') return 'Swap';
+    const fs = { ntfs: 'NTFS', vfat: 'FAT32', exfat: 'exFAT' }[p.fstype] || p.fstype || 'Unformatted';
+    return p.os ? `${p.os} · ${fs}` : fs;
+  }
+
+  function driveRows() {
+    const drives = probe.disks.filter((d) => !d.isLive);
+    return drives.map((d, n) => {
+      const items = [
+        ...d.partitions.map((p) => ({ kind: 'part', key: p.path, disk: d, n, p, start: p.start ?? 0, bytes: p.size,
+          name: `Drive ${n} Partition ${p.number}${p.label || p.os ? `: ${p.label || p.os}` : ''}`, type: partType(p), install: p.install })),
+        ...d.free.map((r) => ({ kind: 'space', key: `${d.path}@${r.start}`, disk: d, n, start: r.start, bytes: r.bytes,
+          name: `Drive ${n} Unallocated Space`, type: '', install: r.install })),
+      ].sort((a, b) => a.start - b.start);
+      return { d, n, items };
+    });
+  }
+
+  function pickedItem(groups) {
+    const all = groups.flatMap((g) => g.items);
+    const pk = plan.pick;
+    if (pk) {
+      const found = all.find((it) => it.disk.path === pk.disk && (pk.kind === 'part'
+        ? (pk.device ? it.p?.path === pk.device : it.kind === 'part' && it.start >= pk.start && !it.p.esp)
+        : it.kind === 'space' && it.start <= pk.start && pk.start < it.start + it.bytes / (it.disk.sector || 512) + 1));
+      if (found) return found;
+    }
+    // nothing chosen yet: the biggest unallocated space PolyOS fits in, preferring internal drives
+    const spaces = all.filter((it) => it.kind === 'space' && it.install?.possible)
+      .sort((a, b) => (a.disk.removable - b.disk.removable) || (b.bytes - a.bytes));
+    return spaces[0] || null;
+  }
+
+  async function changeDrive(label, body, hint) {
+    driveBusy = label;
+    driveError = null;
+    newFormFor = null;
+    confirm = null;
+    go(step);
+    try {
+      await withAdmin(() => api.post('/api/install/disk', body),
+        { title: 'Change your drives', text: 'Enter the password to change partitions.' });
+      plan.pick = hint;
+    } catch (err) {
+      if (!err.cancelled) driveError = err.message;
+    }
+    driveBusy = null;
+    probe = null;
+    loadProbe();
+    go(step);
+  }
+
+  function drivesScreen() {
+    const title = 'Where do you want to install PolyOS?';
+    const sub = 'Choose a partition or unallocated space. Delete and New change your drives right away.';
+    if (driveBusy) {
+      return [...head(title, sub), h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), driveBusy), nav(h('span'))];
+    }
+    const groups = driveRows();
+    const sel = pickedItem(groups);
+    if (sel) plan.pick = sel.kind === 'part' ? { kind: 'part', disk: sel.disk.path, device: sel.p.path } : { kind: 'space', disk: sel.disk.path, start: sel.start };
+    const select = (it) => { plan.pick = it.kind === 'part' ? { kind: 'part', disk: it.disk.path, device: it.p.path } : { kind: 'space', disk: it.disk.path, start: it.start }; newFormFor = null; driveError = null; go(step); };
+
+    const table = h('div.su-ptable', { role: 'listbox', 'aria-label': 'Drives and partitions' },
+      h('div.su-prow.su-phead', { 'aria-hidden': 'true' }, h('span', 'Name'), h('span', 'Total size'), h('span', 'Type')),
+      groups.length ? groups.flatMap(({ d, n, items }) => [
+        h('div.su-pdrive', icon(d.transport === 'usb' || d.removable ? 'usb' : 'disk'),
+          h('b', `Drive ${n}`), h('span', `${d.model} · ${formatBytes(d.size)}${d.oses.length ? ` · ${d.oses.join(', ')}` : ''}`)),
+        ...items.map((it) => h('button.su-prow', {
+          role: 'option', 'aria-selected': String(it === sel), class: [it === sel ? 'on' : '', it.kind, it.install?.possible ? '' : 'no'].join(' '),
+          onclick: () => select(it), ondblclick: () => { select(it); if (it.install?.possible) installHere(it); },
+        }, h('span.su-pname', icon(it.kind === 'space' ? 'plus' : 'disk'), it.name), h('span', formatBytes(it.bytes)), h('span', it.type))),
+      ]) : h('p.su-note', 'No drive was found. Connect one, then press Refresh.'));
+
+    const canDelete = sel && sel.kind === 'part';
+    const canNew = sel && sel.kind === 'space' && !sel.install?.reason?.includes('running from');
+    const tools = h('div.su-ptools',
+      h('button.su-ptool', { onclick: () => { probe = null; loadProbe(); go(step); } }, icon('refresh'), 'Refresh'),
+      h('button.su-ptool', { disabled: !canDelete, onclick: () => askDelete(sel) }, icon('trash'), 'Delete'),
+      h('button.su-ptool', { disabled: !canNew, onclick: () => { newFormFor = sel.key; go(step); } }, icon('plus'), 'New'),
+      h('button.su-link.su-padv', { onclick: () => { plan.mode = 'custom'; go(step); } }, 'Advanced setup'));
+
+    let form = null;
+    if (sel && newFormFor === sel.key) {
+      const maxGb = Math.max(1, Math.floor(sel.bytes / GB));
+      const size = h('input.su-input.su-psize', { type: 'number', min: 1, max: maxGb, value: maxGb, 'aria-label': 'Size in GB' });
+      form = h('div.su-pnew', h('span', 'Size:'), size, h('span', `GB of ${maxGb} GB`),
+        h('button.su-next.primary', { onclick: () => {
+          const gb = Math.min(maxGb, Math.max(1, Number(size.value) || maxGb));
+          changeDrive('Creating the partition…', { action: 'new', disk: sel.disk.path, start: sel.start, size: gb === maxGb ? sel.bytes : gb * GB },
+            { kind: 'part', disk: sel.disk.path, start: sel.start });
+        } }, 'Apply'),
+        h('button.su-link', { onclick: () => { newFormFor = null; go(step); } }, 'Cancel'));
+    }
+
+    let status;
+    if (driveError) status = h('div.su-error', driveError);
+    else if (!sel) status = h('p.su-note', icon('info'), 'Select a partition or unallocated space for PolyOS.');
+    else if (!sel.install?.possible) status = h('p.su-warn', icon('info'), sel.install?.reason || 'PolyOS can’t be installed here.');
+    else if (sel.kind === 'space') {
+      status = h('p.su-note.ok', icon('check'), sel.disk.partitions.length
+        ? `PolyOS will use this unallocated space (${formatBytes(sel.bytes)}). Nothing else on the drive changes.${sel.install.newEsp ? ' It also adds a 512 MB EFI system partition.' : ''}`
+        : `PolyOS will set up this whole drive (${formatBytes(sel.bytes)}).`);
+    } else {
+      status = h('p.su-warn', icon('info'), `Everything on this partition will be erased${sel.p.os ? `, including ${sel.p.os}` : ''}.`);
+    }
+
+    const overlay = confirm ? h('div.su-confirm', { role: 'alertdialog', 'aria-label': confirm.text },
+      h('div.su-confirm-box', h('b', confirm.text), h('p', confirm.detail),
+        h('div.su-confirm-btns', h('button.su-link', { onclick: () => { confirm = null; go(step); } }, 'Cancel'),
+          h('button.su-next.primary.danger', { onclick: confirm.action }, confirm.label)))) : null;
+
+    const install = next('Next', () => sel && installHere(sel), { primary: true, disabled: !sel?.install?.possible });
+    setTimeout(() => table.querySelector('.su-prow.on')?.scrollIntoView({ block: 'nearest' }), 0); // the chosen row stays in sight
+    if (probe.uefi && probe.secureBoot) tools.append(h('span.su-psb', icon('lock'), 'Secure Boot is on. PolyOS supports it.'));
+    return [...head(title, sub), table, tools, form, status, nav(install), overlay];
+  }
+
+  function askDelete(it) {
+    const what = it.p.os ? ` This deletes ${it.p.os}.` : '';
+    const system = it.p.esp ? ' Other systems on this computer may stop starting.' : '';
+    confirm = { text: `Delete ${it.name}?`, label: 'Delete',
+      detail: `Everything stored on this partition (${formatBytes(it.bytes)}) will be lost.${what}${system}`,
+      action: () => changeDrive('Deleting the partition…', { action: 'delete', disk: it.disk.path, number: it.p.number },
+        { kind: 'space', disk: it.disk.path, start: it.start }) };
+    go(step);
+  }
+
+  function installHere(it) {
+    if (it.kind === 'part') {
+      confirm = { text: `Erase ${it.name} and install PolyOS there?`, label: 'Erase and install',
+        detail: `Everything on it (${formatBytes(it.bytes)}${it.p.os ? `, including ${it.p.os}` : ''}) will be erased. Other partitions stay as they are.`,
+        action: () => { confirm = null; startInstall(); } };
+      go(step);
+      return;
+    }
+    startInstall();
+  }
+
+  // what the drive screen's choice means for the installer
+  function pickPayload() {
+    const pk = plan.pick;
+    const d = probe.disks.find((x) => x.path === pk.disk);
+    if (pk.kind === 'part') return { mode: 'custom', disk: pk.disk, wipe: {}, mounts: [{ device: pk.device, mount: '/', format: true }] };
+    if (!d || !d.partitions.length) return { mode: 'erase', disk: pk.disk };
+    return { mode: 'space', disk: pk.disk, start: pk.start };
   }
 
   // Custom: every drive and partition, and what each one becomes.
@@ -513,7 +677,8 @@ export function mount(root, store) {
     const payload = { mode: plan.mode, disk: plan.disk, hostname: plan.hostname, timezone: plan.timezone,
       user: plan.user, appearance: plan.appearance, edition: plan.edition,
       ...(plan.mode === 'alongside' ? { size: plan.size } : {}),
-      ...(plan.mode === 'custom' ? customLayout() : {}) };
+      ...(plan.mode === 'custom' ? customLayout() : {}),
+      ...(plan.mode === 'pick' ? pickPayload() : {}) };
     installJob = { state: 'running', progress: 0, message: 'Getting ready for installation…' };
     go(steps.indexOf(installing));
     try {

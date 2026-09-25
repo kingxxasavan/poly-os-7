@@ -273,6 +273,19 @@ class Backend:
             json.dump(clean, fh)
         return self.jobs.start("install", "Installing PolyOS", ["install", str(path)])
 
+    def install_disk(self, action: str, disk: str, number: int | None = None, start: int | None = None,
+                     size: int | None = None) -> dict:
+        """The drive screen's Delete and New: change the partitions right away (live USB only)."""
+        if not self.env()["live"]:
+            raise ApiError("PolyOS is already installed on this computer.", 409)
+        if action == "delete" and number is not None:
+            args = ["disk", "delete", disk, str(number)]
+        elif action == "new" and start is not None and size:
+            args = ["disk", "new", disk, str(start), str(size)]
+        else:
+            raise ApiError("Choose a partition or unallocated space.")
+        return self.jobs.admin.call(args, timeout=300)
+
     def install_restart(self):
         """Restart right away after installing (a normal restart waits on the live system's services).
 

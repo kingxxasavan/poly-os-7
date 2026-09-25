@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest import mock
 
@@ -351,3 +352,158 @@ class Arm64InstallTests(unittest.TestCase):
                 mock.patch("pathlib.Path.is_dir", return_value=False), self.assertRaises(InstallError):
             installer.Installer(self.plan(), events.append, dry_run=True).run()
         self.assertFalse(any("wipefs" in e.get("log", "") for e in events))
+
+
+class DriveScreenTests(unittest.TestCase):
+    """The Windows-style "Where do you want to install PolyOS?" screen."""
+
+    def described(self, d, table, uefi=True, live=None):
+        return installer.describe_disk(d, table, {}, uefi, live, {})
+
+    def windows_disk(self):
+        d = disk(parts=[part("/dev/sda1", 1, 100 * MiB, "vfat", installer.ESP_GUID.lower()),
+                        part("/dev/sda2", 2, 16 * MiB, "", installer.MSR_GUID.lower()),
+                        part("/dev/sda3", 3, 200 * GiB)])
+        table = {"label": "gpt", "sector": 512, "first": 2048, "last": 500 * GiB // 512 - 34, "partitions": [
+            {"node": "/dev/sda1", "number": 1, "start": 2048, "size": 204800, "type": "x"},
+            {"node": "/dev/sda2", "number": 2, "start": 206848, "size": 32768, "type": "x"},
+            {"node": "/dev/sda3", "number": 3, "start": 239616, "size": 200 * GiB // 512, "type": "x"}]}
+        return d, table
+
+    def test_partitions_and_spaces(self):
+        d, table = self.windows_disk()
+        out = self.described(d, table)
+        esp, msr, win = out["partitions"]
+        self.assertFalse(esp["install"]["possible"])  # needed to start the computer
+        self.assertFalse(msr["install"]["possible"])
+        self.assertTrue(win["install"]["possible"])  # erasing Windows' partition is allowed
+        self.assertEqual([p["start"] for p in out["partitions"]], [2048, 206848, 239616])
+        (space,) = out["free"]
+        self.assertTrue(space["install"]["possible"])
+        self.assertFalse(space["install"]["newEsp"])  # Windows' EFI partition is shared
+        self.assertEqual(space["install"]["usable"], space["bytes"])
+
+    def test_too_small_and_live(self):
+        d = disk(parts=[part("/dev/sda1", 1, 10 * GiB, "ext4", installer.LINUX_GUID.lower())])
+        table = {"label": "gpt", "sector": 512, "first": 2048, "last": 12 * GiB // 512, "partitions": [
+            {"node": "/dev/sda1", "number": 1, "start": 2048, "size": 10 * GiB // 512, "type": "x"}]}
+        out = self.described(d, table)
+        self.assertIn("too small", out["partitions"][0]["install"]["reason"])
+        self.assertIn("too small", out["free"][0]["install"]["reason"])
+        live = self.described(disk(), None, live="/dev/sda")
+        self.assertIn("running from", live["free"][0]["install"]["reason"])
+
+    def test_empty_drive_is_one_space(self):
+        out = self.described(disk(size=1000 * GiB, table=None), None)
+        self.assertEqual(out["free"], [{"start": 0, "bytes": 1000 * GiB, "install": {"possible": True, "usable": 1000 * GiB - installer.ESP_BYTES, "newEsp": True}}])
+
+    def test_uefi_needs_an_esp_somewhere(self):
+        d = disk(parts=[part("/dev/sda1", 1, 100 * GiB, "ext4", installer.LINUX_GUID.lower())])
+        table = {"label": "gpt", "sector": 512, "first": 2048, "last": 500 * GiB // 512 - 34, "partitions": [
+            {"node": "/dev/sda1", "number": 1, "start": 2048, "size": 100 * GiB // 512, "type": "x"}]}
+        out = installer.finish_install_options([self.described(d, table)], uefi=True)
+        self.assertIn("EFI system partition", out[0]["partitions"][0]["install"]["reason"])
+        self.assertTrue(out[0]["free"][0]["install"]["newEsp"])  # unallocated space still works: PolyOS adds one
+        bios = installer.finish_install_options([self.described(d, table, uefi=False)], uefi=False)
+        self.assertTrue(bios[0]["partitions"][0]["install"]["possible"])
+
+    def test_mbr_limits(self):
+        full = disk(table="dos", parts=[part(f"/dev/sda{i}", i, 50 * GiB, "ext4", "83") for i in range(1, 5)])
+        self.assertIn("four partitions", installer.new_partition_problem(full, uefi=False))
+        legacy = disk(table="dos", parts=[part("/dev/sda1", 1, 50 * GiB, "ntfs", "7")])
+        self.assertIn("MBR", installer.new_partition_problem(legacy, uefi=True))
+        self.assertIsNone(installer.new_partition_problem(disk(table="dos"), uefi=True))  # no partitions left: set up fresh
+
+    def test_space_plan_and_dry_run(self):
+        base = {"disk": "/dev/sda", "hostname": "t-polyos", "timezone": "UTC",
+                "user": {"fullName": "T", "username": "tester", "password": "pw"}}
+        with self.assertRaises(InstallError):
+            installer.validate_plan({**base, "mode": "space"})
+        with self.assertRaises(InstallError):
+            installer.validate_plan({**base, "mode": "space", "start": True})
+        plan = installer.validate_plan({**base, "mode": "space", "start": 2048})
+        self.assertEqual((plan["mode"], plan["start"]), ("space", 2048))
+        events = []
+        with mock.patch.object(installer, "live_disk", return_value="/dev/sdb"), \
+                mock.patch("pathlib.Path.is_dir", return_value=True):
+            installer.Installer(plan, events.append, dry_run=True).run()
+        commands = "\n".join(e["log"] for e in events if "log" in e)
+        self.assertTrue(events[-1].get("done"))
+        self.assertIn("sfdisk --append", commands)
+        self.assertNotIn("wipefs -a -f /dev/sda\n", commands + "\n")  # the rest of the drive is left alone
+
+
+class FakeDrive:
+    """Stands in for lsblk/sfdisk on one GPT drive (/dev/sda), recording every command."""
+
+    def __init__(self, parts, size=500 * GiB, label="gpt"):
+        self.size, self.label, self.parts, self.commands = size, label, list(parts), []
+
+    def run(self, args, *, input=None, **_kw):
+        self.commands.append((args, input))
+        if args[0] == "lsblk":
+            children = [{"name": f"/dev/sda{p['number']}", "type": "part", "size": p["size"] * 512, "fstype": p.get("fs"),
+                         "partn": p["number"], "parttype": p["type"].lower(), "mountpoints": p.get("mounts", [None])}
+                        for p in self.parts]
+            return json.dumps({"blockdevices": [{"name": "/dev/sda", "type": "disk", "size": self.size, "rm": False, "ro": False,
+                                                 "pttype": self.label, "children": children}]})
+        if args[:2] == ["sfdisk", "-J"]:
+            return json.dumps({"partitiontable": {"label": self.label or "gpt", "sectorsize": 512, "firstlba": 34,
+                                                  "lastlba": self.size // 512 - 34, "partitions": [
+                                                      {"node": f"/dev/sda{p['number']}", "start": p["start"], "size": p["size"], "type": p["type"]}
+                                                      for p in self.parts]}})
+        if args[:2] == ["sfdisk", "--append"]:
+            spec = dict(item.strip().split("=") for item in input.strip().split(","))
+            n = max([p["number"] for p in self.parts] + [0]) + 1
+            self.parts.append({"number": n, "start": int(spec["start"]), "size": int(spec["size"]), "type": spec["type"]})
+        if args[:2] == ["sfdisk", "--delete"]:
+            self.parts = [p for p in self.parts if p["number"] != int(args[3])]
+        if args[0] == "sfdisk" and input and input.startswith("label:"):
+            self.label = input.split(":")[1].strip()
+        return ""
+
+
+class DriveChangeTests(unittest.TestCase):
+    def patched(self, drive, uefi=True):
+        return [mock.patch.object(installer.Runner, "run", drive.run), mock.patch.object(installer, "live_disk", return_value="/dev/sdb"),
+                mock.patch("pathlib.Path.is_dir", return_value=uefi), mock.patch.object(installer.Runner, "__init__", lambda s, e, d=False: None)]
+
+    def apply(self, patches, fn, *args):
+        for p in patches:
+            p.start()
+        try:
+            return fn(*args)
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+    def test_delete(self):
+        drive = FakeDrive([{"number": 1, "start": 2048, "size": 204800, "type": installer.ESP_GUID},
+                           {"number": 3, "start": 239616, "size": 200 * GiB // 512, "type": installer.MS_BASIC_GUID, "mounts": ["/media/win"]}])
+        self.apply(self.patched(drive), installer.delete_partition, "/dev/sda", 3)
+        run = [c[0] for c in drive.commands]
+        self.assertIn(["umount", "/media/win"], run)  # let go of it first
+        self.assertIn(["wipefs", "-a", "-f", "/dev/sda3"], run)
+        self.assertIn(["sfdisk", "--delete", "/dev/sda", "3"], run)
+        self.assertEqual([p["number"] for p in drive.parts], [1])
+        with self.assertRaises(InstallError):
+            self.apply(self.patched(drive), installer.delete_partition, "/dev/sda", 3)  # gone already
+        with self.assertRaises(InstallError):
+            self.apply(self.patched(drive), installer.delete_partition, "/dev/sdb", 1)  # the USB drive PolyOS runs from
+
+    def test_new_next_to_windows(self):
+        drive = FakeDrive([{"number": 1, "start": 2048, "size": 204800, "type": installer.ESP_GUID}])
+        self.apply(self.patched(drive), installer.create_partition, "/dev/sda", 206848, 100 * GiB)
+        new = drive.parts[-1]
+        self.assertEqual((new["start"], new["size"], new["type"]), (206848, 100 * GiB // 512, installer.LINUX_GUID))
+        self.assertFalse(any(c[0][0] == "mkfs.vfat" for c in drive.commands))  # the existing EFI partition is enough
+
+    def test_new_on_empty_drive_adds_an_esp(self):
+        drive = FakeDrive([], label=None)
+        self.apply(self.patched(drive), installer.create_partition, "/dev/sda", 0, 100 * GiB)
+        self.assertEqual(drive.label, "gpt")
+        esp, root = drive.parts
+        self.assertEqual(esp["type"], installer.ESP_GUID)
+        self.assertEqual(esp["size"] * 512, installer.ESP_BYTES)
+        self.assertEqual(root["start"], esp["start"] + esp["size"])
+        self.assertIn(["mkfs.vfat", "-F", "32", "-n", "EFI", "/dev/sda1"], [c[0] for c in drive.commands])

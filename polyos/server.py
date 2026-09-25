@@ -207,6 +207,8 @@ POST_API = {
     "/api/greeter/power": lambda be, b: be.greeter_power(_choice(b, "action", ("shutdown", "restart", "suspend"))),
     "/api/admin/auth": lambda be, b: be.admin_auth(_password(b)),
     "/api/install/start": lambda be, b: be.install_start(_obj(b, "plan")),
+    "/api/install/disk": lambda be, b: be.install_disk(_choice(b, "action", ("delete", "new")), _str(b, "disk", 64),
+                                                       _opt_int(b, "number"), _opt_int(b, "start"), _opt_int(b, "size")),
     "/api/drivers/install": lambda be, b: be.drivers_install(_names(b, "packages")),
     "/api/store/install": lambda be, b: be.store_action(_str(b, "id", 60), "install"),
     "/api/store/remove": lambda be, b: be.store_action(_str(b, "id", 60), "remove"),

@@ -6,6 +6,8 @@
     polyos-admin drivers PACKAGE...        driver packages (names must match drivers.DRIVER_PACKAGE_RE)
     polyos-admin account FILE              for the sudo user: {"password"} and/or {"recoveryKey"} (file deleted)
     polyos-admin reboot                    restart right away (after installing, from the live USB)
+    polyos-admin disk delete DISK NUMBER   the installer's drive screen: delete a partition (live USB only)
+    polyos-admin disk new DISK START BYTES     ... or make one in unallocated space (START in sectors)
     polyos-admin pack NAME ID...           an edition's apps (gaming, developer), only ids in its catalog pack
     polyos-admin security firewall|updates on|off   the firewall (ufw) and automatic security updates
 
@@ -320,6 +322,20 @@ def main(argv: list[str] | None = None) -> int:
             account(Path(rest[0]))
         elif cmd == "reboot":
             reboot()
+        elif cmd == "disk" and rest[:1] in (["delete"], ["new"]):
+            if not installer.LIVE_MEDIUM.exists():
+                raise AdminError("Drives can only be changed from the PolyOS USB drive.")
+            try:
+                numbers = [int(x) for x in rest[2:]]
+            except ValueError:
+                raise AdminError("Choose a partition or unallocated space.") from None
+            if rest[0] == "delete" and len(numbers) == 1:
+                installer.delete_partition(rest[1], numbers[0], emit)
+            elif rest[0] == "new" and len(numbers) == 2:
+                installer.create_partition(rest[1], numbers[0], numbers[1], emit)
+            else:
+                raise AdminError(f"Unknown command: {' '.join(argv)}")
+            emit({"result": {"ok": True}})
         elif cmd == "pack" and len(rest) >= 2:
             pack_install(rest[0], rest[1:])
         elif cmd == "security" and len(rest) == 2:

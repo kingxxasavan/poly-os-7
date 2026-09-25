@@ -1013,6 +1013,45 @@ select.su-input option { background: #202024; color: #fff; }
 .su-note .ico { font-size: 16px; margin-top: 1px; }
 .su-warn { display: flex; align-items: center; gap: 10px; margin: 16px 0 4px; max-width: 560px; color: #f1a1a1; font-weight: 600; font-size: 14px; }
 .su-check { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 14px; cursor: default; }
+/* "Where do you want to install PolyOS?": the Windows Setup style drive list */
+.su-ptable { display: grid; margin-top: 18px; max-height: 300px; overflow-y: auto; border: 1px solid var(--su-line); border-radius: 16px; background: var(--su-raised); }
+.su-prow { display: grid; grid-template-columns: minmax(0, 1fr) 110px minmax(0, 0.8fr); align-items: center; gap: 12px;
+  min-height: 38px; padding: 0 16px 0 28px; border: 0; border-top: 1px solid var(--su-line); background: none; color: inherit; font-size: 13.5px; text-align: left; }
+.su-prow > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.su-prow:hover { background: var(--su-raised); }
+.su-prow.on { background: color-mix(in srgb, var(--accent) 30%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.su-prow.no:not(.on) { color: var(--su-text-2); }
+.su-prow.space .su-pname { font-style: italic; }
+.su-pname { display: flex; align-items: center; gap: 8px; }
+.su-pname .ico { flex: none; font-size: 15px; color: var(--su-text-2); }
+.su-phead { position: sticky; top: 0; z-index: 1; min-height: 34px; padding-left: 16px; border-top: 0; background: #232328;
+  color: var(--su-text-2); font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+.su-phead:hover { background: #232328; }
+.su-card.light .su-phead, .su-card.light .su-phead:hover { background: #e4e4e9; }
+.su-pdrive { display: flex; align-items: center; gap: 8px; padding: 10px 16px 6px; border-top: 1px solid var(--su-line); font-size: 13px; }
+.su-pdrive .ico { font-size: 16px; color: var(--accent); }
+.su-pdrive span { color: var(--su-text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.su-ptools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.su-ptool { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px; border: 1px solid var(--su-line); border-radius: 12px;
+  background: var(--su-raised); color: inherit; font-size: 13.5px; }
+.su-ptool:hover:not(:disabled) { background: var(--su-raised-2); }
+.su-ptool:disabled { opacity: 0.4; }
+.su-ptool .ico { font-size: 15px; }
+.su-padv { margin-left: auto; }
+.su-psb { display: inline-flex; align-items: center; gap: 6px; width: 100%; color: var(--su-text-2); font-size: 12.5px; }
+.su-pnew { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--su-raised); font-size: 14px; }
+.su-pnew .su-input.su-psize { width: 110px; height: 38px; }
+.su-pnew .su-next { min-width: 0; height: 38px; padding: 0 18px; border-radius: 12px; }
+.su-note.ok { color: var(--su-text); }
+.su-note.ok .ico { color: var(--accent); }
+.su-confirm { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 24px; border-radius: inherit;
+  background: rgba(0, 0, 0, 0.45); animation: rise 0.15s var(--ease); }
+.su-confirm-box { display: grid; gap: 10px; width: min(440px, 100%); padding: 24px; border-radius: 20px; background: var(--su-card);
+  border: 1px solid var(--su-line); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+.su-confirm-box b { font-size: 17px; }
+.su-confirm-box p { margin: 0; color: var(--su-text-2); font-size: 14px; line-height: 1.5; }
+.su-confirm-btns { display: flex; justify-content: flex-end; align-items: center; gap: 14px; margin-top: 8px; }
+.su-next.danger { background: var(--danger-strong); color: #fff; }
 .su-check input { width: 20px; height: 20px; accent-color: var(--accent); }
 .su-themes { display: flex; gap: 18px; }
 .su-theme {

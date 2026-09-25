@@ -415,45 +415,88 @@ class MockBackend(Backend):
         if not self.live:
             raise ApiError("PolyOS is already installed on this computer.", 409)
         time.sleep(1.0)
+        if not hasattr(self, "_drives"):
+            self._drives = self._sample_drives()
         uefi = True
+        prober = {"/dev/nvme0n1p1": "Windows 11"}
+        resize = {"/dev/nvme0n1p3": {"fs": "ntfs", "min": 131 * GB, "used": 131 * GB, "reason": None}}
+        disks = [installer.describe_disk(copy.deepcopy(d["disk"]), copy.deepcopy(d["table"]), prober, uefi, "/dev/sdb", resize)
+                 for d in self._drives]
+        return {"uefi": uefi, "secureBoot": True, "ram": 8 * 1024 ** 3, "disks": installer.finish_install_options(disks, uefi),
+                "minBytes": installer.MIN_ROOT, "liveDisk": "/dev/sdb"}
+
+    @staticmethod
+    def _sample_drives():
+        """A laptop with Windows 11, a second SSD, an empty hard drive and the PolyOS USB stick."""
+        def part(path, number, size, fstype, label, parttype, mounts=()):
+            return {"path": path, "number": number, "size": size, "fstype": fstype, "label": label,
+                    "parttype": parttype, "mounts": list(mounts)}
         nvme = {"path": "/dev/nvme0n1", "size": 512 * GB, "model": "Samsung SSD 970 EVO Plus", "transport": "nvme",
                 "removable": False, "readonly": False, "table": "gpt", "mounts": [], "partitions": [
-                    {"path": "/dev/nvme0n1p1", "number": 1, "size": 100 * 1024 ** 2, "fstype": "vfat", "label": "SYSTEM",
-                     "parttype": installer.ESP_GUID.lower(), "mounts": []},
-                    {"path": "/dev/nvme0n1p2", "number": 2, "size": 16 * 1024 ** 2, "fstype": "", "label": "",
-                     "parttype": "e3c9e316-0b5c-4db8-817d-f92df00215ae", "mounts": []},
-                    {"path": "/dev/nvme0n1p3", "number": 3, "size": 510 * GB, "fstype": "ntfs", "label": "Windows",
-                     "parttype": installer.MS_BASIC_GUID.lower(), "mounts": []},
-                    {"path": "/dev/nvme0n1p4", "number": 4, "size": 900 * 1024 ** 2, "fstype": "ntfs", "label": "Recovery",
-                     "parttype": "de94bba4-06d1-4d40-a16a-bfd50179d6ac", "mounts": []}]}
+                    part("/dev/nvme0n1p1", 1, 100 * 1024 ** 2, "vfat", "SYSTEM", installer.ESP_GUID.lower()),
+                    part("/dev/nvme0n1p2", 2, 16 * 1024 ** 2, "", "", installer.MSR_GUID.lower()),
+                    part("/dev/nvme0n1p3", 3, 510 * GB, "ntfs", "Windows", installer.MS_BASIC_GUID.lower()),
+                    part("/dev/nvme0n1p4", 4, 900 * 1024 ** 2, "ntfs", "Recovery", installer.WINRE_GUID.lower())]}
         table = {"label": "gpt", "sector": 512, "first": 2048, "last": nvme["size"] // 512 - 34, "partitions": [
             {"node": "/dev/nvme0n1p1", "number": 1, "start": 2048, "size": 204800, "type": installer.ESP_GUID.lower()},
             {"node": "/dev/nvme0n1p2", "number": 2, "start": 206848, "size": 32768, "type": "x"},
             {"node": "/dev/nvme0n1p3", "number": 3, "start": 239616, "size": 510 * GB // 512, "type": "x"},
             {"node": "/dev/nvme0n1p4", "number": 4, "start": 239616 + 510 * GB // 512, "size": 1843200, "type": "x"}]}
-        resize = {"/dev/nvme0n1p3": {"fs": "ntfs", "min": 131 * GB, "used": 131 * GB, "reason": None}}
+        ssd = {"path": "/dev/sdc", "size": 1000 * GB, "model": "Crucial MX500", "transport": "sata", "removable": False,
+               "readonly": False, "table": "gpt", "mounts": [], "partitions": [
+                   part("/dev/sdc1", 1, 700 * GB, "ntfs", "Games", installer.MS_BASIC_GUID.lower()),
+                   part("/dev/sdc2", 2, 300 * GB, "ext4", "home", installer.LINUX_GUID.lower())]}
+        ssd_table = {"label": "gpt", "sector": 512, "first": 2048, "last": ssd["size"] // 512 - 34, "partitions": [
+            {"node": "/dev/sdc1", "number": 1, "start": 2048, "size": 700 * GB // 512, "type": "x"},
+            {"node": "/dev/sdc2", "number": 2, "start": 2048 + 700 * GB // 512, "size": 300 * GB // 512, "type": "x"}]}
         hdd = {"path": "/dev/sda", "size": 1000 * GB, "model": "WDC WD10SPZX", "transport": "sata", "removable": False,
                "readonly": False, "table": None, "mounts": [], "partitions": []}
         usb = {"path": "/dev/sdb", "size": 32 * GB, "model": "SanDisk Ultra", "transport": "usb", "removable": True,
                "readonly": False, "table": "dos", "mounts": [], "partitions": [
-                   {"path": "/dev/sdb1", "number": 1, "size": 32 * GB, "fstype": "iso9660", "label": "PolyOS 0.2.0",
-                    "parttype": "0x0", "mounts": ["/run/live/medium"]}]}
-        ssd = {"path": "/dev/sdc", "size": 1000 * GB, "model": "Crucial MX500", "transport": "sata", "removable": False,
-               "readonly": False, "table": "gpt", "mounts": [], "partitions": [
-                   {"path": "/dev/sdc1", "number": 1, "size": 700 * GB, "fstype": "ntfs", "label": "Games",
-                    "parttype": installer.MS_BASIC_GUID.lower(), "mounts": []},
-                   {"path": "/dev/sdc2", "number": 2, "size": 300 * GB, "fstype": "ext4", "label": "home",
-                    "parttype": installer.LINUX_GUID.lower(), "mounts": []}]}
-        ssd_table = {"label": "gpt", "sector": 512, "first": 2048, "last": ssd["size"] // 512 - 34, "partitions": [
-            {"node": "/dev/sdc1", "number": 1, "start": 2048, "size": 700 * GB // 512, "type": "x"},
-            {"node": "/dev/sdc2", "number": 2, "start": 2048 + 700 * GB // 512, "size": 300 * GB // 512, "type": "x"}]}
-        disks = [installer.describe_disk(nvme, table, {"/dev/nvme0n1p1": "Windows 11"}, uefi, "/dev/sdb", resize),
-                 installer.describe_disk(ssd, ssd_table, {}, uefi, "/dev/sdb", {}),
-                 installer.describe_disk(hdd, None, {}, uefi, "/dev/sdb", {}),
-                 installer.describe_disk(usb, {"label": "dos", "sector": 512, "first": 0, "last": None,
-                                               "partitions": []}, {}, uefi, "/dev/sdb", {})]
-        return {"uefi": uefi, "secureBoot": True, "ram": 8 * 1024 ** 3, "disks": disks, "minBytes": installer.MIN_ROOT,
-                "liveDisk": "/dev/sdb"}
+                   part("/dev/sdb1", 1, 32 * GB, "iso9660", "PolyOS 0.2.0", "0x0", ["/run/live/medium"])]}
+        return [{"disk": nvme, "table": table}, {"disk": ssd, "table": ssd_table}, {"disk": hdd, "table": None},
+                {"disk": usb, "table": {"label": "dos", "sector": 512, "first": 0, "last": None, "partitions": []}}]
+
+    def install_disk(self, action, disk, number=None, start=None, size=None):
+        """Delete and New on the simulated drives (the real ones use polyos-admin disk)."""
+        if not self.live:
+            raise ApiError("PolyOS is already installed on this computer.", 409)
+        if not hasattr(self, "_drives"):
+            self._drives = self._sample_drives()
+        drive = next((d for d in self._drives if d["disk"]["path"] == disk), None)
+        if drive is None or disk == "/dev/sdb":
+            raise ApiError("That drive can't be changed.")
+        if not self._admin_ready:
+            raise NeedPassword()
+        time.sleep(0.6)
+        raw, table = drive["disk"], drive["table"]
+        if action == "delete":
+            raw["partitions"] = [p for p in raw["partitions"] if p["number"] != number]
+            table["partitions"] = [p for p in table["partitions"] if p["number"] != number]
+            return {"ok": True}
+        if table is None:
+            table = drive["table"] = {"label": "gpt", "sector": 512, "first": 2048, "last": raw["size"] // 512 - 34, "partitions": []}
+            raw["table"] = "gpt"
+        region = next((r for r in installer.free_regions(table, raw["size"]) if r["start"] <= start < r["start"] + r["size"]
+                       or start == 0), None)
+        if region is None:
+            raise ApiError("That unallocated space has changed. Press Refresh.")
+        cursor = max(region["start"], start)
+        esp_anywhere = any(installer.is_esp(p, d["disk"]["table"]) for d in self._drives for p in d["disk"]["partitions"])
+        specs = []
+        if not esp_anywhere:
+            specs.append((cursor, installer.ESP_BYTES // 512, "vfat", "EFI", installer.ESP_GUID.lower()))
+            cursor += installer.ESP_BYTES // 512
+        count = min(size // 512 // 2048 * 2048, region["start"] + region["size"] - cursor)
+        specs.append((cursor, count, "", "", installer.LINUX_GUID.lower()))
+        for begin, sectors, fstype, label, ptype in specs:
+            n = max([p["number"] for p in raw["partitions"]] + [0]) + 1
+            node = installer.partition_node(disk, n)
+            raw["partitions"].append({"path": node, "number": n, "size": sectors * 512, "fstype": fstype, "label": label,
+                                      "parttype": ptype, "mounts": []})
+            table["partitions"].append({"node": node, "number": n, "start": begin, "size": sectors, "type": ptype})
+        table["partitions"].sort(key=lambda p: p["start"])
+        return {"ok": True}
 
     def install_start(self, plan):
         if not self.live:

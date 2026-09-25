@@ -6,8 +6,11 @@ finding free space, sizing partitions, validating the plan) is plain Python with
 effects, so it is unit-tested on any OS. The steps use standard Debian tools: sfdisk,
 mkfs, ntfsresize, resize2fs, unsquashfs, chroot, grub-install and efibootmgr.
 
-Three modes:
+Four modes:
   erase      wipe one disk: EFI system partition + ext4 root (UEFI), or one ext4 root (BIOS)
+  space      install in one stretch of unallocated space the person picked (the Windows-style
+             "Where do you want to install PolyOS?" screen, where partitions can also be deleted
+             and created); an EFI system partition is added there if the disk has none
   alongside  keep the other system: use free space, or shrink its NTFS/ext4 partition first;
              GRUB then offers both (os-prober)
   custom     the person decides per drive and partition: erase a drive for PolyOS, your files
@@ -40,6 +43,8 @@ ALIGN = 1 * MiB
 ESP_GUID = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B"
 LINUX_GUID = "0FC63DAF-8483-4772-8E79-3D69D8477DE4"
 BIOS_BOOT_GUID = "21686148-6449-6E6F-744E-656564454649"
+MSR_GUID = "E3C9E316-0B5C-4DB8-817D-F92DF00215AE"  # Microsoft reserved
+WINRE_GUID = "DE94BBA4-06D1-4D40-A16A-BFD50179D6AC"  # Windows recovery
 MS_BASIC_GUID = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
 ESP_MBR_TYPES = {"ef", "0xef"}
 EXTENDED_MBR_TYPES = {"5", "f", "85", "0x5", "0xf", "0x85"}
@@ -275,6 +280,70 @@ def alongside_option(disk: dict, uefi: bool) -> dict:
             f"There isn't enough free space. PolyOS needs at least {MIN_ROOT // GiB} GB."}
 
 
+def new_partition_problem(disk: dict, uefi: bool) -> str | None:
+    """Why PolyOS can't add its partitions to this disk as it is, or None."""
+    if disk["table"] is None or not disk["partitions"]:
+        return None  # an empty drive is set up from scratch
+    has_esp = any(p.get("esp") for p in disk["partitions"])
+    if uefi and disk["table"] == "dos" and not has_esp:
+        return ("This drive uses the older MBR layout and this computer started in UEFI mode. Delete all its "
+                "partitions so PolyOS can set it up, or restart the USB drive in legacy (CSM) mode.")
+    if not uefi and disk["table"] == "gpt" and has_esp \
+            and not any(p["parttype"] == BIOS_BOOT_GUID.lower() for p in disk["partitions"]):
+        return ("The system on this drive starts in UEFI mode, but this USB drive started in legacy BIOS mode. "
+                "Restart it in UEFI mode.")
+    if disk["table"] == "dos" and len([p for p in disk["partitions"] if (p["number"] or 0) <= 4]) >= 4:
+        return "This drive already has four partitions, the most an MBR drive can hold. Delete one first."
+    return None
+
+
+def space_option(disk: dict, region: dict, uefi: bool) -> dict:
+    """Can PolyOS go in this unallocated space? {possible, usable bytes, newEsp} or {possible, reason}."""
+    if disk.get("isLive"):
+        return {"possible": False, "reason": "PolyOS is running from this drive."}
+    if disk.get("readonly"):
+        return {"possible": False, "reason": "This drive is read-only."}
+    empty = disk["table"] is None or not disk["partitions"]
+    problem = new_partition_problem(disk, uefi)
+    if problem:
+        return {"possible": False, "reason": problem}
+    new_esp = uefi and (empty or not any(p.get("esp") for p in disk["partitions"]))
+    extra = (ESP_BYTES if new_esp else 0) + (BIOS_BOOT_BYTES if not uefi and (disk["table"] == "gpt" or empty and disk["size"] > 2 * 1024 ** 4) else 0)
+    usable = region["bytes"] - extra
+    if usable < MIN_ROOT:
+        return {"possible": False, "reason": f"This space is too small. PolyOS needs at least {MIN_ROOT // GiB} GB."}
+    return {"possible": True, "usable": usable, "newEsp": new_esp}
+
+
+def partition_option(part: dict, disk: dict) -> dict:
+    """Can PolyOS be installed on this partition (erasing it)? The EFI check across drives comes later."""
+    if disk.get("isLive"):
+        return {"possible": False, "reason": "PolyOS is running from this drive."}
+    if disk.get("readonly"):
+        return {"possible": False, "reason": "This drive is read-only."}
+    ptype = part.get("parttype", "")
+    if part.get("esp") or ptype in (MSR_GUID.lower(), BIOS_BOOT_GUID.lower(), WINRE_GUID.lower()):
+        return {"possible": False, "reason": "This partition is needed to start your computer or Windows. Choose another one."}
+    if disk["table"] == "dos" and ptype in EXTENDED_MBR_TYPES:
+        return {"possible": False, "reason": "This is an extended partition. Choose one of the partitions inside it."}
+    if part["size"] < MIN_ROOT:
+        return {"possible": False, "reason": f"This partition is too small. PolyOS needs at least {MIN_ROOT // GiB} GB."}
+    return {"possible": True}
+
+
+def finish_install_options(disks: list[dict], uefi: bool) -> list[dict]:
+    """A partition only works in UEFI mode if some drive has an EFI system partition PolyOS can share."""
+    has_esp = any(p.get("esp") and p["size"] >= MIN_ESP for d in disks if not d.get("isLive") for p in d["partitions"])
+    if uefi and not has_esp:
+        for disk in disks:
+            for part in disk["partitions"]:
+                if part["install"]["possible"]:
+                    part["install"] = {"possible": False, "reason": (
+                        "This computer needs an EFI system partition, and no drive has one. Delete this partition "
+                        "and choose the unallocated space instead; PolyOS then makes one.")}
+    return disks
+
+
 def describe_disk(disk: dict, table: dict | None, prober: dict[str, str], uefi: bool, live_disk: str | None,
                   resize: dict[str, dict]) -> dict:
     """Everything the setup UI shows about one disk."""
@@ -288,7 +357,11 @@ def describe_disk(disk: dict, table: dict | None, prober: dict[str, str], uefi: 
         if part["os"] == "Windows" and part["path"] not in prober and windows_name:
             part["os"] = windows_name
         part["resize"] = resize.get(part["path"])
+        placed = next((t for t in (table or {}).get("partitions", []) if t["node"] == part["path"]
+                       or (t["number"] is not None and t["number"] == part["number"])), None)
+        part["start"] = placed["start"] if placed else None  # in sectors, for listing in disk order
     disk["table"] = label
+    disk["sector"] = table["sector"] if table else 512
     disk["free"] = [{"start": r["start"], "bytes": r["size"] * table["sector"]}
                     for r in free_regions(table, disk["size"])] if table else []
     disk["oses"] = sorted({p["os"] for p in disk["partitions"] if p["os"]})
@@ -296,6 +369,12 @@ def describe_disk(disk: dict, table: dict | None, prober: dict[str, str], uefi: 
     disk["canErase"] = not disk["isLive"] and not disk["readonly"] and disk["size"] >= MIN_ROOT
     disk["alongside"] = alongside_option(disk, uefi) if disk["canErase"] else \
         {"possible": False, "reason": "PolyOS is running from this drive." if disk["isLive"] else "This disk is too small."}
+    if label is None:  # an empty drive: all of it is one stretch of unallocated space
+        disk["free"] = [{"start": 0, "bytes": disk["size"]}]
+    for region in disk["free"]:
+        region["install"] = space_option(disk, region, uefi)
+    for part in disk["partitions"]:
+        part["install"] = partition_option(part, disk)
     return disk
 
 
@@ -306,7 +385,7 @@ def validate_plan(plan: dict, existing_users: set[str] | None = None) -> dict:
     if not isinstance(plan, dict):
         raise InstallError("The install plan is missing.")
     mode = plan.get("mode")
-    if mode not in ("erase", "alongside", "custom"):
+    if mode not in ("erase", "space", "alongside", "custom"):
         raise InstallError("Choose how to install PolyOS.")
     layout = None
     if mode == "custom":
@@ -351,6 +430,11 @@ def validate_plan(plan: dict, existing_users: set[str] | None = None) -> dict:
                                "editionSetup": edition == "regular"}}
     if layout:
         clean.update(layout)
+    if mode == "space":
+        start = plan.get("start")
+        if not isinstance(start, int) or isinstance(start, bool) or start < 0:
+            raise InstallError("Choose the unallocated space for PolyOS.")
+        clean["start"] = start
     if mode == "alongside":
         size = plan.get("size")
         if not isinstance(size, int) or size < MIN_ROOT:
@@ -624,8 +708,89 @@ def probe(emit: Emit | None = None) -> dict:
     secure_boot = False
     if uefi and _have("mokutil"):
         secure_boot = "enabled" in runner.run(["mokutil", "--sb-state"], check=False).lower()
-    return {"uefi": uefi, "secureBoot": secure_boot, "ram": _ram_bytes(), "disks": out, "arch": debian_arch(),
-            "minBytes": MIN_ROOT, "liveDisk": live}
+    return {"uefi": uefi, "secureBoot": secure_boot, "ram": _ram_bytes(), "disks": finish_install_options(out, uefi),
+            "arch": debian_arch(), "minBytes": MIN_ROOT, "liveDisk": live}
+
+
+# ==== the drive screen's Delete and New (run as root, right away, like Windows Setup) ======
+
+def _drive_to_change(runner: Runner, disk: str) -> dict:
+    if not isinstance(disk, str) or not DEVICE_RE.match(disk):
+        raise InstallError("That drive can't be changed.")
+    if disk == live_disk():
+        raise InstallError("PolyOS is running from that drive, so it can't be changed.")
+    disks = {d["path"]: d for d in parse_lsblk(json.loads(runner.run(["lsblk", "-J", "-b", "-p", "-o", LSBLK_COLUMNS]) or "{}"))}
+    info = disks.get(disk)
+    if info is None:
+        raise InstallError("That drive is no longer connected. Press Refresh.")
+    if info["readonly"]:
+        raise InstallError("That drive is read-only.")
+    return info
+
+
+def _settle_drive(runner: Runner, disk: str) -> None:
+    runner.run(["partx", "-u", disk], check=False)
+    runner.run(["udevadm", "settle", "--timeout=15"], check=False)
+
+
+def delete_partition(disk: str, number: int, emit: Emit | None = None) -> None:
+    """Delete one partition (its files are lost); the space becomes unallocated."""
+    runner = Runner(emit or (lambda _e: None))
+    info = _drive_to_change(runner, disk)
+    part = next((p for p in info["partitions"] if p["number"] == number), None)
+    if part is None:
+        raise InstallError("That partition is no longer there. Press Refresh.")
+    for mount in part["mounts"]:  # the live system may have opened it (Files); let go of it first
+        runner.run(["swapoff", part["path"]] if mount == "[SWAP]" else ["umount", mount], what="Closing the partition")
+    runner.run(["wipefs", "-a", "-f", part["path"]], check=False)  # so nothing mistakes the space for the old files
+    runner.run(["sfdisk", "--delete", disk, str(number)], what="Deleting the partition")
+    _settle_drive(runner, disk)
+
+
+def create_partition(disk: str, start: int, size_bytes: int, emit: Emit | None = None) -> None:
+    """Make a partition in unallocated space; like Windows Setup, add an EFI system partition first
+    when the computer starts in UEFI mode and no drive has one yet."""
+    runner = Runner(emit or (lambda _e: None))
+    info = _drive_to_change(runner, disk)
+    uefi = Path("/sys/firmware/efi").is_dir()
+    fresh = not info["table"]
+    if fresh:  # an empty drive gets a partition table first
+        label = "gpt" if (uefi or info["size"] > 2 * 1024 ** 4) else "dos"
+        runner.run(["sfdisk", "--wipe", "always", "-q", disk], input=f"label: {label}\n", what="Setting up the drive")
+        _settle_drive(runner, disk)
+    table = parse_sfdisk(json.loads(runner.run(["sfdisk", "-J", disk], what="Reading the drive")))
+    sector, align = table["sector"], max(1, ALIGN // table["sector"])
+    region = next((r for r in free_regions(table, info["size"])
+                   if (r["start"] <= start < r["start"] + r["size"]) or (fresh and start == 0)), None)
+    if region is None:
+        raise InstallError("That unallocated space has changed. Press Refresh.")
+    label = table["label"]
+    if label == "dos" and len([p for p in table["partitions"] if (p["number"] or 0) <= 4]) >= 4:
+        raise InstallError("This drive already has four partitions, the most an MBR drive can hold. Delete one first.")
+    cursor = max(region["start"], _align_up(start, align))
+    end = region["start"] + region["size"]
+    specs = []
+    all_disks = parse_lsblk(json.loads(runner.run(["lsblk", "-J", "-b", "-p", "-o", LSBLK_COLUMNS]) or "{}"))
+    live = live_disk()
+    has_esp = any(is_esp(p, d["table"]) for d in all_disks if d["path"] != live for p in d["partitions"])
+    if uefi and not has_esp and label == "gpt":
+        n = ESP_BYTES // sector
+        specs.append({"start": cursor, "size": n, "type": ESP_GUID, "esp": True})
+        cursor += n
+    count = min(_align_down(size_bytes // sector, align), end - cursor)
+    if count * sector < 16 * MiB:
+        raise InstallError("That's too small for a partition.")
+    specs.append({"start": cursor, "size": count, "type": LINUX_GUID if label == "gpt" else "83", "esp": False})
+    for spec in specs:
+        runner.run(["sfdisk", "--append", "--no-reread", "--force", "-q", disk],
+                   input=f"start={spec['start']}, size={spec['size']}, type={spec['type']}\n", what="Creating the partition")
+    _settle_drive(runner, disk)
+    made = {p["start"]: p["node"] for p in parse_sfdisk(json.loads(runner.run(["sfdisk", "-J", disk])))["partitions"]}
+    for spec in specs:
+        if spec["start"] not in made:
+            raise InstallError("The new partition didn't appear. Press Refresh.")
+        if spec["esp"]:
+            runner.run(["mkfs.vfat", "-F", "32", "-n", "EFI", made[spec["start"]]], what="Preparing the EFI system partition")
 
 
 class Installer:
@@ -841,6 +1006,11 @@ class Installer:
             region = next((r for r in free_regions(table, disk.get("size", 0)) if r["start"] == option["start"]), None)
         if region is None and not self.dry:
             raise InstallError("The free space for PolyOS disappeared. Nothing else was changed.")
+        self._create_in_region(table, region, want, existing_esp)
+
+    def _create_in_region(self, table: dict, region: dict | None, want: int, existing_esp: dict | None) -> None:
+        """PolyOS's partitions ([ESP] [BIOS boot] root) packed into one free region (sectors)."""
+        sector = table["sector"]
         start = region["start"] if region else 2048
         need_esp = self.uefi and existing_esp is None
         need_bios = (not self.uefi) and table["label"] == "gpt"
@@ -867,6 +1037,25 @@ class Installer:
                 self.esp_dev, self.esp_is_new = created["node"], True
         if existing_esp and not self.esp_dev:
             self.esp_dev = existing_esp["path"]
+
+    def partition_space(self) -> None:
+        """Install in the stretch of unallocated space picked on the drive screen."""
+        disk = self.disk_info or {"path": self.disk, "size": 500 * GiB, "readonly": False, "table": "gpt", "partitions": []}
+        table = self.sfdisk_table() if not self.dry else {"label": "gpt", "sector": 512, "first": 2048, "last": None, "partitions": []}
+        described = describe_disk(json.loads(json.dumps(disk)), table, {}, self.uefi, None, {})
+        spot = next((r for r in described["free"] if r["start"] == self.plan["start"]), None)
+        if spot is None and not self.dry:
+            raise InstallError("That unallocated space has changed. Go back and look at your drives again.")
+        option = spot["install"] if spot else {"possible": True, "usable": 100 * GiB}
+        if not option["possible"]:
+            raise InstallError(option["reason"])
+        region = next((r for r in free_regions(table, disk["size"]) if r["start"] == self.plan["start"]), None)
+        existing_esp = next((p for p in described["partitions"] if p["esp"]), None)
+        self._create_in_region(table, region, option["usable"], existing_esp)
+        # anything else on the computer stays, so the boot menu offers it too
+        others = [guess_os(p, {}) for d in self.all_disks.values() for p in d["partitions"]]
+        self.windows_alongside = any("windows" in (o or "").lower() for o in others)
+        self.dual = any(others) or (self.esp_dev is not None and not self.esp_is_new)
 
     def _system_mounts(self) -> None:
         """Put PolyOS's own partitions (from erase/alongside/custom) in front of the others."""
@@ -1174,6 +1363,8 @@ class Installer:
             self.preflight()
             if self.plan["mode"] == "erase":
                 self.partition_erase()
+            elif self.plan["mode"] == "space":
+                self.partition_space()
             elif self.plan["mode"] == "custom":
                 self.partition_custom()
             else:
