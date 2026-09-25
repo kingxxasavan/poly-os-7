@@ -30,6 +30,7 @@
 html { scroll-behavior: smooth; scroll-padding-top: 80px; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 var(--font); -webkit-font-smoothing: antialiased; }
 img { max-width: 100%; height: auto; display: block; }
+[hidden] { display: none !important; }
 a { color: var(--accent-text); }
 h1, h2, h3 { font-family: var(--display); line-height: 1.15; margin: 0; }
 code { padding: 2px 7px; border-radius: 7px; background: var(--card-2); font: 0.88em ui-monospace, "Cascadia Code", Menlo, monospace; color: #e7ecff; }
@@ -252,3 +253,36 @@ code { padding: 2px 7px; border-radius: 7px; background: var(--card-2); font: 0.
 .dl-which { margin: 14px 0 0; max-width: 560px; color: var(--text-2); font-size: 14px; }
 .dl-which b { color: var(--text); font-weight: 600; }
 .btn small { font: 500 13px var(--font); opacity: 0.8; }
+
+/* ---- install guide (after a download starts) ------------------------------------------------ */
+.guide {
+  width: min(640px, calc(100% - 32px)); max-height: calc(100vh - 48px); padding: 28px; border: 1px solid var(--line-2);
+  border-radius: 26px; background: var(--bg-2); color: var(--text); box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6);
+}
+.guide::backdrop { background: rgba(5, 5, 8, 0.72); backdrop-filter: blur(6px); }
+.guide[open] { animation: rise 0.3s var(--ease); }
+.guide-close {
+  position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 38px; height: 38px;
+  border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.08); color: var(--text); font-size: 18px; cursor: pointer;
+}
+.guide-close:hover { background: rgba(255, 255, 255, 0.16); }
+.guide-head { display: flex; align-items: center; gap: 16px; padding-right: 40px; }
+.guide-head h2 { font-size: 24px; }
+.guide-head p { margin: 2px 0 0; color: var(--accent-text); font: 600 14px var(--display); }
+.guide-lead { margin: 18px 0 14px; color: var(--text-2); }
+.guide-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.guide-tabs button {
+  height: 38px; padding: 0 16px; border: 1px solid var(--line-2); border-radius: 999px; background: transparent;
+  color: var(--text-2); font: 600 14px var(--display); cursor: pointer;
+}
+.guide-tabs button[aria-selected="true"] { background: var(--accent); border-color: transparent; color: #fff; }
+.guide-steps { counter-reset: g; margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.guide-steps li { counter-increment: g; position: relative; padding: 14px 16px 14px 56px; border-radius: 16px; background: var(--card); color: var(--text-2); font-size: 14.5px; }
+.guide-steps li[hidden] { display: none; }
+.guide-steps li::before {
+  content: counter(g); position: absolute; left: 14px; top: 14px; display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: 50%; background: var(--accent); color: #fff; font: 700 14px var(--display);
+}
+.guide-steps b { display: block; margin-bottom: 2px; color: var(--text); font: 600 15.5px var(--display); }
+kbd { padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--card-2); font: 12.5px ui-monospace, monospace; color: var(--text); }
+.guide-foot { margin: 16px 0 0; color: var(--text-3); font-size: 13.5px; }

@@ -252,13 +252,15 @@
           <h3>PolyOS 7 <span class="dl-version" data-release-version></span></h3>
           <p class="dl-meta" data-release-meta>Live USB and installer · for PCs and ARM64 · Debian 13</p>
           <div class="dl-buttons" data-release-buttons>
-            <a class="btn primary big" href="https://github.com/kingxxasavan/poly-os-7/releases/latest">
-              <svg class="ico"><use href="#i-download"/></svg>Download the ISO</a>
+            <a class="btn primary big" href="download/pc" data-arch="amd64">
+              <svg class="ico"><use href="#i-download"/></svg>Download for PC (Intel/AMD)</a>
+            <a class="btn big" href="download/arm64" data-arch="arm64">
+              <svg class="ico"><use href="#i-download"/></svg>Download for ARM64</a>
           </div>
           <p class="dl-which"><b>Which one?</b> Almost every Windows PC and laptop: <b>PC (Intel/AMD)</b>.
             Apple Silicon Macs (in UTM, Parallels or VMware Fusion) and other ARM64 computers with UEFI: <b>ARM64</b>.</p>
-          <p class="dl-note" data-release-note>The newest release on GitHub. Check it against <code>SHA256SUMS</code> after downloading.</p>
-          <p class="dl-links"><a href="https://github.com/kingxxasavan/poly-os-7/releases" data-release-sums>Checksums and all versions</a></p>
+          <p class="dl-note" data-release-note>Always the newest release. Clicking a button starts the download and shows you how to install.</p>
+          <p class="dl-links"><a href="download/checksums" data-release-sums>SHA256 checksums</a></p>
         </div>
         <ul class="dl-needs" aria-label="What you need">
           <li><b>A 64-bit computer</b><span>Intel/AMD PC (UEFI or BIOS), or ARM64 with UEFI</span></li>
@@ -316,6 +318,44 @@
     <a href="https://github.com/kingxxasavan/poly-os-7">Source on GitHub</a>
     <a href="#top">Back to top</a>
   </footer>
+
+  <dialog class="guide" aria-labelledby="guide-title">
+    <button class="guide-close" aria-label="Close"><svg class="ico"><use href="#i-close"/></svg></button>
+    <div class="guide-head">
+      <img src="assets/logo-white.svg" alt="" width="52" height="52">
+      <div>
+        <h2 id="guide-title">Your download has started</h2>
+        <p data-guide-file>PolyOS 7</p>
+      </div>
+    </div>
+    <p class="guide-lead">While it downloads (a few minutes on a fast connection), choose how you'll use PolyOS:</p>
+    <div class="guide-tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-guide-tab="usb">Install on a computer</button>
+      <button role="tab" aria-selected="false" data-guide-tab="vm">Try it in a virtual machine</button>
+    </div>
+    <ol class="guide-steps" data-guide-panel="usb">
+      <li><b>Write it to a USB drive</b>Use a USB drive of 8 GB or more (everything on it is erased), and
+        <a href="https://etcher.balena.io/" target="_blank" rel="noopener">balenaEtcher</a> (Windows, Mac, Linux):
+        <i>Flash from file</i> → the PolyOS ISO → your USB drive → <i>Flash</i>. On Windows,
+        <a href="https://rufus.ie/" target="_blank" rel="noopener">Rufus</a> works too (choose <i>DD mode</i> when it asks).</li>
+      <li><b>Start from the USB drive</b>Restart with the USB drive plugged in and open the boot menu, usually with
+        <kbd>F12</kbd>, <kbd>F11</kbd>, <kbd>F9</kbd> or <kbd>Esc</kbd> right after turning on. Pick the USB drive.</li>
+      <li><b>Try it, then install</b>PolyOS starts from the USB drive without changing anything. When you're ready, click
+        <i>Install PolyOS 7</i>: a whole disk, next to Windows (Dual boot), or Custom.</li>
+    </ol>
+    <ol class="guide-steps" data-guide-panel="vm" hidden>
+      <li data-vm="amd64"><b>PC: VirtualBox</b>Install <a href="https://www.virtualbox.org/wiki/Downloads" target="_blank" rel="noopener">VirtualBox</a>,
+        then <i>New</i> → type <i>Linux</i>, version <i>Debian (64-bit)</i>, 4 GB of memory, 2 processors and a 25 GB disk,
+        with the PolyOS ISO as the optical disk.</li>
+      <li data-vm="arm64"><b>Apple Silicon Mac: UTM</b>Install <a href="https://mac.getutm.app/" target="_blank" rel="noopener">UTM</a>,
+        then <i>Create a New Virtual Machine</i> → <i>Virtualize</i> → <i>Linux</i> → choose the PolyOS ARM64 ISO,
+        4 GB of memory and a 25 GB disk. Parallels and VMware Fusion work too.</li>
+      <li><b>Start it</b>PolyOS starts in the window. Click <i>Install PolyOS 7</i> to install it onto the virtual disk,
+        then remove the ISO and restart.</li>
+    </ol>
+    <p class="guide-foot">Download didn't start? <a href="#" data-guide-retry>Try again</a> ·
+      <a href="download/checksums">SHA256 checksums</a></p>
+  </dialog>
 
   <div class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot">
     <button class="lb-close" aria-label="Close"><svg class="ico"><use href="#i-close"/></svg></button>

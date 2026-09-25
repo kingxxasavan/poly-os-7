@@ -109,6 +109,10 @@ jobs:
         run: |
           cd dist
           ls *.iso >/dev/null  # stop if no ISO was built at all
+          # fixed names, so the website's /download/pc and /download/arm64 always get the newest release
+          for arch in amd64 arm64; do
+            for f in polyos-*-"$arch".iso; do if [ -e "$f" ]; then mv "$f" "polyos-$arch.iso"; fi; done
+          done
           sha256sum ./*.iso | sed 's#\./##' > SHA256SUMS
           for iso in *.iso; do
             if [ "$(stat -c %s "$iso")" -gt 2000000000 ]; then
@@ -135,8 +139,8 @@ jobs:
 
             | File | For |
             |---|---|
-            | `…-amd64.iso` | Intel and AMD PCs and laptops (almost every Windows PC) |
-            | `…-arm64.iso` | ARM64 computers with UEFI: Apple Silicon Macs in UTM, Parallels or VMware Fusion, ARM servers and VMs |
+            | `polyos-amd64.iso` | Intel and AMD PCs and laptops (almost every Windows PC) |
+            | `polyos-arm64.iso` | ARM64 computers with UEFI: Apple Silicon Macs in UTM, Parallels or VMware Fusion, ARM servers and VMs |
 
             1. Download the `.iso` for your computer${{ env.PARTS && ' (in parts: join them with `cat polyos-*.part* > polyos.iso` on Linux/macOS, or `copy /b part0+part1 polyos.iso` on Windows)' || '' }}.
             2. Write it to a USB drive (8 GB or more) with balenaEtcher, or Rufus in DD mode, or start it in a virtual machine.
