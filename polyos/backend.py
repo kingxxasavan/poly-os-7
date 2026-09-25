@@ -274,10 +274,19 @@ class Backend:
         return self.jobs.start("install", "Installing PolyOS", ["install", str(path)])
 
     def install_restart(self):
-        """Restart right away after installing (a normal restart waits on the live system's services)."""
+        """Restart right away after installing (a normal restart waits on the live system's services).
+
+        The finish screen asks for the USB drive to be removed first, so polyos-admin may not start
+        (it lives on the drive); then the ordinary restart takes over.
+        """
         if not self.env()["live"]:
             raise ApiError("PolyOS is already installed on this computer.", 409)
-        self.jobs.admin.stream(["reboot"], lambda _event: None)
+        try:
+            code = self.jobs.admin.stream(["reboot"], lambda _event: None)
+        except (ApiError, OSError):
+            code = 1
+        if code:
+            self.power("reboot")
 
     # ---- your account -------------------------------------------------------------------
     def _account_request(self, payload: dict) -> None:

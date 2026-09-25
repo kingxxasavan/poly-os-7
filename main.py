@@ -523,10 +523,8 @@ def cmd_iso(args) -> None:
     desc.write_text(desc.read_text("utf-8").replace("@VERSION@", VERSION), "utf-8")
     for hook in [*(work / "config/hooks/live").glob("*.hook.chroot"), *(work / "config/hooks/live").glob("*.hook.binary")]:
         hook.chmod(0o755)
-    # the boot menu's background; the 0600-polyos-bootmenu hook moves it into place
-    grub_dir = work / "config/includes.binary/boot/grub"
-    grub_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(ROOT / "data/boot/splash.png", grub_dir / "polyos-splash.png")
+    # the boot menu's artwork; the 0600-polyos-bootmenu hook moves it into GRUB's theme
+    shutil.copytree(ROOT / "data/boot", work / "config/includes.binary/boot/grub/polyos-theme", dirs_exist_ok=True)
     packages = work / "config/packages.chroot"
     packages.mkdir(parents=True, exist_ok=True)
     for deb in debs:
@@ -764,23 +762,46 @@ def cmd_branding(_args) -> None:
     slide("slide2.png", "Your files, your way", "Files, Settings and the launcher are ready\nthe moment you sign in.")
     slide("slide3.png", "Meet Vara", "Ask Vara to open apps, change settings\nor answer questions.")
 
-    # the USB stick's boot menu (GRUB, and ISOLINUX on PCs): 800x600, the menu sits in the panel
+    # The USB stick's boot menu (GRUB, and ISOLINUX on PCs), 800x600. data/boot/ becomes the GRUB
+    # theme's folder (iso/config/hooks/live/0600-polyos-bootmenu.hook.binary puts it in place).
     out_boot = ROOT / "data/boot"
     out_boot.mkdir(parents=True, exist_ok=True)
     w, h = 800, 600
     crystal = Image.open(ROOT / "data/wallpapers/polyos-crystal.jpg").convert("RGB")
     scale = max(w / crystal.width, h / crystal.height)
-    bg = crystal.resize((round(crystal.width * scale), round(crystal.height * scale)), Image.Resampling.LANCZOS)
-    bg = bg.crop(((bg.width - w) // 2, (bg.height - h) // 2, (bg.width + w) // 2, (bg.height + h) // 2))
-    bg = Image.blend(bg.filter(ImageFilter.GaussianBlur(3)), Image.new("RGB", (w, h), (14, 10, 30)), 0.35).convert("RGBA")
+    base = crystal.resize((round(crystal.width * scale), round(crystal.height * scale)), Image.Resampling.LANCZOS)
+    base = base.crop(((base.width - w) // 2, (base.height - h) // 2, (base.width + w) // 2, (base.height + h) // 2))
+    base = Image.blend(base.filter(ImageFilter.GaussianBlur(3)), Image.new("RGB", (w, h), (14, 10, 30)), 0.35).convert("RGBA")
+
+    def title(img: Image.Image) -> Image.Image:
+        img.alpha_composite(logo(84), ((w - 84) // 2, 70))
+        draw = ImageDraw.Draw(img)
+        draw.text((w // 2, 200), "PolyOS 7", font=font("Bold", 40), fill="white", anchor="mm")
+        draw.text((w // 2, 240), "for Debian", font=font("Medium", 15), fill=(215, 208, 240), anchor="mm")
+        return img
+
+    # the menu: its entries sit in the dark panel
+    splash = title(base.copy())
     panel = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    ImageDraw.Draw(panel).rounded_rectangle((200, 292, 600, 400), 14, fill=(10, 8, 24, 170))
-    bg.alpha_composite(panel)
-    bg.alpha_composite(logo(84), ((w - 84) // 2, 70))
-    draw = ImageDraw.Draw(bg)
-    draw.text((w // 2, 200), "PolyOS 7", font=font("Bold", 40), fill="white", anchor="mm")
-    draw.text((w // 2, 240), "for Debian", font=font("Medium", 15), fill=(215, 208, 240), anchor="mm")
-    bg.convert("RGB").save(out_boot / "splash.png", optimize=True)
+    ImageDraw.Draw(panel).rounded_rectangle((200, 292, 600, 414), 14, fill=(10, 8, 24, 170))
+    splash.alpha_composite(panel)
+    splash.convert("RGB").save(out_boot / "splash.png", optimize=True)
+    # after choosing an entry, while PolyOS loads (GRUB's full-screen text area shows this)
+    loading = title(base.copy())
+    ImageDraw.Draw(loading).text((w // 2, 330), "Starting PolyOS…", font=font("Medium", 17), fill=(235, 230, 250), anchor="mm")
+    loading.convert("RGB").save(out_boot / "boot.png", optimize=True)
+    # the text area itself has no frame, so nothing covers the picture
+    for side in ("c", "n", "s", "e", "w", "ne", "nw", "se", "sw"):
+        Image.new("RGBA", (4, 4), (0, 0, 0, 0)).save(out_boot / f"terminal_box_{side}.png")
+    # the selected entry: a rounded purple bar, cut into GRUB's nine slices
+    r = 6
+    bar = Image.new("RGBA", (2 * r + 1, 2 * r + 1), (0, 0, 0, 0))
+    ImageDraw.Draw(bar).rounded_rectangle((0, 0, 2 * r, 2 * r), r, fill=(143, 124, 240, 200))
+    slices = {"nw": (0, 0, r, r), "n": (r, 0, r + 1, r), "ne": (r + 1, 0, 2 * r + 1, r),
+              "w": (0, r, r, r + 1), "c": (r, r, r + 1, r + 1), "e": (r + 1, r, 2 * r + 1, r + 1),
+              "sw": (0, r + 1, r, 2 * r + 1), "s": (r, r + 1, r + 1, 2 * r + 1), "se": (r + 1, r + 1, 2 * r + 1, 2 * r + 1)}
+    for side, box in slices.items():
+        bar.crop(box).save(out_boot / f"select_{side}.png")
     for f in sorted([*out_splash.glob("*.png"), *out_cal.glob("*.png"), *out_boot.glob("*.png")]):
         print(f"  wrote {f.relative_to(ROOT)}")
 

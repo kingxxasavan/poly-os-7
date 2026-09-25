@@ -531,16 +531,19 @@ export function mount(root, store) {
       const restart = h('button.su-next.primary', { disabled: !!plan.user.recoveryKey,
         onclick: () => api.post('/api/install/restart', {}).catch((err) => { restart.textContent = err.message; }) }, 'Restart now');
       saved.addEventListener('change', () => { restart.disabled = !saved.checked; });
+      const removeUsb = h('div.su-remove', { role: 'status' }, icon('usb'),
+        h('span', h('b', 'Please remove the USB drive now.'),
+          h('small', 'PolyOS has been installed on your computer. Then click Restart now to start using it.')));
       return [
         h('div.su-center',
           h('img.su-done-logo', { src: '/img/logo-white.svg', alt: '' }),
-          h('h1', 'PolyOS 7 is installed.'),
+          h('h1', 'PolyOS 7 has been installed.'),
           plan.user.recoveryKey ? [
             h('p.su-sub', 'This is your recovery key. If you ever forget your password, it lets you set a new one from the sign-in screen. Write it down or take a photo of it. You won’t see it again.'),
             h('div.su-key', plan.user.recoveryKey),
             h('label.su-check', saved, h('span', 'I’ve saved my recovery key.')),
-          ] : h('p.su-sub', 'Remove the USB drive, then restart to start using PolyOS.'),
-          plan.user.recoveryKey ? h('p.su-note', 'After you restart, remove the USB drive when the screen goes dark.') : null,
+          ] : null,
+          removeUsb,
           restart),
       ];
     }

@@ -333,15 +333,21 @@ class BootMediaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             iso = Path(tmp)
             grub = iso / "boot/grub"
-            (grub / "live-theme").mkdir(parents=True)
-            (iso / "isolinux").mkdir()
+            theme = grub / "live-theme"
+            art = grub / "polyos-theme"
+            for d in (theme, art, iso / "isolinux"):
+                d.mkdir(parents=True)
             (grub / "grub.cfg").write_text('menuentry "Live system (arm64)" --hotkey=l {\n}\n'
                                            'menuentry "Live system (arm64 fail-safe mode)" {\n}\n')
             (grub / "config.cfg").write_text("set default=0\n")
-            (grub / "live-theme/theme.txt").write_text('+ boot_menu {\n        left = 10%\n        width = 80%\n'
-                                                       '        item_color = "#a8a8a8"\n}\n')
+            # live-build's theme mixes spaces and tabs
+            (theme / "theme.txt").write_text('desktop-image: "../splash.png"\n+ boot_menu {\n        left = 10%\n'
+                                             '        width = 80%\n        item_color = "#a8a8a8"\n'
+                                             '        selected_item_color= "#ffffff"\n        item_height = 16\n'
+                                             '\titem_icon_space = 0\n}\n')
             (grub / "splash.png").write_bytes(b"debian")
-            (grub / "polyos-splash.png").write_bytes(b"polyos")
+            for name in ("splash.png", "boot.png", "terminal_box_c.png", "select_c.png"):
+                (art / name).write_bytes(name.encode())
             (iso / "isolinux/live.cfg").write_text("label live-amd64\n\tmenu label ^Live system (amd64)\n")
             (iso / "isolinux/splash800x600.png").write_bytes(b"debian")
             subprocess.run(["sh", str(hook)], cwd=iso, check=True)
@@ -350,13 +356,22 @@ class BootMediaTests(unittest.TestCase):
             self.assertIn('menuentry "Start PolyOS 7 (safe mode)"', menu)
             self.assertNotIn("Live system", menu)
             self.assertIn("menu label ^Start PolyOS 7", (iso / "isolinux/live.cfg").read_text())
-            self.assertIn("set timeout=5", (grub / "config.cfg").read_text())
-            theme = (grub / "live-theme/theme.txt").read_text()
-            self.assertIn("left = 28%", theme)
-            self.assertIn('item_color = "#c9c2ea"', theme)
-            self.assertEqual((grub / "splash.png").read_bytes(), b"polyos")
-            self.assertEqual((iso / "isolinux/splash800x600.png").read_bytes(), b"polyos")
-            self.assertFalse((grub / "polyos-splash.png").exists())
+            config = (grub / "config.cfg").read_text()
+            self.assertIn("set timeout=30", config)
+            self.assertIn("background_image /boot/grub/live-theme/boot.png", config)
+            text = (theme / "theme.txt").read_text()
+            self.assertTrue(text.startswith('terminal-box: "terminal_box_*.png"\n'))
+            self.assertIn('terminal-width: "100%"', text)
+            self.assertIn("left = 28%", text)
+            self.assertIn('item_color = "#c9c2ea"', text)
+            self.assertIn('selected_item_pixmap_style = "select_*.png"', text)
+            self.assertIn("item_height = 24", text)
+            self.assertIn("\titem_icon_space = 12", text)
+            self.assertEqual((grub / "splash.png").read_bytes(), b"splash.png")
+            self.assertEqual((iso / "isolinux/splash800x600.png").read_bytes(), b"splash.png")
+            for name in ("boot.png", "terminal_box_c.png", "select_c.png"):
+                self.assertEqual((theme / name).read_bytes(), name.encode())
+            self.assertFalse(art.exists())
 
 
 if __name__ == "__main__":

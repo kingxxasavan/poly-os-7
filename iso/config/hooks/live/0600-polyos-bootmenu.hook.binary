@@ -1,16 +1,22 @@
 #!/bin/sh
 # The USB stick's boot menu, PolyOS style: the PolyOS 7 background and colors instead of Debian's
-# helmet, "Start PolyOS 7" entries instead of "Live system (amd64)", and a 5-second countdown
-# instead of waiting for a key. Runs in the ISO's folder just before the ISO is made.
+# helmet, "Start PolyOS 7" entries with a purple bar on the one selected, and a 30-second countdown
+# that any key stops. After choosing, the menu gives way to "Starting PolyOS…" on the same picture
+# instead of a black box. Runs in the ISO's folder just before the ISO is made.
 set -e
 
-# `main.py iso` puts the background (data/boot/splash.png, from `main.py branding`) here
-if [ -f boot/grub/polyos-splash.png ]; then
-    mv boot/grub/polyos-splash.png boot/grub/splash.png
+theme=boot/grub/live-theme
+art=boot/grub/polyos-theme  # data/boot/ from `main.py branding`, put here by `main.py iso`
+
+if [ -d "$art" ]; then
+    mv "$art/splash.png" boot/grub/splash.png
     # PCs starting in BIOS mode get ISOLINUX; its 800x600 background is replaced the same way
     if [ -f isolinux/splash800x600.png ]; then
         cp boot/grub/splash.png isolinux/splash800x600.png
     fi
+    mkdir -p "$theme"
+    mv "$art"/*.png "$theme"/
+    rmdir "$art"
 fi
 
 rename='s/Live system (\([a-z0-9]*\) fail-safe mode)/Start PolyOS 7 (safe mode)/; s/Live system ([a-z0-9]*)/Start PolyOS 7/'
@@ -21,20 +27,36 @@ for cfg in boot/grub/grub.cfg isolinux/live.cfg; do
 done
 
 if [ -f boot/grub/config.cfg ]; then
-    echo 'set timeout=5' >> boot/grub/config.cfg
+    cat >> boot/grub/config.cfg <<'EOF'
+set timeout=30
+# GRUB's text area (loading an entry, the e editor) draws over this picture, and its black
+# background shows through, so choosing an entry leaves the PolyOS picture on screen
+if [ -e /boot/grub/live-theme/boot.png ]; then
+    background_image /boot/grub/live-theme/boot.png
+fi
+EOF
 fi
 
-theme=boot/grub/live-theme/theme.txt
-if [ -f "$theme" ]; then
-    # the menu sits in the dark panel drawn on the background
+if [ -f "$theme/theme.txt" ]; then
+    # the text area covers the whole screen, lined up with the picture, with no frame
+    {
+        printf '%s\n' 'terminal-box: "terminal_box_*.png"' 'terminal-left: "0"' 'terminal-top: "0"' \
+            'terminal-width: "100%"' 'terminal-height: "100%"' 'terminal-border: "0"'
+        cat "$theme/theme.txt"
+    } > "$theme/theme.txt.new"
+    mv "$theme/theme.txt.new" "$theme/theme.txt"
+    # the menu sits in the dark panel drawn on the background; the selected entry gets a purple bar
     sed -i \
-        -e 's/^\( *\)left = 10%$/\1left = 28%/' \
-        -e 's/^\( *\)width = 80%$/\1width = 44%/' \
-        -e 's/^\( *\)item_color = .*/\1item_color = "#c9c2ea"/' \
-        -e 's/^\( *\)selected_item_color *= .*/\1selected_item_color = "#ffffff"/' \
-        -e 's/^\( *\)fg_color = .*/\1fg_color = "#8f7cf0"/' \
-        -e 's/^\( *\)bg_color = .*/\1bg_color = "#2a2448"/' \
-        -e 's/^\( *\)border_color = .*/\1border_color = "#8f7cf0"/' \
-        -e 's/^\( *\)text_color = .*/\1text_color = "#ffffff"/' \
-        "$theme"
+        -e 's/^\([[:space:]]*\)left = 10%$/\1left = 28%/' \
+        -e 's/^\([[:space:]]*\)width = 80%$/\1width = 44%/' \
+        -e 's/^\([[:space:]]*\)item_color = .*/\1item_color = "#c9c2ea"/' \
+        -e 's/^\([[:space:]]*\)selected_item_color *= .*/\1selected_item_color = "#ffffff"\n\1selected_item_pixmap_style = "select_*.png"/' \
+        -e 's/^\([[:space:]]*\)item_height = .*/\1item_height = 24/' \
+        -e 's/^\([[:space:]]*\)item_spacing = .*/\1item_spacing = 6/' \
+        -e 's/^\([[:space:]]*\)item_icon_space = .*/\1item_icon_space = 12/' \
+        -e 's/^\([[:space:]]*\)fg_color = .*/\1fg_color = "#8f7cf0"/' \
+        -e 's/^\([[:space:]]*\)bg_color = .*/\1bg_color = "#2a2448"/' \
+        -e 's/^\([[:space:]]*\)border_color = .*/\1border_color = "#8f7cf0"/' \
+        -e 's/^\([[:space:]]*\)text_color = .*/\1text_color = "#ffffff"/' \
+        "$theme/theme.txt"
 fi
