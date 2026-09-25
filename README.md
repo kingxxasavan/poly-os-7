@@ -117,8 +117,8 @@ this step.
 
 **Just want the ISO?** Download the newest release from the website's Download buttons or from
 [GitHub Releases](https://github.com/kingxxasavan/poly-os-7-debain-receration/releases/latest). Each release has two:
-`…-amd64.iso` for Intel/AMD PCs and `…-arm64.iso` for ARM64 computers with UEFI (Apple Silicon Macs in
-UTM, Parallels or VMware Fusion; ARM servers and VMs). `sudo python3 main.py iso` builds the one for
+`polyos-amd64.iso` for Intel/AMD PCs and `polyos-arm64.iso` for ARM64 virtual machines (Apple Silicon Macs
+in UTM, Parallels or VMware Fusion; ARM cloud servers). `sudo python3 main.py iso` builds the one for
 the computer it runs on (`--arch`); GitHub Actions builds both.
 
 **Publishing a new release:** bump `__version__` in `polyos/__init__.py` and push it to `main`.
@@ -219,7 +219,8 @@ closing apps.
 
 ## Current limits
 
-- ARM64: needs UEFI firmware (Raspberry Pi works only with UEFI firmware installed). Apps built only
+- ARM64: boots as a CD/ISO in virtual machines. It isn't a hybrid image yet, so writing it to a USB
+  stick for real ARM hardware (which also needs UEFI firmware) isn't supported. Apps built only
   for Intel/AMD PCs (Steam, Discord, Spotify, Chrome and a few more) aren't offered there; cloud
   gaming works in the browser instead.
 - Custom installs use existing partitions or whole drives; they don't create or resize single
