@@ -1,13 +1,10 @@
 # PolyOS 7 for Debian: project showcase
 
-This folder is the PolyOS website: a single page that shows everything built so far, with
-real screenshots. Open `index.html` in a browser to see it, or publish it with GitHub Pages
-(below) to get a link like `https://kingxxasavan.github.io/poly-os-7/`.
 
 ![The PolyOS 7 desktop](screenshots/desktop.jpg)
 
-PolyOS started as an operating system built in Scratch by **AndrewInput** and the
-**PIXAPoLY Software** team. This project, presented by **Cryptic Software**, turns PolyOS 7
+PolyOS started as an operating system built in Scratch by  the
+PIXAPoLY Software team. This project, presented by Cryptic Software, turns PolyOS 7
 into a real desktop that installs and boots on a PC, on top of Debian.
 
 ## What's been built
@@ -85,31 +82,6 @@ All screenshots are full size in [`screenshots/`](screenshots/) (1440×900) with
    and other branches get their own preview links. Add your own domain under **Settings → Domains**.
 
 From a terminal instead: `npm i -g vercel`, then `vercel --prod` in the project folder.
-
-### GitHub Pages (another option)
-
-1. Merge this branch into `main` (or keep it on its branch, both work).
-2. On GitHub, open the repository's **Settings → Pages**.
-3. Under **Build and deployment**, choose **Source: Deploy from a branch**, then the branch
-   (`main`) and the folder **`/docs`**, and click **Save**.
-4. After a minute or two the page shows your site's address, usually
-   `https://kingxxasavan.github.io/poly-os-7/`.
-
-GitHub Pages is free for public repositories. For a private repository it needs a paid GitHub plan.
-
-## Editing the site
-
-It's plain HTML, CSS and JavaScript with no build step:
-
-| File | What it holds |
-|---|---|
-| `index.html` | All the text and sections: hero, features, gallery, editions, installer, security, how it's built, install steps, timeline, credits |
-| `assets/site.css` | The look (the same colors as PolyOS) |
-| `assets/site.js` | Gallery filters and the full-size screenshot viewer |
-| `screenshots/` | Screenshots; add one to the gallery by copying a `<figure>` in `index.html` |
-
-To take new screenshots, run `python main.py dev` from the project folder and open
-http://127.0.0.1:8790 in a browser (`--live` shows the installer).
 
 ## Credits
 
