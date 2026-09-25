@@ -1,0 +1,4 @@
+# The Vercel site is only the showcase in docs/ (see vercel.json); skip the OS itself on CLI deploys.
+/*
+!/docs
+!/vercel.json

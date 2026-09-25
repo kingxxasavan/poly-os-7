@@ -64,7 +64,22 @@ All screenshots are full size in [`screenshots/`](screenshots/) (1440×900) with
 | Sep 25, 2026 | PolyOS 7 login and lock screens, crystal wallpapers, Camera, desktop shortcuts, new Settings pages |
 | Sep 25, 2026 | Custom installs, Regular / Developer / Gaming editions, security and speed defaults |
 
-## Put the website online (GitHub Pages)
+## Put the website online
+
+### Vercel (set up)
+
+`vercel.json` in the project root tells Vercel to serve this folder as it is (no build step).
+
+1. Sign in at [vercel.com](https://vercel.com) with your GitHub account.
+2. **Add New… → Project**, then **Import** `kingxxasavan/poly-os-7`.
+3. Leave the settings as they are (Framework Preset: *Other*; `vercel.json` fills in the rest)
+   and click **Deploy**.
+4. You get an address like `https://poly-os-7.vercel.app`. Every push to `main` updates the site,
+   and other branches get their own preview links. Add your own domain under **Settings → Domains**.
+
+From a terminal instead: `npm i -g vercel`, then `vercel --prod` in the project folder.
+
+### GitHub Pages (another option)
 
 1. Merge this branch into `main` (or keep it on its branch, both work).
 2. On GitHub, open the repository's **Settings → Pages**.
