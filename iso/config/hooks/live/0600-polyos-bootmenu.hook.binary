@@ -1,0 +1,40 @@
+#!/bin/sh
+# The USB stick's boot menu, PolyOS style: the PolyOS 7 background and colors instead of Debian's
+# helmet, "Start PolyOS 7" entries instead of "Live system (amd64)", and a 5-second countdown
+# instead of waiting for a key. Runs in the ISO's folder just before the ISO is made.
+set -e
+
+# `main.py iso` puts the background (data/boot/splash.png, from `main.py branding`) here
+if [ -f boot/grub/polyos-splash.png ]; then
+    mv boot/grub/polyos-splash.png boot/grub/splash.png
+    # PCs starting in BIOS mode get ISOLINUX; its 800x600 background is replaced the same way
+    if [ -f isolinux/splash800x600.png ]; then
+        cp boot/grub/splash.png isolinux/splash800x600.png
+    fi
+fi
+
+rename='s/Live system (\([a-z0-9]*\) fail-safe mode)/Start PolyOS 7 (safe mode)/; s/Live system ([a-z0-9]*)/Start PolyOS 7/'
+for cfg in boot/grub/grub.cfg isolinux/live.cfg; do
+    if [ -f "$cfg" ]; then
+        sed -i "$rename" "$cfg"
+    fi
+done
+
+if [ -f boot/grub/config.cfg ]; then
+    echo 'set timeout=5' >> boot/grub/config.cfg
+fi
+
+theme=boot/grub/live-theme/theme.txt
+if [ -f "$theme" ]; then
+    # the menu sits in the dark panel drawn on the background
+    sed -i \
+        -e 's/^\( *\)left = 10%$/\1left = 28%/' \
+        -e 's/^\( *\)width = 80%$/\1width = 44%/' \
+        -e 's/^\( *\)item_color = .*/\1item_color = "#c9c2ea"/' \
+        -e 's/^\( *\)selected_item_color *= .*/\1selected_item_color = "#ffffff"/' \
+        -e 's/^\( *\)fg_color = .*/\1fg_color = "#8f7cf0"/' \
+        -e 's/^\( *\)bg_color = .*/\1bg_color = "#2a2448"/' \
+        -e 's/^\( *\)border_color = .*/\1border_color = "#8f7cf0"/' \
+        -e 's/^\( *\)text_color = .*/\1text_color = "#ffffff"/' \
+        "$theme"
+fi

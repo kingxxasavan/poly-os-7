@@ -126,6 +126,13 @@ Copyright: AndrewInput and PIXAPoLY Software (PolyOS for Scratch)
 License: CC-BY-SA-2.0
  https://creativecommons.org/licenses/by-sa/2.0/
 
+Files: usr/share/polyos/ui/img/apps/*
+Copyright: Papirus Development Team
+License: GPL-3
+ App icons from the Papirus icon theme (github.com/PapirusDevelopmentTeam/papirus-icon-theme).
+ On Debian systems, the complete text of the GNU General Public License
+ version 3 can be found in "/usr/share/common-licenses/GPL-3".
+
 Files: usr/share/fonts/truetype/polyos/* usr/share/polyos/ui/fonts/*
 Copyright: 2020 The Poppins Project Authors
 License: OFL-1.1
@@ -177,6 +184,7 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         (data / "pam/polyos-lock", "etc/pam.d/polyos-lock", 0o644),
         (data / "polkit/50-polyos-recover.rules", "usr/share/polkit-1/rules.d/50-polyos-recover.rules", 0o644),
         *_tree(data / "store", "usr/share/polyos/store"),
+        *_tree(data / "vara", "usr/share/polyos/vara"),
         (data / "xgreeters/polyos-greeter.desktop", "usr/share/xgreeters/polyos-greeter.desktop", 0o644),
         (data / "xsessions/polyos.desktop", "usr/share/xsessions/polyos.desktop", 0o644),
         *_tree(data / "applications", "usr/share/applications"),
@@ -470,7 +478,7 @@ def cmd_iso(args) -> None:
     require_debian_root("iso")
     if not shutil.which("lb"):
         sys.exit("live-build is not installed:  sudo apt install live-build")
-    if not (ROOT / "data/plymouth/polyos/logo.png").exists():
+    if not (ROOT / "data/plymouth/polyos/logo.png").exists() or not (ROOT / "data/boot/splash.png").exists():
         sys.exit("Branding images are missing; run `python main.py branding` first.")
     debs = build_debs(DIST)
     if args.workdir:
@@ -513,8 +521,12 @@ def cmd_iso(args) -> None:
     shutil.copytree(ROOT / "data/calamares/branding/polyos", branding, dirs_exist_ok=True)
     desc = branding / "branding.desc"
     desc.write_text(desc.read_text("utf-8").replace("@VERSION@", VERSION), "utf-8")
-    for hook in (work / "config/hooks/live").glob("*.hook.chroot"):
+    for hook in [*(work / "config/hooks/live").glob("*.hook.chroot"), *(work / "config/hooks/live").glob("*.hook.binary")]:
         hook.chmod(0o755)
+    # the boot menu's background; the 0600-polyos-bootmenu hook moves it into place
+    grub_dir = work / "config/includes.binary/boot/grub"
+    grub_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy(ROOT / "data/boot/splash.png", grub_dir / "polyos-splash.png")
     packages = work / "config/packages.chroot"
     packages.mkdir(parents=True, exist_ok=True)
     for deb in debs:
@@ -534,8 +546,45 @@ def cmd_iso(args) -> None:
     DIST.mkdir(exist_ok=True)
     out = DIST / f"polyos-{VERSION}-{args.dist}-{arch}.iso"
     shutil.move(str(isos[0]), out)
+    if arch == "arm64":
+        usb_bootable(out, work)
     print(f"\nISO ready: {out}  ({out.stat().st_size / 1024 ** 3:.2f} GiB)\n"
           f"Write it to a USB stick with:  sudo dd if={out} of=/dev/sdX bs=4M status=progress oflag=sync")
+
+
+def usb_bootable(iso: Path, work: Path) -> None:
+    """Give an ARM64 ISO a partition table with its EFI system partition, so it starts from a USB stick.
+
+    On PCs, live-build's iso-hybrid images already carry one. ARM64 images come out CD-only: fine
+    for virtual machines, but ARM firmware (U-Boot, many UEFI boards) looks for an EFI partition
+    on a USB drive. xorriso copies the ISO's own EFI boot image in as partition 2 (type 0xEF),
+    leaving the ISO 9660 part untouched, so the result still starts as a CD or ISO too.
+    """
+    efi = work / "efi.img"
+    new = iso.with_suffix(".usb.iso")
+    sh("xorriso", "-osirrox", "on", "-indev", str(iso), "-extract", "/boot/grub/efi.img", str(efi))
+    sh("xorriso", "-indev", str(iso), "-outdev", str(new),
+       "-boot_image", "any", "replay",
+       "-append_partition", "2", "0xef", str(efi),
+       "-boot_image", "any", "partition_cyl_align=all",
+       "-changes_pending", "yes", "-commit")
+    if efi_partition(new) is None:
+        sys.exit(f"{new} has no EFI system partition; the USB step failed")
+    new.replace(iso)
+    print("  added an EFI system partition: the ISO starts from a USB stick on ARM64 UEFI computers")
+
+
+def efi_partition(image: Path) -> int | None:
+    """Number (1-4) of the EFI system partition in a disk image's MBR, or None."""
+    with open(image, "rb") as f:
+        mbr = f.read(512)
+    if len(mbr) < 512 or mbr[510:512] != b"\x55\xaa":
+        return None
+    for n in range(4):
+        entry = mbr[446 + 16 * n: 462 + 16 * n]
+        if entry[4] == 0xEF and int.from_bytes(entry[12:16], "little"):
+            return n + 1
+    return None
 
 
 def cmd_nested(args) -> None:
@@ -714,7 +763,25 @@ def cmd_branding(_args) -> None:
     slide("slide1.png", "Welcome to PolyOS", "The PolyOS 7 desktop, now on real hardware.\nBuilt on Debian, so it just works.")
     slide("slide2.png", "Your files, your way", "Files, Settings and the launcher are ready\nthe moment you sign in.")
     slide("slide3.png", "Meet Vara", "Ask Vara to open apps, change settings\nor answer questions.")
-    for f in sorted([*out_splash.glob("*.png"), *out_cal.glob("*.png")]):
+
+    # the USB stick's boot menu (GRUB, and ISOLINUX on PCs): 800x600, the menu sits in the panel
+    out_boot = ROOT / "data/boot"
+    out_boot.mkdir(parents=True, exist_ok=True)
+    w, h = 800, 600
+    crystal = Image.open(ROOT / "data/wallpapers/polyos-crystal.jpg").convert("RGB")
+    scale = max(w / crystal.width, h / crystal.height)
+    bg = crystal.resize((round(crystal.width * scale), round(crystal.height * scale)), Image.Resampling.LANCZOS)
+    bg = bg.crop(((bg.width - w) // 2, (bg.height - h) // 2, (bg.width + w) // 2, (bg.height + h) // 2))
+    bg = Image.blend(bg.filter(ImageFilter.GaussianBlur(3)), Image.new("RGB", (w, h), (14, 10, 30)), 0.35).convert("RGBA")
+    panel = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(panel).rounded_rectangle((200, 292, 600, 400), 14, fill=(10, 8, 24, 170))
+    bg.alpha_composite(panel)
+    bg.alpha_composite(logo(84), ((w - 84) // 2, 70))
+    draw = ImageDraw.Draw(bg)
+    draw.text((w // 2, 200), "PolyOS 7", font=font("Bold", 40), fill="white", anchor="mm")
+    draw.text((w // 2, 240), "for Debian", font=font("Medium", 15), fill=(215, 208, 240), anchor="mm")
+    bg.convert("RGB").save(out_boot / "splash.png", optimize=True)
+    for f in sorted([*out_splash.glob("*.png"), *out_cal.glob("*.png"), *out_boot.glob("*.png")]):
         print(f"  wrote {f.relative_to(ROOT)}")
 
 

@@ -1118,6 +1118,38 @@ select.su-input option { background: #202024; color: #fff; }
 .va-input:focus-visible { outline: none; }
 .va-send { flex: none; width: 38px; height: 38px; border: 0; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: #fff; }
 .va-send .ico { font-size: 18px; }
+.va-msg.vara { white-space: normal; }
+.va-msg.vara p { margin: 0; white-space: pre-wrap; }
+.va-msg.vara p + p, .va-msg.vara p + pre, .va-msg.vara pre + p { margin-top: 8px; }
+.va-msg.interim { background: none; padding: 2px 4px; color: var(--text-2); font-size: 13px; }
+.va-msg code, .va-step code { font-family: ui-monospace, "DejaVu Sans Mono", monospace; font-size: 12.5px; }
+.va-msg p code { padding: 1px 5px; border-radius: 6px; background: var(--field); }
+.va-code { margin: 6px 0 0; padding: 10px 12px; max-height: 260px; overflow: auto; border-radius: 10px; background: var(--field);
+  border: 1px solid var(--line); white-space: pre; user-select: text; -webkit-user-select: text; }
+.va-code.out { color: var(--text-2); }
+.va-stop { color: var(--danger-strong); }
+.va-step { align-self: stretch; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--tile) 55%, transparent);
+  animation: rise 0.18s var(--ease); }
+.va-step-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: 0; background: none;
+  color: var(--text); font-size: 13px; text-align: left; }
+.va-step-head .ico { flex: none; font-size: 16px; color: var(--accent); }
+.va-step-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.va-step-status { flex: none; font-size: 11.5px; color: var(--text-3); }
+.va-step.running .va-step-status { color: var(--accent); }
+.va-step.waiting { border-color: var(--accent); }
+.va-step.waiting .va-step-status { color: var(--accent); font-weight: 600; }
+.va-step.failed .va-step-status, .va-step.denied .va-step-status { color: var(--danger-strong); }
+.va-step-body { padding: 0 12px 10px; }
+.va-thought { align-self: stretch; color: var(--text-3); font-size: 12.5px; }
+.va-thought summary { display: inline-flex; align-items: center; gap: 6px; cursor: default; list-style: none; }
+.va-thought summary::-webkit-details-marker { display: none; }
+.va-thought p { margin: 6px 0 0; padding-left: 20px; white-space: pre-wrap; line-height: 1.5; }
+.va-approve { align-self: stretch; padding: 14px; border-radius: 16px; border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--tile)); animation: rise 0.18s var(--ease); }
+.va-approve-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.va-approve-head .ico { color: var(--accent); font-size: 18px; }
+.va-approve > p { margin: 6px 0 0; font-size: 13px; color: var(--text-2); word-break: break-word; }
+.va-approve-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .slider-wrap.wide { width: min(420px, 60%); }
 .slider-wrap.wide .input { width: 100%; }
 .btn-row { display: flex; align-items: center; gap: 10px; margin: -8px 0 22px; flex-wrap: wrap; }

@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from .backend import OPEN_APPS, POWER_ACTIONS, RUN_TARGETS
 from .core import IMAGE_TYPES, ApiError
+from .vara import tools_overview
 
 log = logging.getLogger("polyos.server")
 
@@ -107,7 +108,8 @@ GET_API = {
     "/api/files/search": lambda be, q: be.files.search(_q(q, "path"), _q(q, "q") or "", _q(q, "hidden") == "1"),
     "/api/files/info": lambda be, q: be.files.info(_q(q, "path") or ""),
     "/api/greeter/state": lambda be, q: be.greeter_state(),
-    "/api/vara/history": lambda be, q: {"history": be.vara.history},
+    "/api/vara/history": lambda be, q: be.vara.state(),
+    "/api/vara/tools": lambda be, q: tools_overview(be.vara),
     "/api/vara/config": lambda be, q: be.vara.config.public(),
     "/api/admin/status": lambda be, q: be.admin_status(),
     "/api/jobs": lambda be, q: {"jobs": be.jobs.list()},
@@ -195,7 +197,11 @@ POST_API = {
     "/api/vara/chat": lambda be, b: be.vara.chat(be, _str(b, "message", 4000)),
     "/api/vara/reset": lambda be, b: be.vara.reset(),
     "/api/vara/config": lambda be, b: be.vara.config.update(
-        _opt_str(b, "endpoint"), _opt_str(b, "model"), b.get("apiKey") if isinstance(b.get("apiKey"), str) else None),
+        _opt_str(b, "endpoint"), _opt_str(b, "model"), b.get("apiKey") if isinstance(b.get("apiKey"), str) else None,
+        _opt_str(b, "workspace"), _opt_str(b, "approval")),
+    "/api/vara/approve": lambda be, b: be.vara.approve(_str(b, "id", 80), _choice(b, "decision", ("allow", "always", "deny"))),
+    "/api/vara/stop": lambda be, b: be.vara.stop(),
+    "/api/vara/forget": lambda be, b: {"memory": be.vara.memory.forget(_opt_int(b, "index"))},
     "/api/vara/test": lambda be, b: be.vara_test(),
     "/api/greeter/login": lambda be, b: be.greeter_login(_str(b, "user", 64), _password(b), _opt_str(b, "session")),
     "/api/greeter/power": lambda be, b: be.greeter_power(_choice(b, "action", ("shutdown", "restart", "suspend"))),

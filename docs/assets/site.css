@@ -181,6 +181,7 @@ code { padding: 2px 7px; border-radius: 7px; background: var(--card-2); font: 0.
 .tilt { transform: perspective(1600px) rotateY(6deg); }
 .modes { margin: 24px 0 0; display: grid; gap: 14px; }
 .modes dt { font: 600 17px var(--display); }
+.modes dt .ico { margin-right: 6px; font-size: 19px; vertical-align: -3px; color: var(--accent-text); }
 .modes dd { margin: 2px 0 0; color: var(--text-2); }
 .stack { display: grid; gap: 10px; }
 .layer { display: flex; flex-direction: column; padding: 18px 22px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); }

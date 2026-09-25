@@ -30,6 +30,10 @@
       "Creativity"
     ],
     [
+      "making",
+      "3D & Making"
+    ],
+    [
       "developer",
       "Developer"
     ],
@@ -535,6 +539,121 @@
       "description": "Model, sculpt, animate and render in 3D, and edit video."
     },
     {
+      "id": "openscad",
+      "name": "OpenSCAD",
+      "category": "making",
+      "source": "debian",
+      "packages": [
+        "openscad"
+      ],
+      "desktop": [
+        "openscad.desktop",
+        "org.openscad.OpenSCAD.desktop"
+      ],
+      "icons": [
+        "openscad",
+        "org.openscad.OpenSCAD"
+      ],
+      "summary": "3D models written as code.",
+      "description": "Design precise, parametric parts for 3D printing by writing a short script. Vara can write and render them for you."
+    },
+    {
+      "id": "freecad",
+      "name": "FreeCAD",
+      "category": "making",
+      "source": "debian",
+      "packages": [
+        "freecad"
+      ],
+      "desktop": [
+        "org.freecad.FreeCAD.desktop",
+        "freecad.desktop"
+      ],
+      "icons": [
+        "freecad",
+        "org.freecad.FreeCAD"
+      ],
+      "summary": "CAD for real-world objects.",
+      "description": "Design mechanical parts and assemblies with sketches and constraints, and export STEP or STL."
+    },
+    {
+      "id": "kicad",
+      "name": "KiCad",
+      "category": "making",
+      "source": "debian",
+      "packages": [
+        "kicad"
+      ],
+      "desktop": [
+        "org.kicad.kicad.desktop",
+        "kicad.desktop"
+      ],
+      "icons": [
+        "kicad",
+        "org.kicad.kicad"
+      ],
+      "summary": "Circuit boards, from schematic to PCB.",
+      "description": "Draw schematics, lay out printed circuit boards and make the files a PCB factory needs."
+    },
+    {
+      "id": "prusaslicer",
+      "name": "PrusaSlicer",
+      "category": "making",
+      "source": "debian",
+      "packages": [
+        "prusa-slicer"
+      ],
+      "desktop": [
+        "PrusaSlicer.desktop",
+        "com.prusa3d.PrusaSlicer.desktop"
+      ],
+      "icons": [
+        "prusa-slicer",
+        "PrusaSlicer"
+      ],
+      "summary": "Turn 3D models into prints.",
+      "description": "Slice STL and 3MF models into G-code for Prusa and many other 3D printers."
+    },
+    {
+      "id": "arduino",
+      "name": "Arduino IDE",
+      "category": "making",
+      "source": "flathub",
+      "ref": "cc.arduino.IDE2",
+      "desktop": [
+        "cc.arduino.IDE2.desktop"
+      ],
+      "icons": [
+        "arduino",
+        "cc.arduino.IDE2",
+        "arduino-ide"
+      ],
+      "summary": "Program Arduino and ESP32 boards.",
+      "description": "Write sketches, install board support and libraries, upload to your board and watch the serial monitor.",
+      "arches": [
+        "amd64"
+      ]
+    },
+    {
+      "id": "cura",
+      "name": "UltiMaker Cura",
+      "category": "making",
+      "source": "flathub",
+      "ref": "com.ultimaker.cura",
+      "desktop": [
+        "com.ultimaker.cura.desktop"
+      ],
+      "icons": [
+        "com.ultimaker.cura",
+        "cura"
+      ],
+      "summary": "Popular slicer for 3D printers.",
+      "description": "Prepare models for UltiMaker and hundreds of other 3D printers, with recommended settings built in.",
+      "arches": [
+        "amd64"
+      ]
+    },
+    {
       "id": "turbowarp",
       "name": "TurboWarp",
       "category": "creativity",
@@ -598,7 +717,8 @@
       "desktop": [],
       "icons": [
         "nodejs",
-        "node"
+        "node",
+        "applications-development"
       ],
       "summary": "JavaScript outside the browser, with npm.",
       "description": "Run JavaScript and install packages with npm. Use it from the Terminal."

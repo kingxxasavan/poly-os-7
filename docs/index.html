@@ -16,6 +16,8 @@
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
+      <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3.5 19.5 7.7v8.6L12 20.5l-7.5-4.2V7.7z"/><path d="M4.5 7.7 12 12l7.5-4.3M12 12v8.5"/></symbol>
+      <symbol id="i-robot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V4.5M9.5 19v1.5M14.5 19v1.5M3 12.5v3M21 12.5v3"/><circle cx="12" cy="4" r="1"/><circle cx="9.5" cy="13" r="1.1" fill="currentColor"/><circle cx="14.5" cy="13" r="1.1" fill="currentColor"/></symbol>
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
       <symbol id="i-desktop" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 15.5h18M9 17.5h6"/></symbol>
       <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></symbol>
@@ -76,10 +78,10 @@
 
     <section class="stats" aria-label="The project in numbers">
       <div><b>12</b><span>PolyOS screens and apps</span></div>
-      <div><b>43</b><span>apps in PolyMarket</span></div>
+      <div><b>49</b><span>apps in PolyMarket</span></div>
       <div><b>3</b><span>editions: Regular, Developer, Gaming</span></div>
-      <div><b>93</b><span>automated tests</span></div>
-      <div><b>17k</b><span>lines of code</span></div>
+      <div><b>119</b><span>automated tests</span></div>
+      <div><b>20k</b><span>lines of code</span></div>
     </section>
 
     <!-- ---- features ------------------------------------------------------------------ -->
@@ -110,8 +112,8 @@
           <p>Appearance, Taskbar and Desktop, Wi-Fi, Sound, Display, Power and Performance, Account, Privacy and Security, Gaming, Developer and Vara.</p></article>
         <article class="feature"><svg class="ico"><use href="#i-camera"/></svg><h3>Camera</h3>
           <p>Photos and videos from your webcam with a self-timer and mirror, saved to Pictures. It only appears on computers with a camera.</p></article>
-        <article class="feature"><svg class="ico"><use href="#i-chat"/></svg><h3>Ask Vara</h3>
-          <p>The PolyOS assistant. It opens apps and changes settings right on your PC, and answers everything else with the AI model you choose.</p></article>
+        <article class="feature"><svg class="ico"><use href="#i-chat"/></svg><h3>Vara, the AI agent</h3>
+          <p>Tell it what to build. Vara writes and runs code, makes 3D models, works with ROS 2 robots and Arduino boards, and asks before it changes anything.</p></article>
         <article class="feature"><svg class="ico"><use href="#i-disk"/></svg><h3>The PolyOS 7 installer</h3>
           <p>"Cryptic Software presents", the falling pinwheel and the 7, then install on a whole disk, next to Windows, or choose every drive yourself.</p></article>
       </div>
@@ -142,9 +144,12 @@
         <figure data-cat="desktop" data-full="screenshots/widgets.jpg"><img loading="lazy" src="screenshots/thumbs/widgets.jpg" alt="" width="720" height="450"><figcaption><b>Widgets</b><span>Weather, calendar, system, news, to-do, photos and more.</span></figcaption></figure>
         <figure data-cat="desktop" data-full="screenshots/quick-settings.jpg"><img loading="lazy" src="screenshots/thumbs/quick-settings.jpg" alt="" width="720" height="450"><figcaption><b>Quick settings</b><span>Wi-Fi, sound, brightness and battery, from the dock.</span></figcaption></figure>
         <figure data-cat="desktop" data-full="screenshots/desktop-menu.jpg"><img loading="lazy" src="screenshots/thumbs/desktop-menu.jpg" alt="" width="720" height="450"><figcaption><b>Desktop menu</b><span>Add apps to the desktop, taskbar settings, personalize and more.</span></figcaption></figure>
+        <figure data-cat="apps" data-full="screenshots/vara.jpg"><img loading="lazy" src="screenshots/thumbs/vara.jpg" alt="" width="720" height="450"><figcaption><b>Vara at work</b><span>Asked for a part with a hole, Vara loads its OpenSCAD skill, looks around and writes the model.</span></figcaption></figure>
+        <figure data-cat="apps" data-full="screenshots/vara-approval.jpg"><img loading="lazy" src="screenshots/thumbs/vara-approval.jpg" alt="" width="720" height="450"><figcaption><b>You stay in charge</b><span>Before Vara changes a file or runs a program, you see exactly what and choose Allow or Deny.</span></figcaption></figure>
         <figure data-cat="apps" data-full="screenshots/files.jpg"><img loading="lazy" src="screenshots/thumbs/files.jpg" alt="" width="720" height="450"><figcaption><b>Files</b><span>Your folders, drives and Trash.</span></figcaption></figure>
         <figure data-cat="apps" data-full="screenshots/task-manager.jpg"><img loading="lazy" src="screenshots/thumbs/task-manager.jpg" alt="" width="720" height="450"><figcaption><b>Task Manager</b><span>What's running, End task and Force close.</span></figcaption></figure>
         <figure data-cat="apps" data-full="screenshots/polymarket.jpg"><img loading="lazy" src="screenshots/thumbs/polymarket.jpg" alt="" width="720" height="450"><figcaption><b>PolyMarket</b><span>Trusted apps from Debian and Flathub, one click each.</span></figcaption></figure>
+        <figure data-cat="apps" data-full="screenshots/polymarket-making.jpg"><img loading="lazy" src="screenshots/thumbs/polymarket-making.jpg" alt="" width="720" height="450"><figcaption><b>3D and making</b><span>OpenSCAD, FreeCAD, KiCad, PrusaSlicer, Cura and the Arduino IDE.</span></figcaption></figure>
         <figure data-cat="apps" data-full="screenshots/driver-manager.jpg"><img loading="lazy" src="screenshots/thumbs/driver-manager.jpg" alt="" width="720" height="450"><figcaption><b>Driver Manager</b><span>The right graphics, Wi-Fi and firmware for your hardware.</span></figcaption></figure>
         <figure data-cat="settings" data-full="screenshots/settings-appearance.jpg"><img loading="lazy" src="screenshots/thumbs/settings-appearance.jpg" alt="" width="720" height="450"><figcaption><b>Appearance</b><span>Dark or light, accent color, desktop and lock screen wallpapers.</span></figcaption></figure>
         <figure data-cat="settings" data-full="screenshots/settings-taskbar.jpg"><img loading="lazy" src="screenshots/thumbs/settings-taskbar.jpg" alt="" width="720" height="450"><figcaption><b>Taskbar and Desktop</b><span>Floating or edge to edge, alignment, auto-hide, pinned apps.</span></figcaption></figure>
@@ -152,7 +157,9 @@
         <figure data-cat="settings" data-full="screenshots/settings-privacy.jpg"><img loading="lazy" src="screenshots/thumbs/settings-privacy.jpg" alt="" width="720" height="450"><figcaption><b>Privacy and Security</b><span>Security checkup, firewall, updates, camera and microphone access.</span></figcaption></figure>
         <figure data-cat="settings" data-full="screenshots/settings-gaming.jpg"><img loading="lazy" src="screenshots/thumbs/settings-gaming.jpg" alt="" width="720" height="450"><figcaption><b>Gaming</b><span>Game Mode, gaming apps and cloud gaming.</span></figcaption></figure>
         <figure data-cat="settings" data-full="screenshots/settings-developer.jpg"><img loading="lazy" src="screenshots/thumbs/settings-developer.jpg" alt="" width="720" height="450"><figcaption><b>Developer</b><span>Change PolyOS's own interface, and get coding tools.</span></figcaption></figure>
+        <figure data-cat="settings" data-full="screenshots/settings-vara.jpg"><img loading="lazy" src="screenshots/thumbs/settings-vara.jpg" alt="" width="720" height="450"><figcaption><b>Vara</b><span>Your AI provider, workspace folder, when Vara asks first, its skills and what it remembers.</span></figcaption></figure>
         <figure data-cat="settings" data-full="screenshots/settings-about.jpg"><img loading="lazy" src="screenshots/thumbs/settings-about.jpg" alt="" width="720" height="450"><figcaption><b>About PolyOS</b><span>Your computer, tools and credits.</span></figcaption></figure>
+        <figure data-cat="installer" data-full="screenshots/boot-menu.jpg"><img loading="lazy" src="screenshots/thumbs/boot-menu.jpg" alt="" width="720" height="450"><figcaption><b>Starting from USB</b><span>The PolyOS boot menu on the USB drive, on PCs and ARM64 computers alike.</span></figcaption></figure>
         <figure data-cat="installer" data-full="screenshots/installer-welcome.jpg"><img loading="lazy" src="screenshots/thumbs/installer-welcome.jpg" alt="" width="720" height="450"><figcaption><b>Welcome to PolyOS 7</b><span>The pinwheel and the 7, as in the Scratch setup.</span></figcaption></figure>
         <figure data-cat="installer" data-full="screenshots/installer-start.jpg"><img loading="lazy" src="screenshots/thumbs/installer-start.jpg" alt="" width="720" height="450"><figcaption><b>It's time to get started</b><span>Install, Dual boot next to Windows, or Custom.</span></figcaption></figure>
         <figure data-cat="installer" data-full="screenshots/installer-edition.jpg"><img loading="lazy" src="screenshots/thumbs/installer-edition.jpg" alt="" width="720" height="450"><figcaption><b>Pick an edition</b><span>Regular, Developer or Gaming.</span></figcaption></figure>
@@ -175,7 +182,7 @@
           <span class="badge"><svg class="ico"><use href="#i-star"/></svg></span>
           <h3>Regular</h3>
           <p>Everything most people need: the PolyOS desktop, Firefox, Files, Camera, widgets and PolyMarket.</p>
-          <ul><li>Crystal desktop and dock</li><li>43 trusted apps one click away</li><li>Firewall and security updates on</li></ul>
+          <ul><li>Crystal desktop and dock</li><li>49 trusted apps one click away</li><li>Firewall and security updates on</li></ul>
         </article>
         <article class="edition">
           <span class="badge"><svg class="ico"><use href="#i-code"/></svg></span>
@@ -190,6 +197,25 @@
           <ul><li>Steam, Bottles (Wine), Heroic, Lutris, ProtonUp-Qt</li><li>GeForce NOW, Xbox Cloud Gaming, Luna, Boosteroid</li><li>Game Mode: full speed, PolyOS steps back while you play</li></ul>
         </article>
       </div>
+    </section>
+
+    <!-- ---- Vara ------------------------------------------------------------------------- -->
+    <section class="section split" id="vara">
+      <div>
+        <p class="eyebrow">Vara</p>
+        <h2>An AI agent for code, 3D and robots</h2>
+        <p>Vara works like a coding agent that lives in your desktop. Tell it what you want; it plans, looks at your
+          files, uses the right tools, checks the result and tells you what it did.</p>
+        <dl class="modes">
+          <dt><svg class="ico"><use href="#i-code"/></svg> Code</dt><dd>Reads, writes and edits files, runs commands and tests, and uses git in your projects folder.</dd>
+          <dt><svg class="ico"><use href="#i-cube"/></svg> 3D models</dt><dd>Writes OpenSCAD and Blender scripts, renders STL files, checks their size and prepares them for printing.</dd>
+          <dt><svg class="ico"><use href="#i-robot"/></svg> Robots and boards</dt><dd>Inspects ROS 2 topics and nodes, builds packages, and compiles and uploads Arduino and ESP32 sketches.</dd>
+          <dt><svg class="ico"><use href="#i-sparkle"/></svg> Skills and memory</dt><dd>Follows step-by-step skills (add your own as Markdown) and remembers your board, printer and projects.</dd>
+          <dt><svg class="ico"><use href="#i-shield"/></svg> Asks first</dt><dd>Looking is free; changing files, running programs and moving hardware wait for your Allow. SSH keys and passwords are off limits.</dd>
+        </dl>
+        <p class="note">Works with Ollama Cloud, OpenAI or any OpenAI-compatible service, or fully offline with Ollama on your PC.</p>
+      </div>
+      <figure class="frame tilt"><img loading="lazy" src="screenshots/vara-approval.jpg" alt="Vara asking for approval before writing an OpenSCAD file" width="1440" height="900"></figure>
     </section>
 
     <!-- ---- installer + security ------------------------------------------------------- -->
@@ -258,7 +284,8 @@
               <svg class="ico"><use href="#i-download"/></svg>Download for ARM64</a>
           </div>
           <p class="dl-which"><b>Which one?</b> Almost every Windows PC and laptop: <b>PC (Intel/AMD)</b>.
-            Apple Silicon Macs (in UTM, Parallels or VMware Fusion) and other ARM64 virtual machines: <b>ARM64</b>.</p>
+            Apple Silicon Macs (in UTM, Parallels or VMware Fusion), other ARM64 virtual machines and ARM64
+            computers with UEFI firmware: <b>ARM64</b>.</p>
           <p class="dl-note" data-release-note>Always the newest release. Clicking a button starts the download and shows you how to install.</p>
           <p class="dl-links"><a href="download/checksums" data-release-sums>SHA256 checksums</a></p>
         </div>
@@ -298,6 +325,10 @@
           <p>Login and lock screens redrawn from the Scratch original, the crystal wallpapers, the Camera app, desktop shortcuts, and new Taskbar, Power and Privacy settings.</p></li>
         <li><time>Sep 25, 2026</time><h3>Editions, custom installs and security</h3>
           <p>Regular, Developer and Gaming editions, choosing drives and partitions while installing, firewall and security updates on by default, and speed tuning.</p></li>
+        <li><time>Sep 25, 2026</time><h3>Downloads for PCs and ARM64</h3>
+          <p>Download buttons right on this site, with an install guide, and a second ISO for ARM64 computers and Apple Silicon Macs.</p></li>
+        <li><time>Sep 25, 2026</time><h3>Vara becomes an agent</h3>
+          <p>Vara now builds things: code, OpenSCAD and Blender models, ROS 2 and Arduino, with skills, memory and your approval for every change. Plus real app icons everywhere, a PolyOS boot menu, and ARM64 USB drives that start on UEFI computers.</p></li>
       </ol>
     </section>
 
@@ -339,7 +370,9 @@
         <i>Flash from file</i> → the PolyOS ISO → your USB drive → <i>Flash</i>. On Windows,
         <a href="https://rufus.ie/" target="_blank" rel="noopener">Rufus</a> works too (choose <i>DD mode</i> when it asks).</li>
       <li><b>Start from the USB drive</b>Restart with the USB drive plugged in and open the boot menu, usually with
-        <kbd>F12</kbd>, <kbd>F11</kbd>, <kbd>F9</kbd> or <kbd>Esc</kbd> right after turning on. Pick the USB drive.</li>
+        <kbd>F12</kbd>, <kbd>F11</kbd>, <kbd>F9</kbd> or <kbd>Esc</kbd> right after turning on. Pick the USB drive.
+        ARM64 computers start it the same way when their firmware is UEFI (on a Raspberry Pi 4, install the
+        community UEFI firmware first).</li>
       <li><b>Try it, then install</b>PolyOS starts from the USB drive without changing anything. When you're ready, click
         <i>Install PolyOS 7</i>: a whole disk, next to Windows (Dual boot), or Custom.</li>
     </ol>

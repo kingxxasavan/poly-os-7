@@ -7,7 +7,7 @@ import { fill, h, icon } from '../ui.js';
 
 const CATEGORY_ICONS = {
   featured: 'sparkle', browsers: 'globe', social: 'chat', media: 'music', games: 'game',
-  productivity: 'briefcase', creativity: 'brush', developer: 'code', utilities: 'tool', installed: 'check',
+  productivity: 'briefcase', creativity: 'brush', making: 'cube', developer: 'code', utilities: 'tool', installed: 'check',
 };
 
 export function mount(root, store) {

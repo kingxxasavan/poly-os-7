@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import __version__, installer, paths, store
 from .backend import DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT, Backend
-from .core import ApiError, EventBus, Settings, letter_icon
+from .core import ApiError, EventBus, Settings, bundled_icon, icon_names, letter_icon
 from .files import P
 from .privileged import NeedPassword
 
@@ -45,6 +45,11 @@ _APPS = [
     ("steam.desktop", "Steam", "Application for managing and playing games", "Game"),
 ]
 
+# the Icon= names these apps' .desktop files use, so the preview shows the same icons as a real system
+_ICONS = {"firefox-esr.desktop": "firefox-esr", "thunar.desktop": "org.xfce.thunar",
+          "xfce4-terminal.desktop": "org.xfce.terminal", "pavucontrol.desktop": "multimedia-volume-control",
+          "nm-connection-editor.desktop": "preferences-system-network", "code.desktop": "com.visualstudio.code",
+          "arandr.desktop": "preferences-desktop-display", "xfce4-screenshooter.desktop": "org.xfce.screenshooter"}
 
 class MockBackend(Backend):
     dev = True
@@ -217,7 +222,8 @@ class MockBackend(Backend):
         if app_id.startswith("polyos-cloud-"):
             return (paths.UI_DIR / "img" / "cloud-gaming.svg").read_bytes(), "image/svg+xml"
         name = next((a["name"] for a in self._apps if a["id"] == app_id), app_id)
-        return letter_icon(name), "image/svg+xml"
+        icon = bundled_icon([_ICONS.get(app_id, ""), *icon_names(app_id, name)])
+        return (icon, "image/svg+xml") if icon else (letter_icon(name), "image/svg+xml")
 
     def window_icon(self, xid):
         return letter_icon("?"), "image/svg+xml"

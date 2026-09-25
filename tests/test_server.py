@@ -293,5 +293,71 @@ class DebTests(unittest.TestCase):
                         self.assertTrue(all(tar.getmember(n).uid == 0 for n in names))
 
 
+class BootMediaTests(unittest.TestCase):
+    """The USB stick: ARM64's EFI partition check and the boot menu branding hook."""
+
+    @staticmethod
+    def mbr(*partitions: tuple[int, int, int]) -> bytes:
+        raw = bytearray(512)
+        for n, (kind, start, size) in enumerate(partitions):
+            entry = 446 + 16 * n
+            raw[entry + 4] = kind
+            raw[entry + 8:entry + 12] = start.to_bytes(4, "little")
+            raw[entry + 12:entry + 16] = size.to_bytes(4, "little")
+        raw[510:512] = b"\x55\xaa"
+        return bytes(raw)
+
+    def test_efi_partition(self):
+        import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / "polyos.iso"
+            cases = {
+                self.mbr((0x83, 0, 3401216), (0xEF, 3401216, 9984)): 2,  # the hybrid ARM64 image
+                self.mbr((0x00, 0, 0), (0x83, 64, 100)): None,
+                self.mbr((0xEF, 0, 0)): None,  # empty slot
+                bytes(2048): None,  # a CD-only ISO: no MBR signature
+                b"short": None,
+            }
+            for raw, expected in cases.items():
+                image.write_bytes(raw)
+                self.assertEqual(main.efi_partition(image), expected)
+
+    def test_boot_menu_hook(self):
+        import shutil
+        import subprocess
+
+        hook = Path(__file__).resolve().parents[1] / "iso/config/hooks/live/0600-polyos-bootmenu.hook.binary"
+        if not shutil.which("sh"):
+            self.skipTest("needs a POSIX shell")
+        with tempfile.TemporaryDirectory() as tmp:
+            iso = Path(tmp)
+            grub = iso / "boot/grub"
+            (grub / "live-theme").mkdir(parents=True)
+            (iso / "isolinux").mkdir()
+            (grub / "grub.cfg").write_text('menuentry "Live system (arm64)" --hotkey=l {\n}\n'
+                                           'menuentry "Live system (arm64 fail-safe mode)" {\n}\n')
+            (grub / "config.cfg").write_text("set default=0\n")
+            (grub / "live-theme/theme.txt").write_text('+ boot_menu {\n        left = 10%\n        width = 80%\n'
+                                                       '        item_color = "#a8a8a8"\n}\n')
+            (grub / "splash.png").write_bytes(b"debian")
+            (grub / "polyos-splash.png").write_bytes(b"polyos")
+            (iso / "isolinux/live.cfg").write_text("label live-amd64\n\tmenu label ^Live system (amd64)\n")
+            (iso / "isolinux/splash800x600.png").write_bytes(b"debian")
+            subprocess.run(["sh", str(hook)], cwd=iso, check=True)
+            menu = (grub / "grub.cfg").read_text()
+            self.assertIn('menuentry "Start PolyOS 7" --hotkey=l', menu)
+            self.assertIn('menuentry "Start PolyOS 7 (safe mode)"', menu)
+            self.assertNotIn("Live system", menu)
+            self.assertIn("menu label ^Start PolyOS 7", (iso / "isolinux/live.cfg").read_text())
+            self.assertIn("set timeout=5", (grub / "config.cfg").read_text())
+            theme = (grub / "live-theme/theme.txt").read_text()
+            self.assertIn("left = 28%", theme)
+            self.assertIn('item_color = "#c9c2ea"', theme)
+            self.assertEqual((grub / "splash.png").read_bytes(), b"polyos")
+            self.assertEqual((iso / "isolinux/splash800x600.png").read_bytes(), b"polyos")
+            self.assertFalse((grub / "polyos-splash.png").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

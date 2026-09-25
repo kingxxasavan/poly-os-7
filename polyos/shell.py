@@ -38,7 +38,7 @@ from gi.repository import Gdk, GdkPixbuf, GdkX11, Gio, GLib, Gtk, WebKit2, Wnck 
 from . import __version__, paths, power, system, theme  # noqa: E402
 from .backend import (CAMERA_APP, DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT,  # noqa: E402
                       Backend, dock_geometry, panel_margin)
-from .core import IMAGE_TYPES, ApiError, EventBus, Settings, letter_icon  # noqa: E402
+from .core import IMAGE_TYPES, ApiError, EventBus, Settings, bundled_icon, icon_names, letter_icon  # noqa: E402
 from .mainloop import on_main  # noqa: E402
 from .procs import ProcessMonitor, protected_pids  # noqa: E402
 from .server import Server  # noqa: E402
@@ -78,6 +78,7 @@ class DesktopShell(Backend):
         self._infos: dict[str, Gio.DesktopAppInfo] = {}
         self._apps: list[dict] = []
         self._app_icons: dict[str, str | None] = {}
+        self._app_icon_names: dict[str, list[str]] = {}
         self._icon_cache: dict[str, tuple[bytes, str]] = {}
         self._wm_index: dict[str, str] = {}
         self._system: dict = {}
@@ -424,7 +425,7 @@ class DesktopShell(Backend):
     # ==== apps =============================================================================
     def _load_apps(self) -> None:
         theme = Gtk.IconTheme.get_default()
-        infos, apps, icons = {}, [], {}
+        infos, apps, icons, themed_names = {}, [], {}, {}
         for info in Gio.AppInfo.get_all():
             if not isinstance(info, Gio.DesktopAppInfo) or not info.should_show():
                 continue
@@ -444,6 +445,8 @@ class DesktopShell(Backend):
                 "icon": f"/icon/app/{quote(app_id)}",
             })
             icons[app_id] = self._resolve_icon(theme, info.get_icon())
+            if icons[app_id] is None and isinstance(info.get_icon(), Gio.ThemedIcon):
+                themed_names[app_id] = list(info.get_icon().get_names())  # tried against PolyOS's own set
         apps.sort(key=lambda a: a["name"].casefold())
 
         index: dict[str, str] = {}
@@ -461,6 +464,7 @@ class DesktopShell(Backend):
                     if key:
                         index.setdefault(key.lower(), app_id)
         self._infos, self._apps, self._app_icons, self._wm_index = infos, apps, icons, index
+        self._app_icon_names = themed_names
         self._icon_cache.clear()
 
     def _schedule_apps_reload(self) -> None:
@@ -513,7 +517,9 @@ class DesktopShell(Backend):
                 log.debug("icon %s unreadable: %s", path, exc)
         if result is None:
             app = next((a for a in self._apps if a["id"] == app_id), None)
-            result = (letter_icon(app["name"] if app else app_id), "image/svg+xml")
+            names = [*self._app_icon_names.get(app_id, []), *icon_names(app_id, app["name"] if app else "")]
+            icon = bundled_icon(names)
+            result = (icon or letter_icon(app["name"] if app else app_id), "image/svg+xml")
         self._icon_cache[app_id] = result
         return result
 
@@ -1036,7 +1042,9 @@ class DesktopShell(Backend):
                     (on_main(self._png_from_file, path), "image/png")
             except (OSError, GLib.Error):
                 result = None
-        result = result or (letter_icon(names[0].split(".")[-1] if names else "?"), "image/svg+xml")
+        if result is None:
+            icon = bundled_icon(names)
+            result = (icon, "image/svg+xml") if icon else (letter_icon(names[0].split(".")[-1] if names else "?"), "image/svg+xml")
         self._icon_cache["theme:" + name] = result
         return result
 

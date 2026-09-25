@@ -4,7 +4,7 @@
 import { withAdmin } from '../admin.js';
 import { api, launch, on, params, power, saveSettings, withToken } from '../api.js';
 import { errorText, group, packPanel, row, slider, toggle, wifiPanel } from '../components.js';
-import { formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
+import { fill, formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
 
 const PAGES = [
   ['appearance', 'Appearance', 'palette'],
@@ -624,8 +624,68 @@ const pages = {
         errorText(err, e.message);
       }
     });
+    // ---- the agent: workspace, approvals, tools, skills, memory ----
+    const agentNote = h('p.prose.small', { hidden: true });
+    const workspace = h('input.input', { placeholder: '~/Projects', spellcheck: 'false', 'aria-label': 'Workspace folder' });
+    const saveAgent = async (patch) => {
+      errorText(err, '');
+      try {
+        const c = await api.post('/api/vara/config', patch);
+        approval.set(c.approval);
+        workspace.value = c.workspace;
+        agentNote.textContent = c.approval === 'auto'
+          ? 'Vara now changes files and runs programs without asking. Use this only on a computer you can set up again.' : '';
+        agentNote.hidden = !agentNote.textContent;
+      } catch (e) {
+        errorText(err, e.message);
+      }
+    };
+    const approval = seg('When Vara asks first', [
+      ['ask', 'Always'], ['workspace', 'Only outside the workspace'], ['auto', 'Never']], (v) => saveAgent({ approval: v }));
+    workspace.addEventListener('change', () => saveAgent({ workspace: workspace.value }));
+    const agentGroup = group('Agent',
+      row('Workspace', 'Where Vara puts new projects and runs commands', h('div.slider-wrap.wide', workspace)),
+      row('Ask before changes', 'Looking never needs a yes. Running programs always does, unless you choose Never', approval),
+      agentNote);
+    const toolsBody = h('div');
+    const toolsGroup = group('Tools', toolsBody);
+    const skillsBody = h('div');
+    const skillsGroup = group('Skills', skillsBody);
+    const memoryBody = h('div');
+    const memoryGroup = group('Memory', memoryBody);
+
+    function showMemory(notes) {
+      fill(memoryBody,
+        notes.length
+          ? notes.map((n, i) => row(n.note, `Saved ${n.added || ''}`.trim(), h('button.btn', {
+            onclick: () => api.post('/api/vara/forget', { index: i }).then((r) => showMemory(r.memory), (e) => errorText(err, e.message)),
+          }, 'Forget')))
+          : h('p.prose', 'Nothing yet. Vara saves short notes when it learns something lasting, like your board, your printer or where your projects are.'),
+        notes.length ? h('div.btn-row', h('button.btn', {
+          onclick: () => api.post('/api/vara/forget', {}).then((r) => showMemory(r.memory), (e) => errorText(err, e.message)),
+        }, 'Forget everything')) : null);
+    }
+
+    function loadAgent() {
+      api.get('/api/vara/config').then((c) => { workspace.value = c.workspace; approval.set(c.approval); }, () => {});
+      api.get('/api/vara/tools').then((t) => {
+        const { installed, missing } = t.programs;
+        fill(toolsBody,
+          h('p.prose', 'Vara reads and writes files, runs commands and git, measures 3D models and reads web pages',
+            installed.length ? `, and uses ${installed.join(', ')} on this computer.` : '.'),
+          missing.length ? row('Not installed', missing.join(', '), h('button.btn', {
+            onclick: () => api.post('/api/open', { app: 'store' }).catch((e) => errorText(err, e.message)),
+          }, 'Open PolyMarket')) : null);
+        fill(skillsBody,
+          t.skills.map((sk) => row(sk.own ? `${sk.name} (yours)` : sk.name, sk.description, null)),
+          h('p.prose.small', 'Skills are step-by-step know-how Vara reads before a task. Add your own as Markdown files in ',
+            h('code', t.skillsFolder.replace(/^\/home\/[^/]+/, '~')), ', or ask Vara to save one after it works something out.'));
+        showMemory(t.memory);
+      }, (e) => errorText(err, e.message));
+    }
+
     page.append(
-      pageHead('Vara', 'Your PolyOS assistant, powered by the AI model you choose.'),
+      pageHead('Vara', 'Your PolyOS agent for code, 3D models and robots, powered by the AI model you choose.'),
       err,
       group('Quick setup', row('Provider', 'Fills in the address and a model; add your key for cloud services', presets)),
       group('Connection',
@@ -633,12 +693,19 @@ const pages = {
         row('Model', null, h('div.slider-wrap.wide', model)),
         row('API key', 'Stored only on this computer, readable only by you', h('div.slider-wrap.wide', key))),
       h('div.btn-row', saveBtn, testBtn, note),
+      agentGroup,
+      toolsGroup,
+      skillsGroup,
+      memoryGroup,
       group('Privacy', h('p.prose',
-        'Simple requests like “open Firefox” or “volume 40” are handled on this computer. Other messages ',
-        'go to the endpoint above; with a cloud provider they leave this computer, so don’t share passwords with Vara. ',
-        'To keep everything on this computer instead, install Ollama (ollama.com), pull a model such as llama3.2 and choose “Ollama on this PC”.')),
+        'Simple requests like “open Firefox” or “volume 40” are handled on this computer. Other messages, and what Vara ',
+        'reads while working (files, command output), go to the endpoint above; with a cloud provider they leave this computer, ',
+        'so don’t share passwords with Vara. Vara never opens SSH keys, saved passwords, browser data or its own API key. ',
+        'To keep everything on this computer instead, install Ollama (ollama.com), pull a model that can use tools (such as ',
+        'qwen3 or llama3.1) and choose “Ollama on this PC”.')),
     );
     load();
+    loadAgent();
     return null;
   },
 

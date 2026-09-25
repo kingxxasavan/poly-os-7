@@ -288,6 +288,30 @@ class EventBus:
                 self.unsubscribe(q)
 
 
+def bundled_icon(names) -> bytes | None:
+    """A real app icon from PolyOS's own set (ui/img/apps, from Papirus) for the first name it has.
+
+    Installed apps normally get their icon from the icon theme; this covers the dev preview,
+    PolyMarket apps that aren't installed yet and apps whose icon the theme lacks.
+    """
+    from . import paths
+
+    folder = paths.UI_DIR / "img" / "apps"
+    for name in names:
+        if name and re.fullmatch(r"[\w.+-]+", name) and not name.startswith("."):
+            path = folder / f"{name}.svg"
+            if path.is_file():
+                return path.read_bytes()
+    return None
+
+
+def icon_names(app_id: str, name: str = "") -> list[str]:
+    """Icon names worth trying for an app with no icon of its own: its desktop id, then its name."""
+    stem = app_id.removesuffix(".desktop")
+    words = name.lower().split()
+    return [stem, stem.split(".")[-1], stem.lower(), "-".join(words), words[0] if words else ""]
+
+
 def letter_icon(name: str) -> bytes:
     """Fallback app icon: a colored tile with the app's initial."""
     hue = zlib.crc32(name.encode()) % 360

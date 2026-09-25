@@ -30,7 +30,7 @@ LightDM + polyos-greeter                  PolyOS login and lock screen (WebKit)
                  ├─ files.py             Files app: filesystem and freedesktop Trash
                  ├─ procs.py             Task Manager: processes and performance from /proc
                  ├─ drivers.py, store.py Driver Manager and PolyMarket catalogs
-                 └─ vara.py              Ask Vara: local actions + OpenAI-compatible models
+                 └─ vara*.py             Vara: local actions, the agent loop, tools, skills, memory
 polyos-ctl                               CLI used by keybindings and scripts
 polyos-admin (root, via sudo)            installer engine (installer.py), apt and Flathub installs
 ```
@@ -106,12 +106,71 @@ this step.
 | **PolyMarket** | Curated store: Chrome, Discord, Spotify, Steam, VS Code, LibreOffice, GIMP, OBS and more from Debian and Flathub |
 | **Settings** | Appearance (dark/light, accent, desktop and lock screen wallpapers), Gaming, Developer (with developer mode on), Taskbar & Desktop (floating or edge-to-edge taskbar, center/left, auto-hide, widgets button, date, pinned apps, desktop shortcuts), Wi-Fi, Sound, Display, Power & Performance (Power saver / Balanced / Performance / Maximum, screen-off and sleep timers), Account (password, recovery key, sign-in options), Privacy & Security (lock on sleep, lock screen news, camera and microphone access, activity history), Vara, About |
 | **Camera** | Photos and videos from the webcam (self-timer, mirror, switch camera), saved to Pictures › Camera. Only listed on computers with a camera |
-| **Ask Vara** | Assistant: runs simple requests on the PC ("open firefox", "volume 40", "turn wifi off") and answers the rest with an AI model; uses your Ollama Cloud (or other) API key |
+| **Vara** | AI agent for code, 3D and robots (see [Vara, the agent](#vara-the-agent)); simple requests ("open firefox", "volume 40", "turn wifi off") run right on the PC |
 | **Login screen** | PolyOS 7 design over the blurred amethyst crystal: big stacked clock, date, *Performance: Optimal*, news and notification tiles, *Click to Enter Password*, then your name, "Enter your password", *Forgot Password* and *Next*. Falls back to the stock greeter if it can't start |
 | **Lock screen** | Same design; appears instantly (Win+L, the power menu, before sleep, when the screen turns off); unlocks with your password |
 | **Forgot password** | The installer shows a recovery key once; with it you set a new password from the login or lock screen. Settings > Account makes a new key or changes your password |
 | **Widgets** | Win+W or the weather button in the dock: weather (Open-Meteo), calendar, system, BBC news, to-do, notes, photos, world clocks, media controls |
 | **Boot splash** | Spinning pinwheel (Plymouth) |
+| **USB boot menu** | PolyOS background, *Start PolyOS 7* and *Start PolyOS 7 (safe mode)*, starts by itself after 5 seconds |
+| **App icons** | Real icons from the Papirus theme for installed apps, PolyMarket and the dev preview |
+
+## Vara, the agent
+
+Vara is an AI agent built into the desktop, in the spirit of coding agents like OpenClaw and Hermes Agent
+but aimed at making things: software, 3D models and prints, electronics and robots. Open it from the Home
+Menu (Ask Vara) or with `Super+V`, and describe what you want.
+
+It works in a loop: the model reasons about the request, calls a tool, reads the result, and carries on
+until the job is done, then sums up. Each step shows in the chat as a card you can expand.
+
+| Tool | What it does | Needs your OK |
+|---|---|---|
+| `list_files`, `read_file`, `search_files` | Look through folders and files | No |
+| `write_file`, `edit_file` | Create and change files | Yes |
+| `run_command` | Run a bash command (builds, tests, pip, npm, colcon) | Yes |
+| `git` | status/diff/log look; commit, push and the rest change things | Only to change |
+| `openscad` | Render OpenSCAD code to STL/3MF/PNG, report the model size | Yes (writes a file) |
+| `blender` | Run a bpy script in Blender without its window (model, import/export, render) | Yes |
+| `model_info` | Size and triangle count of an STL/OBJ | No |
+| `ros2` | ROS 2 CLI: topics, nodes, params look; run, launch, pub, service calls move robots | Only to act |
+| `arduino` | arduino-cli: board list looks; compile writes; upload and installs act | Compile and act |
+| `open`, `list_windows` | Open apps, files or VS Code; see what's on screen | No |
+| `fetch_url` | Read docs and datasheets from the web | No |
+| `remember`, `load_skill`, `save_skill` | Memory and skills | Only to save a skill |
+
+Tools for programs that aren't installed are left out; Vara says which PolyMarket app provides them
+(Blender, OpenSCAD, FreeCAD, KiCad, PrusaSlicer, Cura and the Arduino IDE are there).
+
+**Approvals.** Settings > Vara > *Ask before changes*: **Always** (default), **Only outside the
+workspace** (edits inside `~/Projects` need no OK; commands still do) or **Never**. The approval card
+shows the exact command, script or file content, with *Allow*, *Always in this chat* and *Deny*; if the
+chat is closed when Vara needs an answer, it opens. *Stop* ends a request at once, including a running
+command. Vara runs as you, never as root, and never opens SSH/GPG keys, saved passwords, browser
+profiles or its own API key.
+
+**Context.** Every request carries what Vara needs to reason about this computer: PolyOS version,
+architecture, the open windows, the workspace folder, which development tools are installed, its
+skills and its memory.
+
+**Skills** are Markdown how-tos Vara loads when a task needs one. PolyOS ships `blender`, `openscad`,
+`3d-printing`, `freecad`, `ros2`, `arduino`, `python-project` and `git` (`data/vara/skills/`). Add
+your own as `~/.config/polyos/vara/skills/<name>/SKILL.md` (or `<name>.md`):
+
+```markdown
+---
+name: my-printer
+description: Slice for my Ender 3 with my usual settings
+---
+1. Use `prusa-slicer --load ~/printers/ender3.ini ...`
+```
+
+Vara can also save a skill itself after working something out, with your OK. **Memory** holds short
+lasting notes (your board, printer, where projects live); Settings > Vara lists them and forgets them.
+
+**Models.** Any OpenAI-compatible API with tool calling: Ollama Cloud (`gpt-oss:120b`, the default),
+OpenAI, or Ollama on the PC with a tool-capable model (`qwen3`, `llama3.1`, `gpt-oss:20b`) to keep
+everything offline. Models without tool calling still chat.
 
 ## Build the live USB / installer ISO
 
@@ -209,7 +268,11 @@ Touchpads: tap to click, two-finger tap to right-click, natural scrolling (like 
 | `/var/log/polyos-installer.log` | Installer log (copied to the installed system) |
 | `ui/` | The interface: `js/surfaces/` (desktop, panel, popup, settings), `js/views/` (Home Menu, launcher, Run CMD, Power Options, quick settings, calendar, task menu), `css/polyos.css` |
 | `data/` | Openbox config and theme, picom, GTK defaults, LightDM greeter, session file, wallpapers, entry-point scripts |
-| `iso/config/` | live-build additions: package list, GRUB branding |
+| `iso/config/` | live-build additions: package list, GRUB branding, the USB boot menu hook |
+| `data/vara/skills/` | Vara's built-in skills |
+| `~/.config/polyos/vara.json` | Vara's provider, API key (mode 600), workspace and approval setting |
+| `~/.config/polyos/vara/` | Your skills (`skills/`) and Vara's memory (`memory.json`) |
+| `ui/img/apps/` | Papirus app icons (GPL-3.0) for apps whose icon the theme lacks |
 | `~/.config/polyos/settings.json` | Per-user settings (the Settings app writes this) |
 | `~/.config/polyos/openbox/rc.xml`, `~/.config/polyos/picom.conf` | Optional per-user overrides |
 | `~/.local/state/polyos/*.log` | Session, shell and helper logs |
@@ -219,8 +282,14 @@ closing apps.
 
 ## Current limits
 
-- ARM64: boots as a CD/ISO in virtual machines. It isn't a hybrid image yet, so writing it to a USB
-  stick for real ARM hardware (which also needs UEFI firmware) isn't supported. Apps built only
+- Vara's tools run commands without a terminal, so interactive programs (editors, `sudo` password
+  prompts, `ros2 run` of a node that runs forever) stop at the time limit; Vara suggests running those
+  in a Terminal. ROS 2 isn't packaged for Debian: Vara uses it when it's installed (RoboStack, a
+  container or a source build). How well Vara plans depends on the model; small local models make
+  more mistakes.
+- ARM64: starts in virtual machines and from a USB stick on computers with UEFI firmware (boards
+  with only U-Boot or a vendor bootloader can't start it; a Raspberry Pi 4 needs the community UEFI
+  firmware). Apps built only
   for Intel/AMD PCs (Steam, Discord, Spotify, Chrome and a few more) aren't offered there; cloud
   gaming works in the browser instead.
 - Custom installs use existing partitions or whole drives; they don't create or resize single

@@ -15,9 +15,10 @@ into a real desktop that installs and boots on a PC, on top of Debian.
 | **Desktop and dock** | Crystal wallpaper, app shortcuts, the capsule dock, a right-click menu; the taskbar can float, stretch edge to edge, align left or hide |
 | **Home Menu and launcher** | Calendar, Ask Vara, Run CMD, sliders, pinned and recent apps; a full-screen app grid with search |
 | **Widgets** | Weather, calendar, system, news, to-do, notes, photos, world clocks, media |
-| **Apps** | Files, Task Manager, Driver Manager, PolyMarket (43 apps from Debian and Flathub), Camera, Ask Vara |
+| **Apps** | Files, Task Manager, Driver Manager, PolyMarket (49 apps from Debian and Flathub, with real icons), Camera |
+| **Vara, the AI agent** | Writes and runs code, makes OpenSCAD and Blender models, works with ROS 2 and Arduino; skills, memory, and your approval before any change |
 | **Settings** | Appearance, Taskbar & Desktop, Wi-Fi, Sound, Display, Power & Performance, Account, Privacy & Security, Gaming, Developer, Vara, About |
-| **Installer** | The PolyOS 7 setup: whole disk, dual boot next to Windows, or Custom (choose every drive and partition) |
+| **Installer** | The PolyOS 7 setup: whole disk, dual boot next to Windows, or Custom (choose every drive and partition); a PolyOS boot menu on the USB drive (PCs and ARM64) |
 | **Editions** | Regular, Developer (change PolyOS's own interface) and Gaming (Steam, Wine, Heroic, Lutris, cloud gaming, Game Mode) |
 | **Security and speed** | Firewall and security updates on by default, a security checkup, lock screen guessing protection; zram, SSD trim, faster startup |
 
@@ -51,6 +52,14 @@ no changes here.
 |---|---|---|
 | ![](screenshots/thumbs/settings-gaming.jpg) | ![](screenshots/thumbs/settings-developer.jpg) | ![](screenshots/thumbs/driver-manager.jpg) |
 
+| Vara at work | Vara asks first | Settings: Vara |
+|---|---|---|
+| ![](screenshots/thumbs/vara.jpg) | ![](screenshots/thumbs/vara-approval.jpg) | ![](screenshots/thumbs/settings-vara.jpg) |
+
+| USB boot menu | PolyMarket: 3D & Making | App launcher |
+|---|---|---|
+| ![](screenshots/thumbs/boot-menu.jpg) | ![](screenshots/thumbs/polymarket-making.jpg) | ![](screenshots/thumbs/launcher.jpg) |
+
 | Installer: start | Installer: editions | Installer: custom drives |
 |---|---|---|
 | ![](screenshots/thumbs/installer-start.jpg) | ![](screenshots/thumbs/installer-edition.jpg) | ![](screenshots/thumbs/installer-custom.jpg) |
@@ -68,6 +77,8 @@ All screenshots are full size in [`screenshots/`](screenshots/) (1440×900) with
 | Sep 24, 2026 | Instant lock screen, password recovery keys, widgets board |
 | Sep 25, 2026 | PolyOS 7 login and lock screens, crystal wallpapers, Camera, desktop shortcuts, new Settings pages |
 | Sep 25, 2026 | Custom installs, Regular / Developer / Gaming editions, security and speed defaults |
+| Sep 25, 2026 | Download buttons on the website with an install guide; an ARM64 ISO |
+| Sep 25, 2026 | Vara becomes an agent for code, 3D and robots; real app icons; PolyOS USB boot menu; ARM64 USB drives start on UEFI computers |
 
 ## Put the website online
 

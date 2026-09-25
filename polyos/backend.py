@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from . import __version__, devmode, drivers, gaming, paths, security, store
-from .core import DEFAULTS, IMAGE_TYPES, ApiError, EventBus, Settings, letter_icon
+from .core import DEFAULTS, IMAGE_TYPES, ApiError, EventBus, Settings, bundled_icon, letter_icon, log
 from .files import FileSystem
 from .privileged import Jobs
 from .vara import Vara, complete
@@ -32,7 +32,7 @@ POPUP_SIZES = {
     "launcher": (0, 0),
     "power": (0, 0),
     "run": (460, 188),
-    "vara": (440, 600),
+    "vara": (480, 680),
     "quick": (360, 326),  # the Wi-Fi list asks for more height via the "height" field
     "calendar": (320, 390),
     "taskmenu": (240, 200),
@@ -102,7 +102,8 @@ class Backend:
         self.settings = settings
         self.bus = bus
         self.files = FileSystem(home or Path.home())
-        self.vara = Vara(settings.path.parent / "vara.json")  # ~/.config/polyos/vara.json
+        self.vara = Vara(settings.path.parent / "vara.json", bus, self.files.home)  # ~/.config/polyos/vara.json
+        self.vara.on_attention = self._vara_attention
         self.jobs = Jobs(bus)
         self._driver_packages: set[str] = set()
         self.widgets = Widgets(settings.path.parent / "widgets.json", self.files.home)
@@ -143,8 +144,11 @@ class Backend:
     def greeter_login(self, user: str, password: str, session: str | None): raise ApiError("only available on the login screen", 404)
     def greeter_power(self, action: str): raise ApiError("only available on the login screen", 404)
     def theme_icon(self, name: str) -> tuple[bytes, str]:
-        first = name.split(",")[0]
-        return letter_icon(first.split(".")[-1] or "?"), "image/svg+xml"
+        names = [n for n in name.split(",") if n][:6]
+        icon = bundled_icon(names)
+        if icon:
+            return icon, "image/svg+xml"
+        return letter_icon((names[0] if names else "?").split(".")[-1] or "?"), "image/svg+xml"
 
     def lock(self): raise ApiError("locking isn't available here", 404)
     def lock_unlock(self, password: str): raise ApiError("locking isn't available here", 404)
@@ -490,6 +494,16 @@ class Backend:
         data = self.widgets.update(patch)
         self.bus.publish("widgets", keys=sorted(patch))
         return data
+
+    def _vara_attention(self) -> None:
+        """Vara is waiting for an Allow or Deny: bring its chat back if no popup is open."""
+        with self._popup_lock:
+            busy_elsewhere = self._popup is not None
+        if not busy_elsewhere:
+            try:
+                self.popup_request("vara")
+            except Exception:  # noqa: BLE001 - the chat still shows the request when opened
+                log.debug("couldn't open Vara for an approval", exc_info=True)
 
     def vara_test(self) -> dict:
         reply = complete(self.vara.config.load(), [{"role": "user", "content": "Reply with just the word: ready"}], timeout=60)

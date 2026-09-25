@@ -40,4 +40,7 @@ wallpaper packs). If it doesn't, delete the two files: PolyOS falls back to its 
 
 - **Poppins** font (`ui/fonts/*.ttf`): The Poppins Project Authors, SIL Open Font License 1.1 (`ui/fonts/OFL.txt`).
 - App icons in PolyMarket come from the installed icon theme (Papirus) or the apps themselves.
+- `ui/img/apps/*.svg`: app icons from the [Papirus icon theme](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)
+  by the Papirus Development Team, GNU GPL v3; used when the installed theme has no icon for an app
+  and in the dev preview.
 - Code: GNU GPL v3 or later (`LICENSE`).
