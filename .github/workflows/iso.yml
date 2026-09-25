@@ -1,7 +1,8 @@
 # Builds the PolyOS live ISO on GitHub's servers (Debian inside a privileged container).
-# Run it from the Actions tab ("Run workflow") for a test build (a 14-day download on the run),
-# or push a tag like v0.5.0 to publish it as a GitHub Release: the website's Download button
-# always offers the newest release.
+# Run it from the Actions tab ("Run workflow"). Tick "Publish as a GitHub Release" to publish
+# the ISO as release v<version> (from polyos/__init__.py); otherwise it's a test build with a
+# 14-day download on the run. Pushing a tag like v0.6.0 also publishes a release. The website's
+# Download button always offers the newest release.
 name: Build PolyOS ISO
 
 on:
@@ -12,6 +13,10 @@ on:
         type: choice
         options: [trixie, bookworm]
         default: trixie
+      release:
+        description: Publish as a GitHub Release (the website's Download button offers it)
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -26,6 +31,14 @@ jobs:
       DIST: ${{ inputs.dist || 'trixie' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Release or test build?
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"; echo "PUBLISH=yes" >> "$GITHUB_ENV"
+          elif [ "${{ inputs.release }}" = "true" ]; then
+            echo "TAG=v$(python3 -c 'import polyos; print(polyos.__version__)')" >> "$GITHUB_ENV"; echo "PUBLISH=yes" >> "$GITHUB_ENV"
+          fi
 
       - name: Checks and tests
         run: python3 main.py check && python3 main.py test
@@ -46,7 +59,7 @@ jobs:
           ls -lh dist/
 
       - name: Upload the ISO (test builds; tagged builds become a release below)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: env.PUBLISH != 'yes'
         uses: actions/upload-artifact@v4
         with:
           name: polyos-${{ env.DIST }}-amd64-iso
@@ -55,7 +68,7 @@ jobs:
           retention-days: 14
 
       - name: Checksums (and parts, if the ISO is over GitHub's 2 GB per-file limit)
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.PUBLISH == 'yes'
         run: |
           cd dist
           sudo chown "$(id -u):$(id -g)" . ./*.iso
@@ -70,16 +83,18 @@ jobs:
           ls -lh
 
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: env.PUBLISH == 'yes'
         uses: softprops/action-gh-release@v2
         with:
-          name: PolyOS ${{ github.ref_name }}
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: PolyOS ${{ env.TAG }}
           files: |
             dist/*.iso
             dist/*.iso.part*
             dist/SHA256SUMS
           body: |
-            **PolyOS 7 for Debian ${{ github.ref_name }}** (Debian ${{ env.DIST }}, 64-bit PC)
+            **PolyOS 7 for Debian ${{ env.TAG }}** (Debian ${{ env.DIST }}, 64-bit PC)
 
             1. Download the `.iso` below${{ env.PARTS && ' (in parts: join them with `cat polyos-*.part* > polyos.iso` on Linux/macOS, or `copy /b part0+part1 polyos.iso` on Windows)' || '' }}.
             2. Write it to a USB drive (8 GB or more) with balenaEtcher, or Rufus in DD mode.

@@ -118,10 +118,11 @@ this step.
 **Just want the ISO?** Download the newest release from the website's Download button or from
 [GitHub Releases](https://github.com/kingxxasavan/poly-os-7/releases/latest).
 
-**Publishing a new release:** bump `__version__` in `polyos/__init__.py`, then push a tag with the
-same version (`git tag v0.6.0 && git push origin v0.6.0`). GitHub Actions builds the ISO, and
-publishes it with a `SHA256SUMS` file as a release (split into parts if it's ever over
-GitHub's 2 GB file limit). The website offers it automatically.
+**Publishing a new release:** bump `__version__` in `polyos/__init__.py` and push it to `main`.
+Then on GitHub open **Actions → Build PolyOS ISO → Run workflow**, tick **Publish as a GitHub
+Release**, and run it (or push a tag like `v0.6.0`). About an hour later the ISO is published with
+a `SHA256SUMS` file as release `v<version>` (split into parts if it's ever over GitHub's 2 GB file
+limit), and the website's Download button offers it automatically.
 
 An ISO has to be built on Linux. Three ways:
 

@@ -25,8 +25,9 @@ into a real desktop that installs and boots on a PC, on top of Debian.
 
 The website's **Download** button always offers the newest
 [release](https://github.com/kingxxasavan/poly-os-7/releases/latest): it asks GitHub for the
-latest release when the page loads, so publishing a release (push a tag like `v0.6.0`, see the
-main README) updates the site with no changes here.
+latest release when the page loads, so publishing a release (Actions → Build PolyOS ISO → Run
+workflow with **Publish as a GitHub Release** ticked, see the main README) updates the site with
+no changes here.
 
 ## Screenshots
 
