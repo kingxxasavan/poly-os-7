@@ -23,6 +23,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from . import recovery
+
 KiB, MiB, GiB = 1024, 1024 ** 2, 1024 ** 3
 MIN_ROOT = 20 * GiB          # smallest PolyOS partition the installer offers
 SUGGESTED_ROOT = 64 * GiB    # default size when installing alongside another system
@@ -298,6 +300,9 @@ def validate_plan(plan: dict, existing_users: set[str] | None = None) -> dict:
     password = user.get("password") or ""
     if not isinstance(password, str) or len(password) > 256 or "\n" in password:
         raise InstallError("That password can't be used.")
+    key = user.get("recoveryKey") or ""
+    if key and not recovery.looks_valid(str(key)):
+        raise InstallError("The recovery key is damaged. Go back and try again.")
     hostname = str(plan.get("hostname") or f"{username}-polyos").lower()
     if not HOSTNAME_RE.match(hostname):
         raise InstallError("Computer names use letters, numbers and hyphens (up to 63).")
@@ -308,7 +313,7 @@ def validate_plan(plan: dict, existing_users: set[str] | None = None) -> dict:
     theme = appearance.get("theme") if appearance.get("theme") in ("dark", "light") else "dark"
     accent = appearance.get("accent") if re.match(r"^#[0-9a-fA-F]{6}$", str(appearance.get("accent") or "")) else "#678fd9"
     clean = {"mode": mode, "disk": disk, "hostname": hostname, "timezone": tz,
-             "user": {"username": username, "fullName": full, "password": password},
+             "user": {"username": username, "fullName": full, "password": password, "recoveryKey": str(key)},
              "appearance": {"theme": theme, "accent": accent.lower()}}
     if mode == "alongside":
         size = plan.get("size")
@@ -778,6 +783,8 @@ class Installer:
                         f"# The account was created without a password: sign in automatically.\n[Seat:*]\n"
                         f"autologin-user={name}\nautologin-session=polyos\n")
         self._write(f"var/lib/AccountsService/users/{name}", "[User]\nSession=polyos\nXSession=polyos\nSystemAccount=false\n")
+        if user.get("recoveryKey") and not self.dry:  # only its hash is stored
+            recovery.save_record(name, recovery.make_record(user["recoveryKey"]), root=TARGET)
         # PolyOS settings from the setup screens, plus the wallpapers in Pictures
         appearance = self.plan["appearance"]
         settings = {"theme": appearance["theme"], "accent": appearance["accent"], "setupDone": False}

@@ -55,7 +55,9 @@ DEFAULTS: dict = {
     "glass": 78,  # opacity of the dock and popups in percent (lower = more see-through)
     "scale": "auto",  # "auto" | "1" | "2" (next sign-in)
     "showAllApps": False,  # list the technical apps PolyOS hides from the launcher
+    "widgets": ["weather", "calendar", "system", "news", "todo", "photos"],  # the widgets board, in order
 }
+WIDGET_IDS = ("weather", "calendar", "system", "news", "todo", "notes", "photos", "clocks", "media")
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 _DESKTOP_ID = re.compile(r"^[\w.+@-]{1,200}\.desktop$")
@@ -102,6 +104,13 @@ def _glass(value):
     raise ValueError("expected a whole number from 30 to 100")
 
 
+def _widgets(value):
+    if isinstance(value, list) and len(value) <= len(WIDGET_IDS) and len(set(value)) == len(value) \
+            and all(v in WIDGET_IDS for v in value):
+        return value
+    raise ValueError(f"expected a list of widgets from: {', '.join(WIDGET_IDS)}")
+
+
 def _theme(value):
     if value in ("dark", "light"):
         return value
@@ -117,6 +126,7 @@ def _scale(value):
 VALIDATORS = {
     "theme": _theme,
     "showAllApps": _bool,
+    "widgets": _widgets,
     "accent": _accent,
     "wallpaper": _wallpaper,
     "clock24h": _bool,

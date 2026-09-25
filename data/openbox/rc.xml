@@ -86,6 +86,7 @@
     <keybind key="W-b"><action name="Execute"><command>polyos-ctl run browser</command></action></keybind>
     <keybind key="W-l"><action name="Execute"><command>polyos-ctl power lock</command></action></keybind>
     <keybind key="W-x"><action name="Execute"><command>polyos-ctl popup quickmenu</command></action></keybind>
+    <keybind key="W-w"><action name="Execute"><command>polyos-ctl popup widgets</command></action></keybind>
     <keybind key="C-S-Escape"><action name="Execute"><command>polyos-ctl open taskmgr</command></action></keybind>
     <keybind key="C-A-Delete"><action name="Execute"><command>polyos-ctl open taskmgr</command></action></keybind>
     <keybind key="Print"><action name="Execute"><command>xfce4-screenshooter -f</command></action></keybind>

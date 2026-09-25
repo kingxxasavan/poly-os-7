@@ -15,6 +15,7 @@ const surfaces = {
   taskmgr: () => import('./surfaces/taskmgr.js'),
   drivers: () => import('./surfaces/drivers.js'),
   store: () => import('./surfaces/store.js'),
+  lock: () => import('./surfaces/lock.js'),
 };
 
 async function resync() {

@@ -96,7 +96,10 @@ this step.
 | **PolyMarket** | Curated store: Chrome, Discord, Spotify, Steam, VS Code, LibreOffice, GIMP, OBS and more from Debian and Flathub |
 | **Settings** | Appearance (dark/light, accent, wallpaper), Wi-Fi, Sound, Display, Power, Vara, About |
 | **Ask Vara** | Assistant: runs simple requests on the PC ("open firefox", "volume 40", "turn wifi off") and answers the rest with an AI model; uses your Ollama Cloud (or other) API key |
-| **Login and lock screen** | PolyOS LightDM greeter; falls back to the stock greeter if it can't start |
+| **Login screen** | PolyOS LightDM greeter with your name and "Enter your password"; falls back to the stock greeter if it can't start |
+| **Lock screen** | Appears instantly (Win+L, the power menu, before sleep); unlocks with your password |
+| **Forgot password** | The installer shows a recovery key once; with it you set a new password from the login or lock screen. Settings > Account makes a new key or changes your password |
+| **Widgets** | Win+W or the weather button in the dock: weather (Open-Meteo), calendar, system, BBC news, to-do, notes, photos, world clocks, media controls |
 | **Boot splash** | Spinning pinwheel (Plymouth) |
 
 ## Build the live USB / installer ISO
@@ -158,6 +161,7 @@ settings. The live session changes nothing on the disk until you run the install
 | `Super+S` | App launcher (all apps) |
 | `Super+R` | Run CMD |
 | `Super+X` | Quick menu: Task Manager, Settings, Files, Driver Manager, PolyMarket, power |
+| `Super+W` | Widgets |
 | `Ctrl+Shift+Esc` · `Ctrl+Alt+Delete` | Task Manager |
 | `Super+V` | Ask Vara |
 | `Super+A` | Quick settings |

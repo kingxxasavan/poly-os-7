@@ -50,10 +50,12 @@ PACKAGES = {
         "depends": [
             "python3 (>= 3.11)", "python3-gi", "gir1.2-gtk-3.0", "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
             "gir1.2-wnck-3.0", "librsvg2-common", "openbox", "x11-utils", "x11-xserver-utils", "xdg-utils", "sudo",
+            "pkexec", "libpam0g",
         ],
         "recommends": [
             "picom", "xcape", "wireplumber | pulseaudio-utils", "network-manager", "brightnessctl",
             "papirus-icon-theme", "fonts-inter | fonts-noto-core", "lxpolkit | mate-polkit", "pciutils", "flatpak",
+            "playerctl",
         ],
         "summary": "PolyOS desktop shell",
         "description": (
@@ -72,10 +74,10 @@ PACKAGES = {
             "polyos-shell (= {version})", "xorg", "xserver-xorg-input-libinput", "lightdm", "lightdm-gtk-greeter",
             "gir1.2-lightdm-1", "picom", "pipewire-audio", "wireplumber", "network-manager", "papirus-icon-theme",
             "fonts-inter | fonts-noto-core", "dbus-user-session", "xdg-user-dirs", "adwaita-icon-theme",
-            "gvfs", "xfce4-terminal", "mousepad", "firefox-esr", "pciutils", "xcape",
+            "gvfs", "xfce4-terminal", "mousepad", "firefox-esr", "pciutils", "xcape", "systemd-timesyncd", "polkitd",
         ],
         "recommends": [
-            "brightnessctl", "lxpolkit | mate-polkit", "light-locker", "xfce4-notifyd", "tumbler",
+            "brightnessctl", "lxpolkit | mate-polkit", "xfce4-notifyd", "tumbler", "playerctl",
             "xfce4-screenshooter", "fonts-noto-color-emoji", "network-manager-gnome", "pavucontrol",
             "arandr", "ristretto", "file-roller", "gvfs-backends", "plymouth", "plymouth-label", "evince",
             "flatpak", "bluez", "blueman", "usbutils", "isenkram-cli", "mokutil",
@@ -136,7 +138,7 @@ License: GPL-3+
  version 3 can be found in "/usr/share/common-licenses/GPL-3".
 """
 
-TEXT_SUFFIXES = {".script", ".plymouth", ".desc", ".py", ".js", ".css", ".html", ".svg", ".xml", ".conf", ".desktop", ".ini", ".json", ".md", ""}
+TEXT_SUFFIXES = {".script", ".plymouth", ".desc", ".py", ".js", ".css", ".html", ".svg", ".xml", ".conf", ".desktop", ".ini", ".json", ".md", ".rules", ""}
 DEV_UI_FILES = {"dev.html", "js/dev.js", "css/dev.css"}
 
 
@@ -159,6 +161,7 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
             (data / "xorg/40-polyos-touchpad.conf", "usr/share/X11/xorg.conf.d/40-polyos-touchpad.conf", 0o644),
             # Firefox draws a normal title bar (with PolyOS's close button) instead of tabs in the title bar
             (data / "firefox/policies.json", "etc/firefox/policies/policies.json", 0o644),
+            (data / "systemd/50-polyos.conf", "usr/lib/systemd/system.conf.d/50-polyos.conf", 0o644),
             copyright_file,
         ]
     files = [
@@ -166,6 +169,9 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         *_tree(ROOT / "ui", "usr/share/polyos/ui", skip=DEV_UI_FILES),
         *[(data / "bin" / b, f"usr/bin/{b}", 0o755) for b in ("polyos-session", "polyos-shell", "polyos-ctl", "polyos-greeter")],
         (data / "bin/polyos-admin", "usr/libexec/polyos/polyos-admin", 0o755),
+        (data / "bin/polyos-recover", "usr/libexec/polyos/polyos-recover", 0o755),
+        (data / "pam/polyos-lock", "etc/pam.d/polyos-lock", 0o644),
+        (data / "polkit/50-polyos-recover.rules", "usr/share/polkit-1/rules.d/50-polyos-recover.rules", 0o644),
         *_tree(data / "store", "usr/share/polyos/store"),
         (data / "xgreeters/polyos-greeter.desktop", "usr/share/xgreeters/polyos-greeter.desktop", 0o644),
         (data / "xsessions/polyos.desktop", "usr/share/xsessions/polyos.desktop", 0o644),

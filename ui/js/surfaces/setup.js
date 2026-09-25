@@ -47,6 +47,14 @@ function guessZone() {
   return tz && tz !== 'UTC' && tz !== 'Etc/UTC' ? tz : 'America/New_York';
 }
 
+// 25 Crockford base32 characters (125 bits), the format polyos/recovery.py expects.
+function recoveryKey() {
+  const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+  const bytes = crypto.getRandomValues(new Uint8Array(25));
+  const raw = [...bytes].map((b) => alphabet[b % 32]).join('');
+  return raw.match(/.{5}/g).join('-');
+}
+
 function usernameFrom(name) {
   const first = (name.trim().split(/\s+/)[0] || '').normalize('NFKD').replace(/[^\w]/g, '').toLowerCase().replace(/_/g, '');
   const clean = first.replace(/[^a-z0-9]/g, '').slice(0, 24);
@@ -346,6 +354,7 @@ export function mount(root, store) {
   }
 
   async function startInstall() {
+    plan.user.recoveryKey = plan.user.recoveryKey || recoveryKey();
     const payload = { mode: plan.mode, disk: plan.disk, hostname: plan.hostname, timezone: plan.timezone,
       user: plan.user, appearance: plan.appearance, ...(plan.mode === 'alongside' ? { size: plan.size } : {}) };
     installJob = { state: 'running', progress: 0, message: 'Getting ready for installation…' };
@@ -361,12 +370,21 @@ export function mount(root, store) {
   function installing() {
     const job = installJob || { state: 'running', progress: 0, message: 'Getting ready for installation…' };
     if (job.state === 'done') {
+      const saved = h('input', { type: 'checkbox' });
+      const restart = h('button.su-next.primary', { disabled: !!plan.user.recoveryKey,
+        onclick: () => api.post('/api/install/restart', {}).catch((err) => { restart.textContent = err.message; }) }, 'Restart now');
+      saved.addEventListener('change', () => { restart.disabled = !saved.checked; });
       return [
         h('div.su-center',
           h('img.su-done-logo', { src: '/img/logo-white.svg', alt: '' }),
           h('h1', 'PolyOS 7 is installed.'),
-          h('p.su-sub', 'Remove the USB drive, then restart to start using PolyOS.'),
-          h('button.su-next.primary', { onclick: () => api.post('/api/power', { action: 'reboot' }) }, 'Restart now')),
+          plan.user.recoveryKey ? [
+            h('p.su-sub', 'This is your recovery key. If you ever forget your password, it lets you set a new one from the sign-in screen. Write it down or take a photo of it. You won’t see it again.'),
+            h('div.su-key', plan.user.recoveryKey),
+            h('label.su-check', saved, h('span', 'I’ve saved my recovery key.')),
+          ] : h('p.su-sub', 'Remove the USB drive, then restart to start using PolyOS.'),
+          plan.user.recoveryKey ? h('p.su-note', 'After you restart, remove the USB drive when the screen goes dark.') : null,
+          restart),
       ];
     }
     if (job.state === 'failed') {

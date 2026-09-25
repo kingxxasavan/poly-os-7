@@ -4,6 +4,8 @@
     polyos-admin install PLAN [--dry-run]  install PolyOS (PLAN: JSON file from the setup UI, deleted after reading)
     polyos-admin store install|remove ID   an app from the PolyMarket catalog
     polyos-admin drivers PACKAGE...        driver packages (names must match drivers.DRIVER_PACKAGE_RE)
+    polyos-admin account FILE              for the sudo user: {"password"} and/or {"recoveryKey"} (file deleted)
+    polyos-admin reboot                    restart right away (after installing, from the live USB)
 
 Every command prints JSON lines: {"progress": 0..1, "message": "..."} while it works,
 {"result": ...} for data, and {"error": "..."} (exit status 1) when it fails.
@@ -19,7 +21,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import drivers, installer, store
+from . import drivers, installer, recovery, store
 
 APT_ENV = {"DEBIAN_FRONTEND": "noninteractive", "LC_ALL": "C", "PATH": "/usr/sbin:/usr/bin:/sbin:/bin"}
 APT_OPTS = ["-o", "APT::Status-Fd=1", "-o", "Dpkg::Use-Pty=0", "-o", "DPkg::Lock::Timeout=180",
@@ -48,18 +50,31 @@ def parse_apt_status(line: str) -> tuple[float, str] | None:
     return 0.5 + 0.48 * pct / 100, re.sub(r"^(Installing|Preparing|Unpacking|Configuring)\s+", r"\1 ", parts[3]).strip()[:120]
 
 
+_HOST = re.compile(r"(?:Could not resolve|Temporary failure resolving) '([^']+)'|Failed to fetch https?://([^/\s]+)")
+
+
 def _apt_error(tail: list[str]) -> str:
+    """A readable message from apt's last lines, naming the server or the real error."""
     text = "\n".join(tail)
-    if "Could not resolve" in text or "Temporary failure resolving" in text or "Failed to fetch" in text:
-        return "Couldn't reach the Debian servers. Check your internet connection and try again."
     if "Could not get lock" in text or "Unable to acquire the dpkg" in text:
         return "Another installation is running. Try again in a few minutes."
-    if "Unable to locate package" in text or "has no installation candidate" in text:
-        return "That package isn't available from Debian right now."
     if "No space left" in text:
         return "There isn't enough free disk space."
-    errors = [ln for ln in tail if ln.startswith("E:")]
-    return errors[-1][2:].strip() if errors else "The installation didn't finish."
+    if "Unable to locate package" in text or "has no installation candidate" in text:
+        return "That package isn't available from Debian right now. Try again later."
+    if "not valid yet" in text or "is not valid yet" in text:
+        return "The computer's clock is wrong, so Debian's servers were refused. Fix the date and time, then try again."
+    host = _HOST.search(text)
+    if host and ("Temporary failure resolving" in text or "Could not resolve" in text or "Could not connect" in text
+                 or "Connection timed out" in text or "Network is unreachable" in text):
+        return (f"Couldn't reach {host.group(1) or host.group(2)}. Check your internet connection and try again.")
+    errors = [ln[2:].strip() for ln in tail if ln.startswith("E:")]
+    return errors[-1] if errors else "The installation didn't finish."
+
+
+def _have_package_lists() -> bool:
+    lists = Path("/var/lib/apt/lists")
+    return lists.is_dir() and any(lists.glob("*_Packages*"))
 
 
 def apt(args: list[str], start: float = 0.0) -> None:
@@ -78,11 +93,17 @@ def apt(args: list[str], start: float = 0.0) -> None:
 
 
 def apt_update() -> None:
+    """Refresh apt's package lists. A single failed source (a mirror hiccup, deb-src, a 404) isn't fatal:
+    the install that follows says what's really missing. Only stop when nothing could be downloaded."""
     emit({"progress": 0.02, "message": "Checking Debian for the latest versions…"})
     proc = subprocess.run(["apt-get", "-q", "update", "-o", "DPkg::Lock::Timeout=180"], capture_output=True, text=True,
                           env={**os.environ, **APT_ENV}, timeout=600)
-    if proc.returncode != 0 or "Failed to fetch" in proc.stdout + proc.stderr:
-        raise AdminError(_apt_error((proc.stdout + proc.stderr).splitlines()))
+    lines = (proc.stdout + proc.stderr).splitlines()
+    if proc.returncode == 0 and not any(ln.startswith(("E:", "Err:")) for ln in lines):
+        return
+    emit({"log": "apt-get update: " + " | ".join(ln for ln in lines if ln.startswith(("E:", "W:", "Err:")))[:2000]})
+    if not _have_package_lists():
+        raise AdminError(_apt_error(lines[-60:]))
 
 
 _PERCENT = re.compile(r"(\d{1,3})%")
@@ -149,6 +170,39 @@ def drivers_install(packages: list[str]) -> None:
     emit({"progress": 1.0, "message": "Drivers installed."})
 
 
+def account(path: Path) -> None:
+    """Change the invoking person's password and/or recovery key (they unlocked sudo with their password)."""
+    user = os.environ.get("SUDO_USER", "")
+    if not user or user == "root":
+        raise AdminError("Run this from your own account.")
+    try:
+        request = json.loads(path.read_text("utf-8"))
+    finally:
+        path.unlink(missing_ok=True)
+    password = request.get("password")
+    key = request.get("recoveryKey")
+    if password is not None:
+        if not isinstance(password, str) or not password or len(password) > 256 or "\n" in password:
+            raise AdminError("Choose a new password.")
+        proc = subprocess.run(["chpasswd"], input=f"{user}:{password}\n", capture_output=True, text=True, timeout=30)
+        if proc.returncode != 0:
+            raise AdminError("The password couldn't be changed.")
+    if key is not None:
+        if not recovery.looks_valid(str(key)):
+            raise AdminError("That recovery key is damaged.")
+        recovery.save_record(user, recovery.make_record(str(key)))
+    emit({"progress": 1.0, "message": "Saved."})
+
+
+def reboot() -> None:
+    """Restart now, without waiting on services (the install is already synced to disk)."""
+    if not installer.LIVE_MEDIUM.exists():
+        raise AdminError("This only works from the PolyOS USB drive.")
+    subprocess.run(["sync"], check=False)
+    subprocess.Popen(["systemctl", "reboot", "--force"], start_new_session=True)
+    emit({"progress": 1.0, "message": "Restarting…"})
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv:
@@ -174,6 +228,10 @@ def main(argv: list[str] | None = None) -> int:
             store_action(rest[0], rest[1])
         elif cmd == "drivers":
             drivers_install(rest)
+        elif cmd == "account" and len(rest) == 1:
+            account(Path(rest[0]))
+        elif cmd == "reboot":
+            reboot()
         else:
             raise AdminError(f"Unknown command: {' '.join(argv)}")
         return 0

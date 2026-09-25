@@ -11,9 +11,10 @@ import quickmenu from '../views/quickmenu.js';
 import run from '../views/run.js';
 import taskmenu from '../views/taskmenu.js';
 import vara from '../views/vara.js';
+import widgets from '../views/widgets.js';
 
 // "start" is the Home Menu (the name keybindings and polyos-ctl use).
-const views = { start: home, launcher, power, run, quick, calendar, taskmenu, vara, quickmenu };
+const views = { start: home, launcher, power, run, quick, calendar, taskmenu, vara, quickmenu, widgets };
 
 export function mount(root, store) {
   root.className = 'popup-root';

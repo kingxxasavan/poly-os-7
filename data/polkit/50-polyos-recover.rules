@@ -1,0 +1,9 @@
+// PolyOS: the login screen and signed-in people may run the recovery-key password reset.
+// polyos-recover changes a password only when the account's recovery key is entered.
+polkit.addRule(function (action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        action.lookup("program") == "/usr/libexec/polyos/polyos-recover" &&
+        (subject.user == "lightdm" || (subject.local && subject.active))) {
+        return polkit.Result.YES;
+    }
+});

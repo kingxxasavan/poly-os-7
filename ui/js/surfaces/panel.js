@@ -1,7 +1,8 @@
 // Floating dock: Start (pinwheel) · pinned/running apps · status, clock and the app launcher.
 
 import { api, launch, on, windowAction, withToken } from '../api.js';
-import { clockTicker, fmtTime, h, icon, networkIcon, networkLabel, volumeIcon } from '../ui.js';
+import { clockTicker, fill, fmtTime, h, icon, networkIcon, networkLabel, volumeIcon } from '../ui.js';
+import { weatherLook } from '../views/widgets.js';
 
 function openPopup(view, el, extra = {}) {
   const r = el.getBoundingClientRect();
@@ -36,17 +37,29 @@ export function mount(root, store) {
   const status = h('button.dbtn.tray', { 'aria-label': 'Quick settings' });
   const clock = h('button.dbtn.clock', { 'aria-label': 'Calendar' });
   const apps = h('button.dbtn.apps-btn', { title: 'All apps', 'aria-label': 'All apps' }, icon('apps'));
+  // Weather and the widgets board, like the left end of the Windows 11 taskbar
+  const weather = h('button.dbtn.weather-btn', { title: 'Widgets (Win+W)', 'aria-label': 'Widgets' }, icon('sparkle'));
+  weather.addEventListener('click', () => openPopup('widgets', weather));
+  const loadWeather = () => api.get('/api/widgets/weather').then((w) => {
+    if (!w.place || w.temp == null) return fill(weather, icon('sparkle'));
+    const [desc, ico] = weatherLook(w.code, w.day);
+    fill(weather, icon(ico), h('span.weather-text', h('b', `${Math.round(w.temp)}°`), h('small', desc)));
+    weather.title = `${w.place.name}: ${desc}, ${Math.round(w.temp)}° (Win+W for widgets)`;
+  }, () => {});
+  loadWeather();
+  setInterval(loadWeather, 15 * 60000);
+  on('widgets', (e) => { if (e.keys.includes('weather')) loadWeather(); });
   start.addEventListener('click', () => openPopup('start', start));
   status.addEventListener('click', () => openPopup('quick', status));
   clock.addEventListener('click', () => openPopup('calendar', clock));
   apps.addEventListener('click', () => openPopup('launcher', apps));
   root.append(
-    h('div.dock-left', start),
+    h('div.dock-left', start, weather),
     h('div.dock-center', tasks),
     h('div.dock-right', status, clock, h('div.dock-sep'), apps),
   );
 
-  const popupButtons = { start, quick: status, calendar: clock, launcher: apps };
+  const popupButtons = { start, quick: status, calendar: clock, launcher: apps, widgets: weather };
   const markPopup = (popup) => {
     for (const [view, btn] of Object.entries(popupButtons)) btn.classList.toggle('open', popup?.view === view);
   };

@@ -294,7 +294,53 @@ class MockBackend(Backend):
 
     def power(self, action):
         self.popup_closed()
+        if action == "lock":
+            return self.lock()
         self.bus.publish("power", action=action)
+
+    # ---- lock screen (mock password: "polyos"; any well-formed recovery key works) ----------
+    def lock(self):
+        self.popup_closed()
+        self.bus.publish("lock", locked=True)
+
+    def lock_unlock(self, password):
+        time.sleep(0.5)
+        if password != "polyos":
+            raise ApiError("That password isn't right. Try again.", 403)
+        self.bus.publish("lock", locked=False)
+        return {"ok": True}
+
+    def lock_recover(self, key, password):
+        from .recovery import looks_valid
+
+        time.sleep(0.6)
+        if not looks_valid(key):
+            raise ApiError("That recovery key isn't right. 4 tries left.", 403)
+        self.bus.publish("lock", locked=False)
+        return {"ok": True}
+
+    def greeter_recover(self, user, key, password):
+        from .recovery import looks_valid
+
+        time.sleep(0.6)
+        if not looks_valid(key):
+            raise ApiError("That recovery key isn't right. 4 tries left.", 403)
+        return {"ok": True}
+
+    def install_restart(self):
+        self.bus.publish("power", action="reboot")
+
+    def account_password(self, current, password):
+        if current != "polyos":
+            raise ApiError("That password isn't right. Try again.", 403)
+        return {"ok": True}
+
+    def account_recovery_key(self):
+        from .recovery import generate
+
+        if not self._admin_ready:
+            raise NeedPassword()
+        return {"key": generate()}
 
     def sysinfo(self):
         return {"os": "Debian GNU/Linux 13 (trixie)", "kernel": "6.12.41-amd64", "arch": "x86_64",

@@ -131,6 +131,16 @@ class GreeterBackend(Backend):
         except GLib.Error as exc:
             raise ApiError(f"Couldn't {action}: {exc.message}", 500) from None
 
+    def greeter_recover(self, user: str, key: str, password: str):
+        """Forgot password: set a new one with the account's recovery key (polyos-recover via pkexec)."""
+        from .recovery import RecoveryError, run_helper
+
+        try:
+            run_helper(user, key, password)
+        except RecoveryError as exc:
+            raise ApiError(str(exc), 403) from None
+        return {"ok": True}
+
 
 def _setup_display() -> None:
     rc, out = system.run(["xrandr", "--query"], 5)

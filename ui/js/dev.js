@@ -23,6 +23,8 @@ function placePopup(p) {
   popup.classList.toggle('fullscreen', !!p.fullscreen);
   if (p.fullscreen) {
     Object.assign(popup.style, { left: '0px', top: '0px', width: `${W}px`, height: `${H}px` });
+  } else if (p.tall) {
+    Object.assign(popup.style, { left: '12px', top: '12px', width: `${Math.min(p.width, W - 24)}px`, height: `${H - panelHeight - 16}px` });
   } else {
     let x = p.anchorX == null ? 12 : Math.round(dockMargin + p.anchorX - p.width / 2);
     x = Math.max(12, Math.min(x, W - p.width - 12));
@@ -124,6 +126,17 @@ function syncSetup(settings) {
   }
 }
 
+// The lock screen: the real shell shows it over everything and grabs the keyboard.
+let lockFrame = null;
+on('lock', (e) => {
+  if (e.locked && !lockFrame) {
+    lockFrame = h('iframe', { id: 'lock', src: '/index.html?surface=lock', title: 'Lock screen' });
+    screen.append(lockFrame);
+    setTimeout(() => lockFrame?.contentWindow.focus(), 300);
+  } else if (!e.locked && lockFrame) {
+    setTimeout(() => { lockFrame?.remove(); lockFrame = null; }, 700);
+  }
+});
 on('popup', (e) => placePopup(e.popup));
 on('windows', (e) => {
   state.windows = e.windows;

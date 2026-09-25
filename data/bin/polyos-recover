@@ -1,0 +1,9 @@
+#!/usr/bin/python3 -I
+"""Reset a password with a recovery key (run as root through pkexec by the login and lock screens)."""
+import sys
+
+sys.path.insert(0, "/usr/lib/polyos")
+
+from polyos.recovery import main  # noqa: E402
+
+sys.exit(main())

@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from polyos import admin, drivers, procs, store, theme
+from polyos import admin, drivers, procs, recovery, store, theme, widgets
+from polyos.core import ApiError
 
 LSPCI = """Slot:	00:02.0
 Class:	VGA compatible controller [0300]
@@ -161,6 +162,48 @@ class ThemeTests(unittest.TestCase):
             path.write_text(rc)
             theme.switch_openbox(path, "dark")
             self.assertIn("<name>PolyOS</name>", path.read_text())
+
+
+class RecoveryTests(unittest.TestCase):
+    def test_keys(self):
+        key = recovery.generate()
+        self.assertRegex(key, r"^[0-9A-Z]{5}(-[0-9A-Z]{5}){4}$")
+        self.assertTrue(recovery.looks_valid(key))
+        record = recovery.make_record(key)
+        self.assertNotIn(recovery.normalize(key), json.dumps(record))  # only the hash is stored
+        self.assertTrue(recovery.check(record, key.lower().replace("-", " ")))  # typing style doesn't matter
+        self.assertFalse(recovery.check(record, recovery.generate()))
+        self.assertTrue(recovery.check(record, key.replace("0", "O").replace("1", "I")))  # look-alikes
+        self.assertFalse(recovery.looks_valid("short"))
+
+    def test_save_record_is_private(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recovery.save_record("savan", recovery.make_record(recovery.generate()), root=Path(tmp))
+            saved = Path(tmp) / "var/lib/polyos/recovery/savan"
+            self.assertTrue(saved.is_file())
+
+
+class WidgetsTests(unittest.TestCase):
+    def test_rss(self):
+        xml = (b'<?xml version="1.0"?><rss><channel><title>BBC</title>'
+               b'<item><title>Headline one</title><link>https://www.bbc.co.uk/news/1</link><pubDate>Thu, 24 Sep 2026 20:00:00 GMT</pubDate></item>'
+               b'<item><title>Bad link</title><link>javascript:alert(1)</link></item>'
+               b'<item><title></title><link>https://x</link></item></channel></rss>')
+        items = widgets.parse_rss(xml)
+        self.assertEqual([i["title"] for i in items], ["Headline one"])
+
+    def test_data_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            w = widgets.Widgets(Path(tmp) / "widgets.json", Path(tmp))
+            self.assertIsNone(w.data()["weather"]["place"])
+            w.update({"todo": [{"text": "Finish PolyOS", "done": False}, {"text": "   "}], "notes": "hi"})
+            self.assertEqual(w.data()["todo"], [{"text": "Finish PolyOS", "done": False}])
+            w.update({"weather": {"place": {"name": "Charlotte", "latitude": 35.2, "longitude": -80.8}, "units": "celsius"}})
+            self.assertEqual(w.data()["weather"]["units"], "celsius")
+            for bad in ({"weather": {"place": {"latitude": 999, "longitude": 0}}}, {"news": {"topic": "gossip"}},
+                        {"clocks": ["../etc"]}, {"evil": 1}):
+                with self.subTest(bad=bad), self.assertRaises(ApiError):
+                    w.update(bad)
 
 
 if __name__ == "__main__":

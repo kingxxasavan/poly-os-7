@@ -8,6 +8,7 @@ lists apps from .desktop files with Gio, and serves the UI through polyos.server
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import logging
 import os
@@ -87,6 +88,9 @@ class DesktopShell(Backend):
         self._chooser = None
         self.procmon = ProcessMonitor(protected_pids())
         self._procs_lock = threading.Lock()
+        self.lock_window: Gtk.Window | None = None
+        self._lock_flag = paths.runtime_dir() / "locked"  # survives a shell restart: lock again at start
+        self._unlock_lock = threading.Lock()
 
     # ==== startup ==========================================================================
     def start(self, base_url: str) -> None:
@@ -120,6 +124,9 @@ class DesktopShell(Backend):
             win.stick()
         self._refresh_system(("volume", "network", "battery", "brightness"))
         threading.Thread(target=self._poll_loop, name="polyos-poll", daemon=True).start()
+        self._watch_logind()
+        if self._lock_flag.exists():
+            self.lock()
         log.info("shell started (composited=%s)", self.composited)
 
     def quit(self, code: int = EXIT_LOGOUT):
@@ -211,6 +218,9 @@ class DesktopShell(Backend):
         g = self._geometry()
         if popup.get("fullscreen"):  # app launcher: whole monitor, dock stays on top
             x, y, width, height = 0, 0, g.width, g.height
+        elif popup.get("tall"):  # widgets board: full height along the left edge
+            width = min(popup["width"], g.width - 24)
+            x, y, height = 12, 12, g.height - PANEL_HEIGHT - 16
         else:
             width, height = popup["width"], popup["height"]
             anchor = popup.get("anchorX")
@@ -582,7 +592,121 @@ class DesktopShell(Backend):
         if action == "logout":
             GLib.idle_add(self.quit, EXIT_LOGOUT)
             return
+        if action == "lock":
+            return self.lock()
+        if action == "suspend":
+            self.lock()  # wake up to the lock screen
         system.power(action)
+
+    # ==== lock screen ======================================================================
+    # An override-redirect window over every monitor that grabs the keyboard and pointer, so
+    # it appears instantly (no switch to the login screen) and shortcuts can't get past it.
+    def lock(self):
+        try:
+            self._lock_flag.touch()
+        except OSError:
+            pass
+        GLib.idle_add(self._lock_main)
+
+    def _lock_main(self):
+        self.popup_closed()
+        if self.lock_window is None:
+            win = Gtk.Window(type=Gtk.WindowType.POPUP)
+            win.set_title("PolyOS lock")
+            win.view = self._view("surface=lock", transparent=False)
+            win.add(win.view)
+            self.lock_window = win
+        win = self.lock_window
+        screen = self.gdk_screen
+        win.move(0, 0)
+        win.resize(screen.get_width(), screen.get_height())
+        win.show_all()
+        win.get_window().raise_()
+        win.view.grab_focus()
+        self._grab_input(40)
+        GLib.timeout_add(1000, self._keep_lock_on_top)
+        self.bus.publish("lock", locked=True)
+        return False
+
+    def _grab_input(self, tries: int):
+        if self.lock_window is None or self.lock_window.get_window() is None:
+            return False
+        seat = Gdk.Display.get_default().get_default_seat()
+        status = seat.grab(self.lock_window.get_window(), Gdk.SeatCapabilities.ALL, True, None, None, None, None)
+        if status != Gdk.GrabStatus.SUCCESS and tries > 0:
+            GLib.timeout_add(100, self._grab_input, tries - 1)  # a menu or drag may hold a grab briefly
+        elif status != Gdk.GrabStatus.SUCCESS:
+            log.warning("lock screen could not grab the keyboard (%s)", status)
+        return False
+
+    def _keep_lock_on_top(self):
+        if self.lock_window is None or not self.lock_window.get_visible():
+            return False
+        gdk_win = self.lock_window.get_window()
+        if gdk_win is not None:
+            gdk_win.raise_()
+        return True
+
+    def _unlock_main(self):
+        if self.lock_window is not None:
+            Gdk.Display.get_default().get_default_seat().ungrab()
+            self.lock_window.destroy()
+            self.lock_window = None
+        self._lock_flag.unlink(missing_ok=True)
+        self.bus.publish("lock", locked=False)
+        return False
+
+    def lock_unlock(self, password: str):
+        from . import pamauth
+
+        with self._unlock_lock:
+            try:
+                ok = pamauth.authenticate(getpass.getuser(), password)
+            except OSError as exc:
+                log.error("PAM unavailable: %s", exc)
+                raise ApiError("Unlocking isn't working. Restart the computer.", 500) from None
+            if not ok:
+                raise ApiError("That password isn't right. Try again.", 403)
+        GLib.idle_add(self._unlock_main)
+        return {"ok": True}
+
+    def lock_recover(self, key: str, password: str):
+        from .recovery import RecoveryError, run_helper
+
+        try:
+            run_helper(getpass.getuser(), key, password)
+        except RecoveryError as exc:
+            raise ApiError(str(exc), 403) from None
+        GLib.idle_add(self._unlock_main)
+        return {"ok": True}
+
+    def _watch_logind(self) -> None:
+        """Lock before sleeping, and when something asks logind to lock this session."""
+        try:
+            bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        except GLib.Error as exc:
+            log.warning("no system bus: %s", exc.message)
+            return
+        login1 = "org.freedesktop.login1"
+        bus.signal_subscribe(login1, login1 + ".Manager", "PrepareForSleep", "/org/freedesktop/login1", None,
+                             Gio.DBusSignalFlags.NONE,
+                             lambda *args: self.lock() if args[5].unpack()[0] else None)
+        try:
+            session_id = os.environ.get("XDG_SESSION_ID")
+            if session_id:
+                reply = bus.call_sync(login1, "/org/freedesktop/login1", login1 + ".Manager", "GetSession",
+                                      GLib.Variant("(s)", (session_id,)), GLib.VariantType("(o)"),
+                                      Gio.DBusCallFlags.NONE, 3000, None)
+            else:
+                reply = bus.call_sync(login1, "/org/freedesktop/login1", login1 + ".Manager", "GetSessionByPID",
+                                      GLib.Variant("(u)", (os.getpid(),)), GLib.VariantType("(o)"),
+                                      Gio.DBusCallFlags.NONE, 3000, None)
+            path = reply.unpack()[0]
+            bus.signal_subscribe(login1, login1 + ".Session", "Lock", path, None, Gio.DBusSignalFlags.NONE,
+                                 lambda *args: self.lock())
+        except GLib.Error as exc:
+            log.info("logind session lock signal unavailable: %s", exc.message)
+        self._system_bus = bus
 
     def sysinfo(self) -> dict:
         return system.sysinfo()

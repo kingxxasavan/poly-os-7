@@ -38,7 +38,7 @@ CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inlin
 DEV_ONLY = {"dev.html", "js/dev.js", "css/dev.css"}
 # Everything the login screen's UI may call; the greeter's server answers nothing else.
 GREETER_API = frozenset({"/api/state", "/api/events", "/api/greeter/state", "/api/greeter/login",
-                         "/api/greeter/power", "/wallpaper/current"})
+                         "/api/greeter/power", "/api/greeter/recover", "/wallpaper/current"})
 
 
 def _str(body: dict, key: str, max_len: int = 512) -> str:
@@ -114,6 +114,12 @@ GET_API = {
     "/api/drivers": lambda be, q: be.drivers_scan(),
     "/api/store": lambda be, q: be.store_list(),
     "/api/procs": lambda be, q: be.procs(),
+    "/api/widgets/data": lambda be, q: be.widgets.data(),
+    "/api/widgets/weather": lambda be, q: be.widgets.weather(),
+    "/api/widgets/geocode": lambda be, q: {"results": be.widgets.geocode(_q(q, "q") or "")},
+    "/api/widgets/news": lambda be, q: be.widgets.news(_q(q, "topic")),
+    "/api/widgets/photos": lambda be, q: {"photos": be.widgets.photos()},
+    "/api/widgets/media": lambda be, q: be.widgets.media(),
 }
 
 
@@ -185,6 +191,15 @@ POST_API = {
     "/api/store/remove": lambda be, b: be.store_action(_str(b, "id", 60), "remove"),
     "/api/store/open": lambda be, b: be.store_open(_str(b, "id", 60)),
     "/api/procs/end": lambda be, b: be.procs_end(_int(b, "pid"), bool(_opt_bool(b, "force"))),
+    "/api/widgets/data": lambda be, b: be.widgets_update(b),
+    "/api/widgets/media": lambda be, b: be.widgets.media_action(_str(b, "action", 20)),
+    "/api/install/restart": lambda be, b: be.install_restart(),
+    "/api/account/password": lambda be, b: be.account_password(_password({"password": b.get("current", "")}), _str(b, "password", 256)),
+    "/api/account/recovery-key": lambda be, b: be.account_recovery_key(),
+    "/api/lock": lambda be, b: be.lock(),
+    "/api/lock/unlock": lambda be, b: be.lock_unlock(_password(b)),
+    "/api/lock/recover": lambda be, b: be.lock_recover(_str(b, "key", 64), _str(b, "password", 256)),
+    "/api/greeter/recover": lambda be, b: be.greeter_recover(_str(b, "user", 64), _str(b, "key", 64), _str(b, "password", 256)),
 }
 
 

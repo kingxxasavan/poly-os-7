@@ -1,0 +1,4 @@
+#%PAM-1.0
+# PolyOS lock screen: checks the signed-in person's password.
+@include common-auth
+@include common-account

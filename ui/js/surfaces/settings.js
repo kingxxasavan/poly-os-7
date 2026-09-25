@@ -1,5 +1,6 @@
 // Settings app: appearance, Wi-Fi, sound, display, power, about.
 
+import { withAdmin } from '../admin.js';
 import { api, launch, on, params, power, saveSettings, withToken } from '../api.js';
 import { errorText, group, row, slider, toggle, wifiPanel } from '../components.js';
 import { formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
@@ -10,6 +11,7 @@ const PAGES = [
   ['sound', 'Sound', 'volume'],
   ['display', 'Display', 'monitor'],
   ['power', 'Power', 'power'],
+  ['account', 'Account', 'user'],
   ['vara', 'Vara', 'chat'],
   ['about', 'About', 'info'],
 ];
@@ -227,6 +229,55 @@ const pages = {
     }
     update();
     return { update: (_st, changed) => changed.has('system') && update() };
+  },
+
+  account(page, store) {
+    const { user } = store.state;
+    const err = h('div.error-text', { hidden: true });
+    const note = h('span.muted.small');
+    const current = h('input.input', { type: 'password', placeholder: 'Current password', autocomplete: 'current-password', 'aria-label': 'Current password' });
+    const next = h('input.input', { type: 'password', placeholder: 'New password', autocomplete: 'new-password', 'aria-label': 'New password' });
+    const again = h('input.input', { type: 'password', placeholder: 'Type it again', autocomplete: 'new-password', 'aria-label': 'Confirm new password' });
+    const change = h('button.btn.primary', 'Change password');
+    change.addEventListener('click', async () => {
+      errorText(err, '');
+      if (!next.value) return errorText(err, 'Choose a new password.');
+      if (next.value !== again.value) return errorText(err, 'The new passwords don’t match.');
+      change.disabled = true;
+      try {
+        await api.post('/api/account/password', { current: current.value, password: next.value });
+        note.textContent = 'Password changed.';
+        current.value = next.value = again.value = '';
+      } catch (e) {
+        errorText(err, e.message);
+      }
+      change.disabled = false;
+    });
+    const keyBox = h('div');
+    const makeKey = h('button.btn', 'Create a new recovery key');
+    makeKey.addEventListener('click', async () => {
+      errorText(err, '');
+      try {
+        const { key } = await withAdmin(() => api.post('/api/account/recovery-key', {}),
+          { title: 'New recovery key', text: 'Enter your password to create a new recovery key.' });
+        keyBox.replaceChildren(h('div.su-key.small', key),
+          h('p.muted.small', 'Write it down or take a photo. Your old recovery key no longer works.'));
+      } catch (e) {
+        if (!e.cancelled) errorText(err, e.message);
+      }
+    });
+    page.append(
+      pageHead('Account', 'Your sign-in details.'),
+      err,
+      group(null, row(user.fullName || user.name, `Username: ${user.name}`, h('span.gr-avatar.small.acct', (user.fullName || user.name).slice(0, 1).toUpperCase()))),
+      group('Password',
+        row('Current password', null, h('div.slider-wrap.wide', current)),
+        row('New password', null, h('div.slider-wrap.wide', next)),
+        row('Confirm new password', null, h('div.slider-wrap.wide', again))),
+      h('div.btn-row', change, note),
+      group('Recovery key', row('Forgot your password?', 'A recovery key lets you set a new password from the sign-in or lock screen. Creating a new one replaces the old one.', makeKey), keyBox),
+    );
+    return null;
   },
 
   vara(page) {

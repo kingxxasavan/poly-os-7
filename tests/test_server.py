@@ -123,6 +123,14 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/install/probe")[0], 409)  # not the live USB
         self.assertEqual(self.request("GET", "/icon/theme/vlc,video")[0], 200)
 
+    def test_lock_screen(self):
+        self.assertEqual(self.request("POST", "/api/power", {"action": "lock"})[0], 200)
+        self.assertEqual(self.request("POST", "/api/lock/unlock", {"password": "nope"})[0], 403)
+        self.assertEqual(self.request("POST", "/api/lock/unlock", {"password": "polyos"})[0], 200)
+        self.assertEqual(self.request("POST", "/api/lock/recover", {"key": "bad", "password": "x"})[0], 403)
+        self.assertEqual(self.request("POST", "/api/widgets/data", {"notes": "hello"})[0], 200)
+        self.assertEqual(json.loads(self.request("GET", "/api/widgets/data")[1])["notes"], "hello")
+
     def test_icons_and_wallpaper(self):
         status, body, res = self.request("GET", "/icon/app/firefox-esr.desktop")
         self.assertEqual(status, 200)
@@ -156,6 +164,8 @@ class GreeterServerTests(unittest.TestCase):
                 self.assertEqual(get("/api/launch", "POST", {"id": "firefox-esr.desktop"}), 404)
                 self.assertEqual(get("/api/run-command", "POST", {"command": "mousepad"}), 404)
                 self.assertEqual(get("/api/greeter/login", "POST", {"user": "x", "password": "wrong"}), 403)
+                self.assertEqual(get("/api/greeter/recover", "POST", {"user": "x", "key": "bad", "password": "p"}), 403)
+                self.assertEqual(get("/api/lock/unlock", "POST", {"password": "polyos"}), 404)  # not on the login screen
             finally:
                 server.stop()
 

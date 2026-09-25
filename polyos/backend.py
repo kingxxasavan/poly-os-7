@@ -15,6 +15,7 @@ from .core import DEFAULTS, IMAGE_TYPES, ApiError, EventBus, Settings, letter_ic
 from .files import FileSystem
 from .privileged import Jobs
 from .vara import Vara, complete
+from .widgets import Widgets
 
 # Floating dock geometry in logical px. The dock window is the bar itself, inset from the
 # screen edges; openbox keeps PANEL_HEIGHT (times the UI scale) free for maximized windows.
@@ -25,6 +26,7 @@ PANEL_HEIGHT = DOCK_HEIGHT + DOCK_MARGIN + 4
 # Popup sizes in logical px. "taskmenu" height is supplied by the panel (it depends on the items).
 # Full-screen popups cover the monitor above the dock; their size is filled in by the shell.
 FULLSCREEN_POPUPS = {"launcher", "power"}
+TALL_POPUPS = {"widgets"}  # full height at the left edge, like the Windows widgets board
 POPUP_SIZES = {
     "start": (400, 596),  # the PolyOS Home Menu
     "launcher": (0, 0),
@@ -35,6 +37,7 @@ POPUP_SIZES = {
     "calendar": (320, 390),
     "taskmenu": (240, 200),
     "quickmenu": (264, 468),  # Super+X: the Windows-style quick link menu
+    "widgets": (760, 0),
 }
 RECENT_LIMIT = 6
 WALLPAPER_NAMES = {"polyos-dusk": "Dusk", "polyos-violet": "Violet", "polyos-night": "Night", "polyos-crystal": "Crystal",
@@ -82,6 +85,7 @@ class Backend:
         self.vara = Vara(settings.path.parent / "vara.json")  # ~/.config/polyos/vara.json
         self.jobs = Jobs(bus)
         self._driver_packages: set[str] = set()
+        self.widgets = Widgets(settings.path.parent / "widgets.json", self.files.home)
         self._popup_lock = threading.Lock()
         self._popup: dict | None = None
         self._popup_key: str | None = None
@@ -121,6 +125,10 @@ class Backend:
         first = name.split(",")[0]
         return letter_icon(first.split(".")[-1] or "?"), "image/svg+xml"
 
+    def lock(self): raise ApiError("locking isn't available here", 404)
+    def lock_unlock(self, password: str): raise ApiError("locking isn't available here", 404)
+    def lock_recover(self, key: str, password: str): raise ApiError("locking isn't available here", 404)
+    def greeter_recover(self, user: str, key: str, password: str): raise ApiError("only available on the login screen", 404)
     def procs(self) -> dict: raise NotImplementedError
     def procs_end(self, pid: int, force: bool): raise NotImplementedError
     def _show_popup(self, popup: dict) -> None: pass
@@ -238,6 +246,42 @@ class Backend:
             json.dump(clean, fh)
         return self.jobs.start("install", "Installing PolyOS", ["install", str(path)])
 
+    def install_restart(self):
+        """Restart right away after installing (a normal restart waits on the live system's services)."""
+        if not self.env()["live"]:
+            raise ApiError("PolyOS is already installed on this computer.", 409)
+        self.jobs.admin.stream(["reboot"], lambda _event: None)
+
+    # ---- your account -------------------------------------------------------------------
+    def _account_request(self, payload: dict) -> None:
+        path = paths.runtime_dir() / "account-request.json"
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        errors: list[str] = []
+        rc = self.jobs.admin.stream(["account", str(path)], lambda e: errors.append(e["error"]) if "error" in e else None)
+        path.unlink(missing_ok=True)
+        if errors or rc != 0:
+            raise ApiError(errors[-1] if errors else "That didn't work. Try again.", 500)
+
+    def account_password(self, current: str, password: str):
+        if not password or len(password) > 256 or "\n" in password:
+            raise ApiError("Choose a new password.")
+        self.jobs.admin.authenticate(current)  # proves it's you (and unlocks sudo)
+        self._account_request({"password": password})
+        return {"ok": True}
+
+    def account_recovery_key(self):
+        from .recovery import generate
+
+        if not self.jobs.admin.ready():
+            from .privileged import NeedPassword
+
+            raise NeedPassword()
+        key = generate()
+        self._account_request({"recoveryKey": key})
+        return {"key": key}
+
     # ---- Driver Manager ------------------------------------------------------------------
     def drivers_scan(self) -> dict:
         result = drivers.scan()
@@ -277,6 +321,11 @@ class Backend:
             raise ApiError(f"{app['name']} runs from the Terminal." if not app.get("desktop") else
                            f"{app['name']} isn't installed yet.", 404)
         return self.launch(target)
+
+    def widgets_update(self, patch: dict) -> dict:
+        data = self.widgets.update(patch)
+        self.bus.publish("widgets", keys=sorted(patch))
+        return data
 
     def vara_test(self) -> dict:
         reply = complete(self.vara.config.load(), [{"role": "user", "content": "Reply with just the word: ready"}], timeout=60)
@@ -346,6 +395,7 @@ class Backend:
                 "height": max(80, min(int(height), 900)) if height else default_height,
                 "anchorX": anchor_x,
                 "fullscreen": view in FULLSCREEN_POPUPS,
+                "tall": view in TALL_POPUPS,
             }
             self._popup, self._popup_key = popup, key
         self.bus.publish("popup", popup=popup)

@@ -43,4 +43,5 @@ html, body { background: #000; }
   animation: fade 0.3s;
 }
 #overlay small { color: #6f7a9c; font-size: 13px; }
-#setup { inset: 0; width: 100%; height: 100%; z-index: 80; }
+#setup, #lock { inset: 0; width: 100%; height: 100%; z-index: 80; }
+#lock { z-index: 90; }
