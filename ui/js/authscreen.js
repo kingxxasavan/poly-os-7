@@ -1,8 +1,9 @@
 // Shared by the login screen (LightDM greeter) and the lock screen, after the PolyOS 7 Login
-// design: clock over the wallpaper, then a card with your name, "Enter your password", and a
-// real "Forgot password" that resets it with the recovery key saved during setup.
+// design: a stacked clock beside date / performance / news / notification tiles over the
+// blurred crystal wallpaper, then a card with your name, "Enter your password", Next, and a
+// real "Forgot Password" that resets it with the recovery key saved during setup.
 
-import { withToken } from './api.js';
+import { api, withToken } from './api.js';
 import { clockTicker, fill, fmtDate, fmtTime, h, icon, networkIcon } from './ui.js';
 
 const IDLE_AFTER = 60000;
@@ -10,12 +11,21 @@ const IDLE_AFTER = 60000;
 // adapter: { kind: 'login' | 'lock', load() -> info, signIn(user, password, session),
 //            recover(user, key, password), power(action), onSignedIn() }
 export function mountAuth(root, store, adapter) {
-  root.className = `greeter ${adapter.kind}`;
-  const wall = h('div.gr-wall', { style: { backgroundImage: `url("${withToken(`/wallpaper/current?v=${encodeURIComponent(store.state.settings.wallpaper)}`)}")` } });
-  const time = h('div.gr-time');
-  const date = h('div.gr-date');
-  const hint = h('div.gr-hint');
-  const idle = h('section.gr-idle', time, date, hint);
+  // (not a bare "login"/"lock" class: "login" is the password-card mode below)
+  root.className = `greeter kind-${adapter.kind}`;
+  const wall = h('div.gr-wall', { style: { backgroundImage: `url("${withToken(`/wallpaper/lock?v=${encodeURIComponent(store.state.settings.lockWallpaper)}`)}")` } });
+  // PolyOS 7 idle screen: stacked clock, then date / performance / news / notifications tiles
+  const hours = h('span');
+  const minutes = h('span');
+  const dateCard = h('div.gr-tile.gr-datecard');
+  const perfLevel = h('span.gr-perf-level', '…');
+  const perfCard = h('div.gr-tile.gr-perf', h('b', 'Performance:'), perfLevel);
+  const newsCard = h('div.gr-tile.gr-newscard', h('b', 'News'),
+    h('p', 'No news for now!'), h('small', 'Come back when another PolyOS update has been released.'));
+  const notifCard = h('div.gr-tile.gr-notif', h('span', 'No notifications'));
+  const tiles = h('div.gr-panel', h('div.gr-col', dateCard, perfCard), newsCard, notifCard);
+  const hint = h('button.gr-hint');
+  const idle = h('section.gr-idle', h('div.gr-top', h('div.gr-clock', hours, minutes), tiles), hint);
   const card = h('section.gr-card', { role: 'dialog', 'aria-label': adapter.kind === 'lock' ? 'Unlock' : 'Sign in' });
   const status = h('div.gr-status');
   const bottom = h('div.gr-bottom');
@@ -69,7 +79,7 @@ export function mountAuth(root, store, adapter) {
     const nameInput = !user ? h('input.gr-input.gr-name-input', { placeholder: 'Username', autocomplete: 'username', value: typedUser, 'aria-label': 'Username' }) : null;
     nameInput?.addEventListener('input', () => { typedUser = nameInput.value; });
     const input = h('input.gr-input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password', 'aria-label': 'Password', disabled: busy });
-    const next = h('button.gr-next', { disabled: busy, 'aria-label': 'Sign in' }, busy ? h('span.gr-spinner') : icon('arrowRight'));
+    const next = h('button.gr-pill.primary', { disabled: busy }, busy ? h('span.gr-spinner') : 'Next');
     const submit = () => signIn(input.value);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submit();
@@ -88,10 +98,13 @@ export function mountAuth(root, store, adapter) {
       h('h1.gr-name', title),
       h('p.gr-prompt', 'Enter your password'),
       notice ? h('div.gr-notice', { role: 'status' }, icon('check'), h('span', notice)) : null,
-      error ? h('div.gr-error', { role: 'alert' }, h('b', 'Incorrect password'), h('span', error)) : null,
+      error ? h('div.gr-error', { role: 'alert' }, h('b', 'Incorrect Password'), h('span', error),
+        h('small', 'Forgot your password? No worries. Click Forgot Password below to get help.')) : null,
       nameInput,
-      h('div.gr-field', input, next),
-      h('button.gr-forgot', { onclick: () => { view = 'recover'; error = null; renderCard(); } }, 'Forgot password?'),
+      input,
+      h('div.gr-actions',
+        h('button.gr-pill', { onclick: () => { view = 'recover'; error = null; renderCard(); } }, 'Forgot Password'),
+        next),
     ];
     return { parts, focus: nameInput || input };
   }
@@ -202,9 +215,28 @@ export function mountAuth(root, store, adapter) {
   });
 
   clockTicker((now) => {
-    time.textContent = fmtTime(now, store.state.settings, false);
-    date.textContent = fmtDate(now);
+    const h24 = store.state.settings.clock24h;
+    hours.textContent = String(h24 ? now.getHours() : now.getHours() % 12 || 12).padStart(2, '0');
+    minutes.textContent = String(now.getMinutes()).padStart(2, '0');
+    fill(dateCard, h('b.gr-md', `${now.getMonth() + 1} / ${now.getDate()}`), h('b', String(now.getFullYear())),
+      h('small', now.toLocaleDateString([], { weekday: 'long' })));
+    idle.setAttribute('aria-label', `${fmtTime(now, store.state.settings, false)}, ${fmtDate(now)}`);
   }, () => false);
+  const LEVELS = { optimal: 'Optimal', busy: 'Busy', high: 'Working hard' };
+  const loadPerformance = () => api.get('/api/performance').then((p) => {
+    perfLevel.textContent = LEVELS[p.level] || 'Optimal';
+    perfLevel.className = `gr-perf-level ${p.level}`;
+  }, () => { perfLevel.textContent = 'Optimal'; });
+  loadPerformance();
+  setInterval(loadPerformance, 30000);
+  // Settings > Privacy & security can keep headlines and performance off the lock screen.
+  const syncPrivacy = () => { tiles.hidden = store.state.settings.lockNews === false; };
+  syncPrivacy();
+  store.subscribe((_s, changed) => { if (changed.has('settings')) syncPrivacy(); });
+  // The lock screen can show a real headline from the person's News widget.
+  Promise.resolve(adapter.headline?.()).then((item) => {
+    if (item) fill(newsCard, h('b', 'News'), h('p', item.title), h('small', item.source || ''));
+  }, () => {});
   store.subscribe((_s, changed) => { if (changed.has('system')) renderStatus(); });
 
   Promise.resolve(adapter.load()).then((state) => {
@@ -212,8 +244,7 @@ export function mountAuth(root, store, adapter) {
     user = state.users.find((u) => u.name === state.selectedUser) || (state.users.length === 1 ? state.users[0] : null)
       || state.users[0] || null;
     session = state.defaultSession;
-    hint.textContent = adapter.kind === 'lock' ? 'Click or press any key to unlock' : 'Click or press any key to sign in';
-    root.classList.toggle('locked', adapter.kind === 'lock');
+    hint.textContent = adapter.kind === 'lock' ? 'Click to Unlock' : 'Click to Enter Password';
     renderStatus();
     renderBottom();
     renderCard();

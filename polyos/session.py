@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from . import paths, system, theme
-from .backend import PANEL_HEIGHT
+from .backend import PANEL_HEIGHT, panel_margin
 from .core import Settings
 
 log = logging.getLogger("polyos.session")
@@ -95,11 +95,11 @@ class Session:
             subprocess.run(["dbus-update-activation-environment", "--systemd", *names], check=False,
                            stdout=self.helper_log, stderr=subprocess.STDOUT)
 
-    def start_window_manager(self, scale: int, appearance: str) -> None:
+    def start_window_manager(self, scale: int, appearance: str, margin: int = PANEL_HEIGHT) -> None:
         user_rc = paths.config_dir() / "openbox" / "rc.xml"
         source = user_rc if user_rc.is_file() else paths.OPENBOX_RC
         rc_path = paths.runtime_dir() / "openbox-rc.xml"
-        rc_path.write_text(theme.openbox_rc(source.read_text("utf-8"), appearance, PANEL_HEIGHT * scale), "utf-8")
+        rc_path.write_text(theme.openbox_rc(source.read_text("utf-8"), appearance, margin * scale), "utf-8")
         if self.spawn(["openbox", "--config-file", str(rc_path)]) is None:
             log.error("openbox is missing; windows will have no decorations")
             return
@@ -183,7 +183,7 @@ class Session:
             theme.apply_gtk(settings.get("theme"))
         except OSError as exc:
             log.warning("could not write GTK settings: %s", exc)
-        self.start_window_manager(scale, settings.get("theme"))
+        self.start_window_manager(scale, settings.get("theme"), panel_margin(settings.snapshot()))
         if settings.get("effects"):
             self.start_compositor()
         self.start_helpers()

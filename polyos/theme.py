@@ -54,6 +54,27 @@ def openbox_rc(template: str, theme: str, panel_margin: int) -> str:
             .replace("@THEME@", OPENBOX_THEMES.get(theme, OPENBOX_THEMES["dark"])))
 
 
+def set_openbox_margin(rc_path: Path, bottom: int) -> bool:
+    """Change the room the running Openbox keeps for the taskbar under maximized windows."""
+    try:
+        text = rc_path.read_text("utf-8")
+    except OSError:
+        return False
+    new = re.sub(r"(<margins>.*?<bottom>)[^<]*(</bottom>)", rf"\g<1>{int(bottom)}\g<2>", text, count=1, flags=re.S)
+    if new == text:
+        return True
+    rc_path.write_text(new, "utf-8")
+    return _reconfigure()
+
+
+def _reconfigure() -> bool:
+    try:
+        subprocess.run(["openbox", "--reconfigure"], check=False, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
 def switch_openbox(rc_path: Path, theme: str) -> bool:
     """Point the running Openbox at the matching theme and reload it."""
     try:
@@ -65,8 +86,4 @@ def switch_openbox(rc_path: Path, theme: str) -> bool:
     if new == text:
         return True
     rc_path.write_text(new, "utf-8")
-    try:
-        subprocess.run(["openbox", "--reconfigure"], check=False, timeout=5)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return True
+    return _reconfigure()

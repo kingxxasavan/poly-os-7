@@ -146,11 +146,19 @@ export function mount(root, store) {
     status.title = tips.join('\n');
   }
 
+  // Settings > Taskbar: style, alignment, widgets button, date under the clock.
+  function syncPrefs() {
+    const s = store.state.settings;
+    root.classList.toggle('full', s.taskbarStyle === 'full');
+    root.classList.toggle('align-left', s.taskbarAlign === 'left');
+    weather.hidden = !s.taskbarWidgets;
+  }
+
   function renderClock(now = new Date()) {
     const s = store.state.settings;
-    clock.replaceChildren(
+    fill(clock,
       h('span.clock-time', fmtTime(now, s)),
-      h('span.clock-date', now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })),
+      s.taskbarDate ? h('span.clock-date', now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })) : null,
     );
     clock.title = now.toLocaleDateString([], { dateStyle: 'full' });
   }
@@ -158,8 +166,12 @@ export function mount(root, store) {
   store.subscribe((_s, changed) => {
     if (changed.has('windows') || changed.has('apps') || changed.has('settings')) renderTasks();
     if (changed.has('system')) renderStatus();
-    if (changed.has('settings')) renderClock();
+    if (changed.has('settings')) {
+      renderClock();
+      syncPrefs();
+    }
   });
+  syncPrefs();
   renderTasks();
   renderStatus();
   clockTicker(renderClock, () => store.state.settings.showSeconds);

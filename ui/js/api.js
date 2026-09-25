@@ -50,15 +50,30 @@ function emit(event) {
   }
 }
 
+// One event stream for every surface. WebKit (like Chromium) allows only 6 connections per
+// host, and each stream holds one open for good, so with a few app windows open new requests
+// (even the lock screen's) would wait forever. One page holds the stream (a Web Lock picks it,
+// and hands it on when that page closes) and relays events to the rest over a BroadcastChannel.
+export function connectEvents() {
+  if (!('locks' in navigator) || typeof BroadcastChannel === 'undefined') return streamEvents(emit);
+  const channel = new BroadcastChannel(`polyos-events-${location.port}`);
+  channel.onmessage = (e) => emit(e.data);
+  navigator.locks.request(`polyos-events-${location.port}`, () => streamEvents((event) => {
+    emit(event);
+    channel.postMessage(event);
+  }));
+  return null;
+}
+
 // Streamed with fetch (not EventSource) so the token can travel in a header.
-export async function connectEvents() {
+async function streamEvents(deliver) {
   let delay = 400;
   for (;;) {
     try {
       const res = await fetch('/api/events', { headers: { 'X-PolyOS-Token': token }, cache: 'no-store' });
       if (!res.ok || !res.body) throw new Error(`event stream: HTTP ${res.status}`);
       delay = 400;
-      emit({ type: 'connected' });
+      deliver({ type: 'connected' });
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
       let buffer = '';
       for (;;) {
@@ -71,7 +86,7 @@ export async function connectEvents() {
           buffer = buffer.slice(cut + 2);
           for (const line of chunk.split('\n')) {
             if (line.startsWith('data: ')) {
-              try { emit(JSON.parse(line.slice(6))); } catch (err) { console.error(err); }
+              try { deliver(JSON.parse(line.slice(6))); } catch (err) { console.error(err); }
             }
           }
         }
@@ -79,7 +94,7 @@ export async function connectEvents() {
     } catch (err) {
       console.warn(err.message);
     }
-    emit({ type: 'disconnected' });
+    deliver({ type: 'disconnected' });
     await new Promise((resolve) => setTimeout(resolve, delay));
     delay = Math.min(delay * 2, 5000);
   }

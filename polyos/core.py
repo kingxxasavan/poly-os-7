@@ -37,10 +37,13 @@ IMAGE_TYPES = {
 DEFAULTS: dict = {
     "theme": "dark",  # "dark" | "light" (PolyOS 7's Appearance choice)
     "accent": "#678fd9",
-    "wallpaper": "builtin:polyos-dusk.jpg",
+    "wallpaper": "builtin:polyos-prism.jpg",  # the PolyOS 7 crystal
+    "lockWallpaper": "builtin:polyos-amethyst.jpg",  # login and lock screen (shown blurred)
     "clock24h": False,
     "showSeconds": False,
-    "desktopClock": True,
+    "desktopClock": False,
+    "desktopIcons": ["polyos-files.desktop", "firefox-esr.desktop", "polyos-store.desktop"],  # shortcuts on the wallpaper
+    "desktopOpen": "double",  # "double" | "single": clicks to open a desktop shortcut
     "pinned": [
         "firefox-esr.desktop",
         "polyos-files.desktop",
@@ -56,7 +59,26 @@ DEFAULTS: dict = {
     "scale": "auto",  # "auto" | "1" | "2" (next sign-in)
     "showAllApps": False,  # list the technical apps PolyOS hides from the launcher
     "widgets": ["weather", "calendar", "system", "news", "todo", "photos"],  # the widgets board, in order
+    # Taskbar (Settings > Taskbar)
+    "taskbarStyle": "floating",  # "floating" capsule | "full": edge to edge, maximized windows meet it
+    "taskbarAlign": "center",  # "center" | "left": where the app icons sit
+    "taskbarAutoHide": False,  # hide until the pointer touches the bottom edge; maximized windows fill the screen
+    "taskbarWidgets": True,  # weather / widgets button
+    "taskbarDate": True,  # date under the clock
+    # Power (Settings > Power)
+    "powerMode": "balanced",  # "saver" | "balanced" | "performance" | "maximum"
+    "screenOff": 10,  # minutes of inactivity before the screen turns off (0 = never)
+    "sleepAfter": 30,  # minutes of inactivity before the computer sleeps (0 = never)
+    # Security and privacy
+    "lockOnSleep": True,  # lock when the computer sleeps or the screen turns off
+    "lockNews": True,  # headlines and performance on the lock screen
+    "cameraAccess": True,
+    "micAccess": True,
+    "keepRecent": True,  # remember recently opened apps for the Home Menu
 }
+POWER_MODES = ("saver", "balanced", "performance", "maximum")
+SCREEN_OFF_CHOICES = (0, 1, 2, 3, 5, 10, 15, 30, 60)
+SLEEP_CHOICES = (0, 5, 10, 15, 30, 60, 120, 240)
 WIDGET_IDS = ("weather", "calendar", "system", "news", "todo", "notes", "photos", "clocks", "media")
 
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -111,6 +133,14 @@ def _widgets(value):
     raise ValueError(f"expected a list of widgets from: {', '.join(WIDGET_IDS)}")
 
 
+def _choice(*choices):
+    def check(value):
+        if value in choices and not isinstance(value, bool):
+            return value
+        raise ValueError("expected one of: " + ", ".join(map(str, choices)))
+    return check
+
+
 def _theme(value):
     if value in ("dark", "light"):
         return value
@@ -132,6 +162,22 @@ VALIDATORS = {
     "clock24h": _bool,
     "showSeconds": _bool,
     "desktopClock": _bool,
+    "lockWallpaper": _wallpaper,
+    "desktopIcons": _pinned,
+    "desktopOpen": _choice("double", "single"),
+    "taskbarStyle": _choice("floating", "full"),
+    "taskbarAlign": _choice("center", "left"),
+    "taskbarAutoHide": _bool,
+    "taskbarWidgets": _bool,
+    "taskbarDate": _bool,
+    "powerMode": _choice(*POWER_MODES),
+    "screenOff": _choice(*SCREEN_OFF_CHOICES),
+    "sleepAfter": _choice(*SLEEP_CHOICES),
+    "lockOnSleep": _bool,
+    "lockNews": _bool,
+    "cameraAccess": _bool,
+    "micAccess": _bool,
+    "keepRecent": _bool,
     "pinned": _pinned,
     "recent": _pinned,
     "setupDone": _bool,

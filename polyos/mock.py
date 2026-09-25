@@ -17,7 +17,7 @@ from .privileged import NeedPassword
 
 GB = 1000 ** 3
 OWN_APPS = {"polyos-settings.desktop": "settings", "polyos-files.desktop": "files", "polyos-taskmgr.desktop": "taskmgr",
-            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store"}
+            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store", "polyos-camera.desktop": "camera"}
 
 _APPS = [
     ("firefox-esr.desktop", "Firefox ESR", "Browse the World Wide Web", "Network;WebBrowser"),
@@ -29,6 +29,7 @@ _APPS = [
     ("polyos-taskmgr.desktop", "Task Manager", "See and end running apps", "System;Monitor"),
     ("polyos-drivers.desktop", "Driver Manager", "Install drivers for your hardware", "System;Settings"),
     ("polyos-store.desktop", "PolyMarket", "Get trusted apps", "System;PackageManager"),
+    ("polyos-camera.desktop", "Camera", "Take photos and videos", "AudioVideo;Video;Photography"),
     ("pavucontrol.desktop", "Volume Control", "Adjust the volume level", "AudioVideo;Settings"),
     ("nm-connection-editor.desktop", "Advanced Network Configuration", "Manage network connections", "Settings"),
     ("htop.desktop", "Htop", "Show system processes", "System;Monitor"),
@@ -139,7 +140,8 @@ class MockBackend(Backend):
         if name == "setup":
             return self.update_settings({"setupDone": False})
         app_id = next(k for k, v in OWN_APPS.items() if v == name)
-        titles = {"settings": "Settings", "taskmgr": "Task Manager", "drivers": "Driver Manager", "store": "PolyMarket"}
+        titles = {"settings": "Settings", "taskmgr": "Task Manager", "drivers": "Driver Manager", "store": "PolyMarket",
+                  "camera": "Camera"}
         if name != "settings":
             self.note_launch(app_id)
         with self._lock:
@@ -209,7 +211,7 @@ class MockBackend(Backend):
     def app_icon(self, app_id):
         own = {"polyos-settings.desktop": "settings.svg", "polyos-files.desktop": "files.svg",
                "polyos-taskmgr.desktop": "taskmgr.svg", "polyos-drivers.desktop": "drivers.svg",
-               "polyos-store.desktop": "store.svg"}
+               "polyos-store.desktop": "store.svg", "polyos-camera.desktop": "camera.svg"}
         if app_id in own:
             return (paths.UI_DIR / "img" / own[app_id]).read_bytes(), "image/svg+xml"
         name = next((a["name"] for a in self._apps if a["id"] == app_id), app_id)
@@ -356,6 +358,15 @@ class MockBackend(Backend):
 
     def pick_wallpaper(self):
         raise ApiError("The file picker only works on a real PolyOS session", 501)
+
+    def has_camera(self):
+        return True  # the browser's own camera stands in
+
+    def power_modes(self):
+        from .power import MODE_INFO
+
+        return {"modes": [{"id": k, "name": v[0], "description": v[1]} for k, v in MODE_INFO.items()],
+                "profiles": ["power-saver", "balanced", "performance"], "switchable": True}
 
     def restart_shell(self):
         self.bus.publish("power", action="restart-shell")

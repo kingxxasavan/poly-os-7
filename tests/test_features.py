@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from polyos import admin, drivers, procs, recovery, store, theme, widgets
+from polyos import admin, drivers, power, procs, recovery, store, theme, widgets
 from polyos.core import ApiError
 
 LSPCI = """Slot:	00:02.0
@@ -208,3 +208,65 @@ class WidgetsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PowerTests(unittest.TestCase):
+    LIST = """  performance:
+    CpuDriver:\tintel_pstate
+    Degraded:   no
+
+* balanced:
+    CpuDriver:\tintel_pstate
+    PlatformDriver:\tplatform_profile
+
+  power-saver:
+    CpuDriver:\tintel_pstate
+"""
+
+    def test_profiles(self):
+        offered = power.parse_profiles(self.LIST)
+        self.assertEqual(offered, ["performance", "balanced", "power-saver"])
+        self.assertEqual(power.profile_for("saver", offered), "power-saver")
+        self.assertEqual(power.profile_for("maximum", offered), "performance")
+        self.assertEqual(power.profile_for("performance", ["balanced", "power-saver"]), "balanced")  # no performance here
+        self.assertIsNone(power.profile_for("saver", []))
+
+    def test_maximum_turns_timers_off(self):
+        self.assertEqual(power.timers({"powerMode": "balanced", "screenOff": 10, "sleepAfter": 30}), (10, 30))
+        self.assertEqual(power.timers({"powerMode": "maximum", "screenOff": 10, "sleepAfter": 30}), (0, 0))
+
+    def test_camera_detection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.assertFalse(power.has_camera(root / "missing"))
+            codec = root / "video0"
+            codec.mkdir()
+            (codec / "name").write_text("bcm2835-codec-decode\n")
+            (codec / "index").write_text("0\n")
+            self.assertFalse(power.has_camera(root))
+            meta = root / "video2"
+            meta.mkdir()
+            (meta / "name").write_text("Integrated Camera: Integrated C\n")
+            (meta / "index").write_text("1\n")
+            self.assertFalse(power.has_camera(root))  # a metadata node alone isn't a camera
+            cam = root / "video1"
+            cam.mkdir()
+            (cam / "name").write_text("Integrated Camera: Integrated C\n")
+            (cam / "index").write_text("0\n")
+            self.assertTrue(power.has_camera(root))
+
+    def test_openbox_margin(self):
+        rc = theme.openbox_rc("<margins><top>0</top><bottom>@PANEL_MARGIN@</bottom></margins>", "dark", 64)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rc.xml"
+            path.write_text(rc)
+            theme.set_openbox_margin(path, 0)
+            self.assertIn("<bottom>0</bottom>", path.read_text())
+
+    def test_panel_margin(self):
+        from polyos.backend import DOCK_HEIGHT, PANEL_HEIGHT, dock_geometry, panel_margin
+
+        self.assertEqual(panel_margin({"taskbarStyle": "floating", "taskbarAutoHide": False}), PANEL_HEIGHT)
+        self.assertEqual(panel_margin({"taskbarStyle": "full", "taskbarAutoHide": False}), DOCK_HEIGHT)
+        self.assertEqual(panel_margin({"taskbarStyle": "full", "taskbarAutoHide": True}), 0)
+        self.assertEqual(dock_geometry({"taskbarStyle": "full"}, 1920, 1080), (0, 1080 - DOCK_HEIGHT, 1920, DOCK_HEIGHT))

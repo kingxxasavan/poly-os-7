@@ -16,8 +16,12 @@ export default function launcher(root, store, data = {}) {
   const dots = h('div.lp-dots');
   const prev = h('button.lp-arrow.prev', { title: 'Previous page' }, icon('chevronLeft'));
   const next = h('button.lp-arrow.next', { title: 'Next page' }, icon('chevronRight'));
-  const pinBtn = h('button.pill-btn', 'Pin Apps');
-  const hint = h('span.lp-hint', 'Click an app to add it to the dock or remove it');
+  // "Add apps to the desktop" (desktop right-click menu) opens the launcher in desktop mode.
+  const target = data.target === 'desktop' ? 'desktopIcons' : 'pinned';
+  const pinBtn = h('button.pill-btn', target === 'desktopIcons' ? 'Add to Desktop' : 'Pin Apps');
+  const hint = h('span.lp-hint', target === 'desktopIcons'
+    ? 'Click an app to put it on the desktop or take it off'
+    : 'Click an app to add it to the dock or remove it. Right-click any app to add it to the desktop.');
   root.append(
     backdrop,
     h('button.lp-collapse', { title: 'Close', onclick: () => closePopup() }, icon('chevronDown')),
@@ -29,7 +33,7 @@ export default function launcher(root, store, data = {}) {
 
   let page = 0;
   let pages = [];
-  let pinMode = false;
+  let pinMode = target === 'desktopIcons'; // desktop mode starts ready to pick apps
   let perPage = 18;
   let cols = 6;
 
@@ -44,11 +48,16 @@ export default function launcher(root, store, data = {}) {
   }
 
   function tile(app) {
-    const pinned = store.state.settings.pinned.includes(app.id);
+    const pinned = store.state.settings[target].includes(app.id);
     const el = h('button.lp-tile', { class: pinMode && pinned ? 'pinned' : '', title: app.description || app.name },
       h('span.lp-icon', h('img', { src: withToken(app.icon), alt: '', draggable: 'false' }),
         pinMode ? h('span.lp-badge', icon(pinned ? 'check' : 'plus')) : null),
       h('span.lp-label', app.name));
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      appMenu(app, e.clientX, e.clientY);
+    });
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       if (!pinMode) {
@@ -56,12 +65,35 @@ export default function launcher(root, store, data = {}) {
         closePopup();
         return;
       }
-      const list = store.state.settings.pinned;
-      saveSettings({ pinned: pinned ? list.filter((id) => id !== app.id) : [...list, app.id] })
+      const list = store.state.settings[target];
+      saveSettings({ [target]: pinned ? list.filter((id) => id !== app.id) : [...list, app.id] })
         .catch((err) => console.warn(err.message));
     });
     return el;
   }
+
+  // Right-click an app: open it, put it on the desktop, or pin it to the dock.
+  let menu = null;
+  const closeMenu = () => { menu?.remove(); menu = null; };
+  function appMenu(app, x, y) {
+    closeMenu();
+    const { pinned, desktopIcons } = store.state.settings;
+    const onDock = pinned.includes(app.id);
+    const onDesk = desktopIcons.includes(app.id);
+    const save = (patch) => saveSettings(patch).catch((err) => console.warn(err.message));
+    const item = (ico, label, fn) => h('button.menu-item', { role: 'menuitem', onclick: (e) => { e.stopPropagation(); closeMenu(); fn(); } }, icon(ico), label);
+    menu = h('div.menu.lp-menu', { role: 'menu' },
+      item('arrowRight', 'Open', () => { launch(app.id); closePopup(); }),
+      item(onDesk ? 'close' : 'monitor', onDesk ? 'Remove from desktop' : 'Add to desktop',
+        () => save({ desktopIcons: onDesk ? desktopIcons.filter((id) => id !== app.id) : [...desktopIcons, app.id] })),
+      item(onDock ? 'unpin' : 'pin', onDock ? 'Unpin from dock' : 'Pin to dock',
+        () => save({ pinned: onDock ? pinned.filter((id) => id !== app.id) : [...pinned, app.id] })));
+    root.append(menu);
+    const r = menu.getBoundingClientRect();
+    menu.style.left = `${Math.min(x, innerWidth - r.width - 8)}px`;
+    menu.style.top = `${Math.min(y, innerHeight - r.height - 8)}px`;
+  }
+  root.addEventListener('pointerdown', (e) => { if (menu && !menu.contains(e.target)) closeMenu(); });
 
   function render(direction = 0) {
     layout();
@@ -82,7 +114,7 @@ export default function launcher(root, store, data = {}) {
     next.hidden = page >= pages.length - 1;
     dots.replaceChildren(...(pages.length > 1 ? pages.map((_, i) =>
       h('button.lp-dot', { class: i === page ? 'on' : '', 'aria-label': `Page ${i + 1}`, onclick: (e) => { e.stopPropagation(); go(i); } })) : []));
-    pinBtn.textContent = pinMode ? 'Done' : 'Pin Apps';
+    pinBtn.textContent = pinMode ? 'Done' : target === 'desktopIcons' ? 'Add to Desktop' : 'Pin Apps';
     pinBtn.classList.toggle('on', pinMode);
     hint.hidden = !pinMode;
   }

@@ -33,12 +33,13 @@ CONTENT_TYPES = {
     ".ttf": "font/ttf",
     **IMAGE_TYPES,
 }
-CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+CSP = ("default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; "
        "script-src 'self'{extra}; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'")
 DEV_ONLY = {"dev.html", "js/dev.js", "css/dev.css"}
 # Everything the login screen's UI may call; the greeter's server answers nothing else.
 GREETER_API = frozenset({"/api/state", "/api/events", "/api/greeter/state", "/api/greeter/login",
-                         "/api/greeter/power", "/api/greeter/recover", "/wallpaper/current"})
+                         "/api/greeter/power", "/api/greeter/recover", "/api/performance",
+                         "/wallpaper/current", "/wallpaper/lock"})
 
 
 def _str(body: dict, key: str, max_len: int = 512) -> str:
@@ -114,6 +115,9 @@ GET_API = {
     "/api/drivers": lambda be, q: be.drivers_scan(),
     "/api/store": lambda be, q: be.store_list(),
     "/api/procs": lambda be, q: be.procs(),
+    "/api/performance": lambda be, q: be.performance(),
+    "/api/camera": lambda be, q: be.camera_status(),
+    "/api/power/modes": lambda be, q: be.power_modes(),
     "/api/widgets/data": lambda be, q: be.widgets.data(),
     "/api/widgets/weather": lambda be, q: be.widgets.weather(),
     "/api/widgets/geocode": lambda be, q: {"results": be.widgets.geocode(_q(q, "q") or "")},
@@ -307,11 +311,15 @@ class _Handler(BaseHTTPRequestHandler):
             return self._bytes(data, ctype, "no-cache")
         if path == "/wallpaper/current":
             return self._file(be.wallpaper_path(), "no-cache")
+        if path == "/wallpaper/lock":
+            return self._file(be.wallpaper_path("lockWallpaper"), "no-cache")
         if path.startswith("/wallpaper/builtin/"):
             return self._file(be.builtin_wallpaper(path[len("/wallpaper/builtin/"):]), "max-age=3600")
         raise ApiError("not found", 404)
 
     def _post_api(self, path: str) -> None:
+        if path == "/api/camera/save":
+            return self._camera_save()
         handler = POST_API.get(path)
         if handler is None:
             raise ApiError("not found", 404)
@@ -327,6 +335,24 @@ class _Handler(BaseHTTPRequestHandler):
             raise ApiError("expected a JSON object")
         result = handler(self.app.backend, body)
         self._json({"ok": True} if result is None else result)
+
+    def _camera_save(self) -> None:
+        """Raw photo/video bytes from the Camera app (too big for the JSON API's limit)."""
+        from .backend import CAMERA_MAX_BYTES
+
+        kind = _q(parse_qs(urlsplit(self.path).query), "kind")
+        if kind not in CAMERA_MAX_BYTES:
+            raise ApiError("'kind' must be photo or video")
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise ApiError("bad length") from None
+        if length <= 0:
+            raise ApiError("nothing was captured")
+        if length > CAMERA_MAX_BYTES[kind]:
+            raise ApiError("That recording is too large to save.", 413)
+        data = self.rfile.read(length)
+        self._json(self.app.backend.camera_save(kind, self.headers.get("Content-Type", ""), data))
 
     def _events(self) -> None:
         bus = self.app.backend.bus

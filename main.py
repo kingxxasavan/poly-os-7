@@ -55,7 +55,7 @@ PACKAGES = {
         "recommends": [
             "picom", "xcape", "wireplumber | pulseaudio-utils", "network-manager", "brightnessctl",
             "papirus-icon-theme", "fonts-inter | fonts-noto-core", "lxpolkit | mate-polkit", "pciutils", "flatpak",
-            "playerctl",
+            "playerctl", "libxss1", "power-profiles-daemon", "gstreamer1.0-plugins-good",
         ],
         "summary": "PolyOS desktop shell",
         "description": (
@@ -80,7 +80,8 @@ PACKAGES = {
             "brightnessctl", "lxpolkit | mate-polkit", "xfce4-notifyd", "tumbler", "playerctl",
             "xfce4-screenshooter", "fonts-noto-color-emoji", "network-manager-gnome", "pavucontrol",
             "arandr", "ristretto", "file-roller", "gvfs-backends", "plymouth", "plymouth-label", "evince",
-            "flatpak", "bluez", "blueman", "usbutils", "isenkram-cli", "mokutil",
+            "flatpak", "bluez", "blueman", "usbutils", "isenkram-cli", "mokutil", "libxss1",
+            "power-profiles-daemon", "gstreamer1.0-plugins-good", "gstreamer1.0-plugins-base", "gstreamer1.0-libav",
         ],
         "summary": "PolyOS desktop environment (complete)",
         "description": (
@@ -186,7 +187,7 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         (ROOT / "ui/img/files.svg", "usr/share/icons/hicolor/scalable/apps/polyos-files.svg", 0o644),
         (ROOT / "ui/img/logo.svg", "usr/share/icons/hicolor/scalable/apps/polyos-setup.svg", 0o644),
         *[(ROOT / f"ui/img/{n}.svg", f"usr/share/icons/hicolor/scalable/apps/polyos-{n}.svg", 0o644)
-          for n in ("taskmgr", "drivers", "store")],
+          for n in ("taskmgr", "drivers", "store", "camera")],
         # Poppins (SIL OFL 1.1) for window titles and the login screen, not just the web UI
         *[(p, f"usr/share/fonts/truetype/polyos/{p.name}", 0o644) for p in sorted((ROOT / "ui/fonts").glob("*.ttf"))],
         (ROOT / "ui/fonts/OFL.txt", "usr/share/doc/polyos-shell/Poppins-OFL.txt", 0o644),

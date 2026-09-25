@@ -16,6 +16,7 @@ const surfaces = {
   drivers: () => import('./surfaces/drivers.js'),
   store: () => import('./surfaces/store.js'),
   lock: () => import('./surfaces/lock.js'),
+  camera: () => import('./surfaces/camera.js'),
 };
 
 async function resync() {

@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("popup", help="toggle a shell popup")
     p.add_argument("view", choices=["start", "launcher", "quick", "calendar", "run", "power", "vara", "quickmenu", "widgets"])
     p = sub.add_parser("open", help="open a built-in app")
-    p.add_argument("app", choices=["settings", "files", "setup", "taskmgr", "drivers", "store"])
+    p.add_argument("app", choices=["settings", "files", "setup", "taskmgr", "drivers", "store", "camera"])
     p.add_argument("page", nargs="?", help="Settings page, or the folder/URI for Files")
     p = sub.add_parser("volume", help="up | down | mute | 0-100")
     p.add_argument("value")

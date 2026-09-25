@@ -89,15 +89,17 @@ this step.
 | **Dock** | Pinwheel (Home Menu), pinned and running apps, status, clock, launcher grid; right-click an app for Close, Force close and Task Manager |
 | **Home Menu** | PolyOS 7 layout: date and calendar cards, Ask Vara, Run CMD, brightness and volume sliders, pinned and recent apps, power, launcher |
 | **Launcher** | Full-screen paged app grid with search and Pin Apps; technical tools are hidden (Settings > Appearance > Show all apps) |
-| **Desktop menu** | Right-click (or two-finger tap): Personalize, Display settings, Task Manager, Terminal, Files, PolyMarket |
+| **Desktop** | The PolyOS 7 crystal wallpaper with app shortcuts: double-click to open (or single click, in Settings), right-click to pin or remove. Add apps by right-clicking the desktop (*Add apps to the desktop*) or any app in the launcher (*Add to desktop*) |
+| **Desktop menu** | Right-click (or two-finger tap): Add apps to the desktop, Taskbar settings, Personalize, Display settings, Task Manager, Terminal, Files, PolyMarket |
 | **Files** | File manager for the real disk: places, breadcrumbs, grid/list views, thumbnails, search, copy/cut/paste, rename, Trash with restore, properties |
 | **Task Manager** | Apps and processes with CPU and memory, End task and Force close, live CPU/memory/disk/network graphs |
 | **Driver Manager** | Finds NVIDIA, AMD and Intel graphics, Wi-Fi (including Broadcom), Bluetooth and sound hardware and installs the right drivers and firmware from Debian |
 | **PolyMarket** | Curated store: Chrome, Discord, Spotify, Steam, VS Code, LibreOffice, GIMP, OBS and more from Debian and Flathub |
-| **Settings** | Appearance (dark/light, accent, wallpaper), Wi-Fi, Sound, Display, Power, Vara, About |
+| **Settings** | Appearance (dark/light, accent, desktop and lock screen wallpapers), Taskbar & Desktop (floating or edge-to-edge taskbar, center/left, auto-hide, widgets button, date, pinned apps, desktop shortcuts), Wi-Fi, Sound, Display, Power & Performance (Power saver / Balanced / Performance / Maximum, screen-off and sleep timers), Account (password, recovery key, sign-in options), Privacy & Security (lock on sleep, lock screen news, camera and microphone access, activity history), Vara, About |
+| **Camera** | Photos and videos from the webcam (self-timer, mirror, switch camera), saved to Pictures › Camera. Only listed on computers with a camera |
 | **Ask Vara** | Assistant: runs simple requests on the PC ("open firefox", "volume 40", "turn wifi off") and answers the rest with an AI model; uses your Ollama Cloud (or other) API key |
-| **Login screen** | PolyOS LightDM greeter with your name and "Enter your password"; falls back to the stock greeter if it can't start |
-| **Lock screen** | Appears instantly (Win+L, the power menu, before sleep); unlocks with your password |
+| **Login screen** | PolyOS 7 design over the blurred amethyst crystal: big stacked clock, date, *Performance: Optimal*, news and notification tiles, *Click to Enter Password*, then your name, "Enter your password", *Forgot Password* and *Next*. Falls back to the stock greeter if it can't start |
+| **Lock screen** | Same design; appears instantly (Win+L, the power menu, before sleep, when the screen turns off); unlocks with your password |
 | **Forgot password** | The installer shows a recovery key once; with it you set a new password from the login or lock screen. Settings > Account makes a new key or changes your password |
 | **Widgets** | Win+W or the weather button in the dock: weather (Open-Meteo), calendar, system, BBC news, to-do, notes, photos, world clocks, media controls |
 | **Boot splash** | Spinning pinwheel (Plymouth) |
@@ -196,16 +198,22 @@ closing apps.
 ## Current limits
 
 - X11 only; Wayland would mean replacing Openbox and libwnck. The taskbar and popups use the
-  primary monitor; other monitors show the wallpaper color.
+  primary monitor; the wallpaper stretches across every monitor.
+- Full-screen apps (videos, games, F11) cover the taskbar. Maximized windows stop above it
+  unless the taskbar is set to hide automatically (Settings > Taskbar & Desktop).
+- Power modes use power-profiles-daemon when the computer supports it; otherwise only the
+  screen and sleep timers change. Idle timers need libxss1 (installed with PolyOS).
+- The Camera app uses WebKitGTK's GStreamer webcam support; recording video needs
+  gstreamer1.0-plugins-good (installed with PolyOS).
 - The installer, Driver Manager and PolyMarket run their root steps through `polyos-admin`; the
   partition planning is unit-tested and the steps have a dry-run test, but test installs on a
   spare disk or VM before trusting one with important data.
 - Apps and drivers installed in the live session disappear at restart (it runs from RAM).
-- The login screen can't read each user's wallpaper (users' home folders are private), so it
-  shows the PolyOS default.
+- The login screen can't read each user's settings (users' home folders are private), so it
+  shows the default Amethyst background; the lock screen uses the one chosen in Settings.
 - The look follows PolyOS 7: the logo is the original vector, and the palette was measured from
-  the Scratch costumes (`:root` in `ui/css/polyos.css`). Third-party photos from PolyOS 7's
-  wallpaper set are not shipped; see `CREDITS.md`.
+  the Scratch costumes (`:root` in `ui/css/polyos.css`). The two crystal photos are third-party
+  images; check their license before sharing builds publicly (see `CREDITS.md`).
 
 ## Credits and license
 

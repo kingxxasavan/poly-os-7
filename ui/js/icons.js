@@ -9,6 +9,17 @@ const dim = (on) => (on ? '' : ' opacity=".28"');
 
 export const icons = {
   search: svg('<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>'),
+  camera: svg('<path d="M8.5 6.5 10 4.5h4l1.5 2H19a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5a2 2 0 0 1 2-2z"/><circle cx="12" cy="12.5" r="3.6"/>'),
+  video: svg('<rect x="3" y="6.5" width="12.5" height="11" rx="2.5"/><path d="m15.5 10.5 5-3v9l-5-3"/>'),
+  shield: svg('<path d="M12 3.5 19 6v5.5c0 4.3-2.9 7.6-7 9-4.1-1.4-7-4.7-7-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>'),
+  taskbar: svg('<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 15.5h18"/><path d="M9 17.5h6"/>'),
+  timer: svg('<circle cx="12" cy="13.5" r="7"/><path d="M12 10v3.5l2.2 2"/><path d="M9.5 3.5h5"/>'),
+  mic: svg('<rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M12 18v2.5"/>'),
+  eye: svg('<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'),
+  bolt: svg('<path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>'),
+  leaf: svg('<path d="M5 19c0-8 5-13.5 15-14-.5 10-6 15-14 15"/><path d="M5 19c3-4 6-6.5 9.5-8.5"/>'),
+  flip: svg('<path d="M12 3.5v17"/><path d="M8.5 7 4 17h4.5z"/><path d="M15.5 7 20 17h-4.5z"/>'),
+  swap: svg('<path d="M4 9h13.5l-3.5-3.5"/><path d="M20 15H6.5l3.5 3.5"/>'),
   power: svg('<path d="M12 3.5v7.5"/><path d="M6.6 6.9a8 8 0 1 0 10.8 0"/>'),
   lock: svg('<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>'),
   logout: svg('<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="m10 16-4-4 4-4"/><path d="M6 12h10"/>'),

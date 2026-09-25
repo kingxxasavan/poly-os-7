@@ -139,6 +139,59 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(res.headers["Content-Type"].startswith("image/"))
         self.assertEqual(self.request("GET", "/wallpaper/builtin/..%2F..%2Fmain.py")[0], 404)
+        status, _, res = self.request("GET", "/wallpaper/lock")
+        self.assertEqual(status, 200)
+        self.assertTrue(res.headers["Content-Type"].startswith("image/"))
+
+    def raw_post(self, path, data, ctype):
+        conn = http.client.HTTPConnection("127.0.0.1", self.server.port, timeout=5)
+        conn.request("POST", path, body=data, headers={"Host": f"127.0.0.1:{self.server.port}",
+                                                       "X-PolyOS-Token": "secret-token", "Content-Type": ctype})
+        res = conn.getresponse()
+        payload = res.read()
+        conn.close()
+        return res.status, payload
+
+    def test_camera_saves_to_pictures(self):
+        info = json.loads(self.request("GET", "/api/camera")[1])
+        self.assertTrue(info["camera"])
+        jpeg = b"\xff\xd8\xff\xe0" + b"\0" * 200_000  # bigger than the JSON API's 64 KB limit
+        status, body = self.raw_post("/api/camera/save?kind=photo", jpeg, "image/jpeg")
+        self.assertEqual(status, 200, body)
+        saved = Path(json.loads(body)["path"])
+        self.assertEqual(saved.parent.name, "Camera")
+        self.assertEqual(saved.read_bytes(), jpeg)
+        self.assertEqual(self.raw_post("/api/camera/save?kind=photo", b"<html>", "image/jpeg")[0], 415)
+        self.assertEqual(self.raw_post("/api/camera/save?kind=photo", jpeg, "text/html")[0], 415)
+        self.assertEqual(self.raw_post("/api/camera/save?kind=exe", jpeg, "image/jpeg")[0], 400)
+        status, body = self.raw_post("/api/camera/save?kind=video", b"\x1aE\xdf\xa3webm", "video/webm;codecs=vp8")
+        self.assertEqual(status, 200, body)
+        self.assertTrue(json.loads(body)["name"].endswith(".webm"))
+        self.request("POST", "/api/settings", {"cameraAccess": False})
+        try:
+            self.assertEqual(self.raw_post("/api/camera/save?kind=photo", jpeg, "image/jpeg")[0], 403)
+        finally:
+            self.request("POST", "/api/settings", {"cameraAccess": True})
+
+    def test_new_settings_and_power(self):
+        ok = {"taskbarStyle": "full", "taskbarAlign": "left", "taskbarAutoHide": True, "powerMode": "maximum",
+              "screenOff": 5, "sleepAfter": 0, "desktopIcons": ["firefox-esr.desktop"], "desktopOpen": "single"}
+        status, body, _ = self.request("POST", "/api/settings", ok)
+        self.assertEqual(status, 200, body)
+        for bad in ({"taskbarStyle": "top"}, {"powerMode": "turbo"}, {"screenOff": 7}, {"screenOff": True},
+                    {"desktopIcons": ["../x"]}):
+            self.assertEqual(self.request("POST", "/api/settings", bad)[0], 400, bad)
+        modes = json.loads(self.request("GET", "/api/power/modes")[1])
+        self.assertEqual([m["id"] for m in modes["modes"]], ["saver", "balanced", "performance", "maximum"])
+        perf = json.loads(self.request("GET", "/api/performance")[1])
+        self.assertIn(perf["level"], ("optimal", "busy", "high"))
+        # turning activity history off forgets it
+        self.request("POST", "/api/launch", {"id": "firefox-esr.desktop"})
+        state = json.loads(self.request("POST", "/api/settings", {"keepRecent": False})[1])
+        self.assertEqual(state["recent"], [])
+        self.request("POST", "/api/launch", {"id": "firefox-esr.desktop"})
+        self.assertEqual(json.loads(self.request("GET", "/api/state")[1])["settings"]["recent"], [])
+        self.request("POST", "/api/settings", {"keepRecent": True, "taskbarStyle": "floating", "taskbarAutoHide": False})
 
 
 class GreeterServerTests(unittest.TestCase):
@@ -160,6 +213,9 @@ class GreeterServerTests(unittest.TestCase):
                     return status
                 self.assertEqual(get("/api/state"), 200)
                 self.assertEqual(get("/api/greeter/state"), 200)
+                self.assertEqual(get("/api/performance"), 200)
+                self.assertEqual(get("/wallpaper/lock"), 200)
+                self.assertEqual(get("/api/camera"), 404)
                 self.assertEqual(get("/api/files/places"), 404)
                 self.assertEqual(get("/api/launch", "POST", {"id": "firefox-esr.desktop"}), 404)
                 self.assertEqual(get("/api/run-command", "POST", {"command": "mousepad"}), 404)

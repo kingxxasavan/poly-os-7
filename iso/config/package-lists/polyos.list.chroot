@@ -36,8 +36,12 @@ isenkram-cli
 nvidia-detect
 flatpak
 
-# Everyday apps and hardware
+# Everyday apps and hardware (webcam for the Camera app, power modes, idle timers)
 evince
+power-profiles-daemon
+libxss1
+gstreamer1.0-plugins-good
+gstreamer1.0-libav
 bluez
 blueman
 

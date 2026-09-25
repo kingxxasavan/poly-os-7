@@ -40,11 +40,17 @@ POPUP_SIZES = {
     "widgets": (760, 0),
 }
 RECENT_LIMIT = 6
-WALLPAPER_NAMES = {"polyos-dusk": "Dusk", "polyos-violet": "Violet", "polyos-night": "Night", "polyos-crystal": "Crystal",
-                   "pixapoly": "PIXAPoLY"}
+WALLPAPER_NAMES = {"polyos-prism": "Crystal", "polyos-amethyst": "Amethyst", "polyos-dusk": "Dusk",
+                   "polyos-violet": "Violet", "polyos-night": "Night", "polyos-crystal": "Facets", "pixapoly": "PIXAPoLY"}
+# Built-ins listed first in Settings, in this order; the rest follow alphabetically.
+WALLPAPER_ORDER = ("polyos-prism", "polyos-amethyst")
 POWER_ACTIONS = ("lock", "logout", "suspend", "reboot", "poweroff")
 RUN_TARGETS = ("terminal", "files", "browser")
-OPEN_APPS = ("settings", "files", "setup", "taskmgr", "drivers", "store")
+OPEN_APPS = ("settings", "files", "setup", "taskmgr", "drivers", "store", "camera")
+CAMERA_APP = "polyos-camera.desktop"  # listed only when a webcam is connected
+CAMERA_TYPES = {"photo": {"image/jpeg": ".jpg", "image/png": ".png"},
+                "video": {"video/webm": ".webm", "video/mp4": ".mp4"}}
+CAMERA_MAX_BYTES = {"photo": 30 * 1024 * 1024, "video": 1024 * 1024 * 1024}
 # Launcher entries most people never need (Settings > Apps shows them again).
 HIDDEN_APPS = {
     "thunar.desktop", "thunar-bulk-rename.desktop", "thunar-settings.desktop", "thunar-volman-settings.desktop",
@@ -71,6 +77,20 @@ DISPLAY_NAMES = {
 # Clicking the button that opened a popup first blurs it (closing it) and then
 # toggles it again; ignore a reopen of the same popup this soon after a close.
 REOPEN_GUARD = 0.35
+
+
+def panel_margin(settings: dict) -> int:
+    """Logical px openbox keeps free at the bottom for maximized windows."""
+    if settings.get("taskbarAutoHide"):
+        return 0  # maximized windows fill the screen; the taskbar slides over them
+    return DOCK_HEIGHT if settings.get("taskbarStyle") == "full" else PANEL_HEIGHT
+
+
+def dock_geometry(settings: dict, width: int, height: int) -> tuple[int, int, int, int]:
+    """(x, y, w, h) of the taskbar on a monitor of this size (monitor-relative)."""
+    if settings.get("taskbarStyle") == "full":
+        return 0, height - DOCK_HEIGHT, width, DOCK_HEIGHT
+    return DOCK_MARGIN, height - DOCK_MARGIN - DOCK_HEIGHT, width - 2 * DOCK_MARGIN, DOCK_HEIGHT
 
 
 class Backend:
@@ -163,6 +183,8 @@ class Backend:
 
     def note_launch(self, app_id: str) -> None:
         """Remember an opened app for the Start menu's Recent list."""
+        if not self.settings.get("keepRecent"):
+            return
         recent = [a for a in self.settings.get("recent") if a != app_id]
         try:
             self.update_settings({"recent": [app_id, *recent][:RECENT_LIMIT]})
@@ -322,6 +344,73 @@ class Backend:
                            f"{app['name']} isn't installed yet.", 404)
         return self.launch(target)
 
+    def performance(self) -> dict:
+        """The login and lock screens' "Performance: Optimal" card (load average and free memory)."""
+        try:
+            load = os.getloadavg()[0] / (os.cpu_count() or 1)
+        except (AttributeError, OSError):
+            return {"level": "optimal"}
+        avail = 1.0
+        try:
+            info = {}
+            for line in Path("/proc/meminfo").read_text().splitlines():
+                key, _, rest = line.partition(":")
+                if key in ("MemTotal", "MemAvailable"):
+                    info[key] = int(rest.split()[0])
+            avail = info["MemAvailable"] / info["MemTotal"]
+        except (OSError, KeyError, ValueError, IndexError, ZeroDivisionError):
+            pass
+        level = "optimal" if load < 0.7 and avail > 0.15 else "busy" if load < 1.5 and avail > 0.05 else "high"
+        return {"level": level, "load": round(load, 2), "memoryFree": round(avail, 2)}
+
+    def power_modes(self) -> dict:
+        """Settings > Power: the four PolyOS modes and whether this computer can switch profiles."""
+        from .power import MODE_INFO, available_profiles
+
+        offered = available_profiles()
+        return {"modes": [{"id": k, "name": v[0], "description": v[1]} for k, v in MODE_INFO.items()],
+                "profiles": offered, "switchable": bool(offered)}
+
+    # ---- Camera app ----------------------------------------------------------------------
+    def has_camera(self) -> bool:
+        from .power import has_camera
+
+        return has_camera()
+
+    def camera_status(self) -> dict:
+        folder = self.files.home / "Pictures" / "Camera"
+        return {"camera": self.has_camera(), "allowed": self.settings.get("cameraAccess"),
+                "micAllowed": self.settings.get("micAccess"), "folder": str(folder)}
+
+    def camera_save(self, kind: str, ctype: str, data: bytes) -> dict:
+        """Save a photo or video from the Camera app to ~/Pictures/Camera."""
+        if not self.settings.get("cameraAccess"):
+            raise ApiError("Camera access is turned off in Settings > Privacy & security.", 403)
+        ext = CAMERA_TYPES.get(kind, {}).get(ctype.split(";")[0].strip().lower())
+        if ext is None:
+            raise ApiError("unsupported photo or video format", 415)
+        if not data:
+            raise ApiError("nothing was captured")
+        if kind == "photo" and not (data.startswith(b"\xff\xd8\xff") or data.startswith(b"\x89PNG")):
+            raise ApiError("that isn't a photo", 415)
+        folder = self.files.home / "Pictures" / "Camera"
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        prefix = "Photo" if kind == "photo" else "Video"
+        for n in range(100):
+            target = folder / f"{prefix} {stamp}{f' ({n + 1})' if n else ''}{ext}"
+            try:
+                fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise ApiError("couldn't pick a file name", 500)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        self._files_changed(str(folder))
+        return {"path": str(target), "name": target.name}
+
     def widgets_update(self, patch: dict) -> dict:
         data = self.widgets.update(patch)
         self.bus.publish("widgets", keys=sorted(patch))
@@ -332,6 +421,8 @@ class Backend:
         return {"ok": True, "reply": reply[:200]}
 
     def update_settings(self, patch: dict) -> dict:
+        if isinstance(patch, dict) and patch.get("keepRecent") is False:
+            patch = {**patch, "recent": []}  # turning activity history off forgets it too
         settings = self.settings.update(patch)
         self.bus.publish("settings", settings=settings)
         return settings
@@ -339,7 +430,8 @@ class Backend:
     def wallpapers(self) -> list[dict]:
         out = []
         if paths.WALLPAPER_DIR.is_dir():
-            for path in sorted(paths.WALLPAPER_DIR.iterdir()):
+            rank = {stem: i for i, stem in enumerate(WALLPAPER_ORDER)}
+            for path in sorted(paths.WALLPAPER_DIR.iterdir(), key=lambda p: (rank.get(p.stem, len(rank)), p.name)):
                 if path.suffix.lower() in IMAGE_TYPES:
                     out.append({
                         "id": f"builtin:{path.name}",
@@ -354,14 +446,14 @@ class Backend:
             return None
         return path
 
-    def wallpaper_path(self) -> Path | None:
-        value = self.settings.get("wallpaper")
+    def wallpaper_path(self, key: str = "wallpaper") -> Path | None:
+        value = self.settings.get(key)
         if value.startswith("builtin:"):
             path = self.builtin_wallpaper(value.split(":", 1)[1])
         else:
             path = Path(value) if Path(value).is_file() else None
         if path is None:  # missing file or a removed built-in: use the default, else any built-in
-            default = DEFAULTS["wallpaper"].split(":", 1)[1]
+            default = DEFAULTS[key].split(":", 1)[1]
             path = self.builtin_wallpaper(default)
             if path is None and (builtins := self.wallpapers()):
                 path = self.builtin_wallpaper(builtins[0]["id"].split(":", 1)[1])

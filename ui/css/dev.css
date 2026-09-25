@@ -11,6 +11,14 @@ html, body { background: #000; }
 #windows { position: absolute; inset: 0 0 var(--panel-h) 0; z-index: 10; pointer-events: none; }
 /* In the real session picom blurs behind the panel and popups; approximate it here. */
 #panel, #popup { backdrop-filter: blur(24px) saturate(1.4); }
+#panel { transition: transform 0.25s var(--ease); }
+#screen.tb-full #panel { left: 0; right: 0; bottom: 0; width: 100%; border-radius: 0; }
+#screen.tb-full #windows { bottom: var(--dock-h); }
+#screen.tb-autohide #windows { bottom: 0; }
+/* Auto-hide: a 3px sliver stays on screen; touching it (or an open popup) brings the taskbar back. */
+#screen.tb-autohide #panel { transform: translateY(calc(100% + var(--dock-m) - 3px)); }
+#screen.tb-autohide.tb-full #panel { transform: translateY(calc(100% - 3px)); }
+#screen.tb-autohide #panel:hover, #screen.tb-autohide:has(#popup:not([hidden])) #panel { transform: none; }
 
 .mock-win {
   position: absolute; display: flex; flex-direction: column; pointer-events: auto;

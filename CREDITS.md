@@ -23,8 +23,18 @@ under that license:
 
 This edition is presented by **Cryptic Software**.
 
-Several PolyOS 7 wallpapers are third-party photographs (stock and wallpaper-site images). They are
-**not** included here, since the Scratch license can only cover work the PolyOS team owns.
+Several PolyOS 7 wallpapers are third-party photographs (stock and wallpaper-site images), which
+the Scratch license can't cover. Two of them were added at the project owner's request, as the
+defaults PolyOS 7 uses:
+
+| File | Source |
+|---|---|
+| `data/wallpapers/polyos-prism.jpg` ("Crystal", the default desktop) | PolyOS 7's blue crystal wallpaper, supplied by the project owner |
+| `data/wallpapers/polyos-amethyst.jpg` ("Amethyst", the login and lock screen) | PolyOS 7's amethyst crystal wallpaper, supplied by the project owner |
+
+**Before distributing PolyOS images or packages publicly**, confirm where these two photos come from
+and that their license allows redistribution (many stock sites forbid sharing images as-is in
+wallpaper packs). If it doesn't, delete the two files: PolyOS falls back to its own wallpapers.
 
 ## Other assets
 

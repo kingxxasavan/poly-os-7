@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Camera
+GenericName=Webcam
+Comment=Take photos and videos with your webcam
+Exec=polyos-ctl open camera
+Icon=polyos-camera
+Terminal=false
+Categories=AudioVideo;Video;Photography;
+Keywords=webcam;photo;selfie;video;record;
+StartupWMClass=polyos-camera
+OnlyShowIn=PolyOS;

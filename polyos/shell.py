@@ -35,8 +35,9 @@ except ValueError:
     gi.require_version("WebKit2", "4.0")
 from gi.repository import Gdk, GdkPixbuf, GdkX11, Gio, GLib, Gtk, WebKit2, Wnck  # noqa: E402
 
-from . import __version__, paths, system, theme  # noqa: E402
-from .backend import DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT, Backend  # noqa: E402
+from . import __version__, paths, power, system, theme  # noqa: E402
+from .backend import (CAMERA_APP, DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT,  # noqa: E402
+                      Backend, dock_geometry, panel_margin)
 from .core import IMAGE_TYPES, ApiError, EventBus, Settings, letter_icon  # noqa: E402
 from .mainloop import on_main  # noqa: E402
 from .procs import ProcessMonitor, protected_pids  # noqa: E402
@@ -48,13 +49,16 @@ EXIT_LOGOUT, EXIT_RESTART = 0, 3
 SOLID_BG = "#151515"
 # PolyOS's own apps: launching their .desktop entries opens them in the shell directly.
 OWN_APPS = {"polyos-settings.desktop": "settings", "polyos-files.desktop": "files", "polyos-taskmgr.desktop": "taskmgr",
-            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store"}
+            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store", CAMERA_APP: "camera"}
 # name: (surface, window title, WM class, default size)
 SINGLE_WINDOWS = {
     "taskmgr": ("taskmgr", "Task Manager", "polyos-taskmgr", (940, 640)),
     "drivers": ("drivers", "Driver Manager", "polyos-drivers", (900, 640)),
     "store": ("store", "PolyMarket", "polyos-store", (1120, 740)),
+    "camera": ("camera", "Camera", "polyos-camera", (960, 640)),
 }
+AUTOHIDE_DELAY_MS = 700  # the taskbar slides away this long after the pointer leaves it
+AUTOHIDE_SLIVER = 2  # px of the hidden taskbar left on screen to touch
 GENERIC_EXECUTABLES = {"sh", "bash", "env", "flatpak", "snap", "python3", "python", "java", "wine",
                        "exo-open", "xdg-open", "pkexec", "sudo", "gtk-launch", "polyos-ctl"}
 
@@ -91,6 +95,12 @@ class DesktopShell(Backend):
         self.lock_window: Gtk.Window | None = None
         self._lock_flag = paths.runtime_dir() / "locked"  # survives a shell restart: lock again at start
         self._unlock_lock = threading.Lock()
+        self._dock_hidden = False  # auto-hide: slid off the bottom edge
+        self._dock_timer = 0
+        self._fullscreen_app = False  # an app is full screen on top: the taskbar steps aside
+        self._idle = None
+        self._idle_slept = False
+        self._camera = power.has_camera()
 
     # ==== startup ==========================================================================
     def start(self, base_url: str) -> None:
@@ -115,18 +125,27 @@ class DesktopShell(Backend):
         self.popup = self._surface("popup", Gdk.WindowTypeHint.UTILITY)
         self.popup.set_keep_above(True)
         self.popup.connect("focus-out-event", self._on_popup_focus_out)
+        self.panel.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        self.panel.connect("enter-notify-event", self._on_panel_enter)
+        self.panel.connect("leave-notify-event", self._on_panel_leave)
 
         self._layout()
-        self.gdk_screen.connect("monitors-changed", lambda *_: self._layout())
-        self.gdk_screen.connect("size-changed", lambda *_: self._layout())
+        # A resolution change (a VM going full screen, a new monitor) re-lays out now and again
+        # once the monitor list has settled, so the wallpaper always reaches every edge.
+        self.gdk_screen.connect("monitors-changed", lambda *_: self._relayout_soon())
+        self.gdk_screen.connect("size-changed", lambda *_: self._relayout_soon())
         for win in (self.desktop, self.panel):
             win.show_all()
             win.stick()
+        self._schedule_dock_hide()  # auto-hide: slide away shortly after sign-in
         self._refresh_system(("volume", "network", "battery", "brightness"))
         threading.Thread(target=self._poll_loop, name="polyos-poll", daemon=True).start()
         self._watch_logind()
         if self._lock_flag.exists():
             self.lock()
+        threading.Thread(target=self._apply_power, args=(self.settings.snapshot(), True), daemon=True).start()
+        self._idle = power.IdleClock()
+        GLib.timeout_add_seconds(15, self._idle_tick)
         log.info("shell started (composited=%s)", self.composited)
 
     def quit(self, code: int = EXIT_LOGOUT):
@@ -150,6 +169,11 @@ class DesktopShell(Backend):
         view.connect("context-menu", lambda *_: not self.debug)
         view.connect("decide-policy", self._on_decide_policy)
         view.connect("web-process-terminated", self._on_web_crash)
+        if query.startswith("surface=camera"):
+            prefs.set_enable_media_stream(True)
+            prefs.set_enable_mediasource(True)
+            self._enable_features(prefs, ("MediaRecorderEnabled",))  # video recording (WebKitGTK 2.42+)
+            view.connect("permission-request", self._on_camera_permission)
         view.load_uri(f"{self.base_url}/index.html?{query}")
         return view
 
@@ -176,14 +200,92 @@ class DesktopShell(Backend):
         return monitor.get_geometry()
 
     def _layout(self) -> None:
+        # The desktop covers the whole X screen (every monitor), so no edge is left bare.
+        width, height = self.gdk_screen.get_width(), self.gdk_screen.get_height()
+        self.desktop.set_size_request(width, height)
+        self.desktop.resize(width, height)
+        self.desktop.move(0, 0)
+        self._place_panel()
+
+    def _relayout_soon(self) -> None:
+        self._layout()
+        GLib.timeout_add(400, lambda: (self._layout(), False)[1])
+        GLib.timeout_add(1500, lambda: (self._layout(), False)[1])
+
+    def _dock_rect(self) -> tuple[int, int, int, int]:
         g = self._geometry()
-        self.desktop.set_size_request(g.width, g.height)
-        self.desktop.resize(g.width, g.height)
-        self.desktop.move(g.x, g.y)
-        width = g.width - 2 * DOCK_MARGIN
-        self.panel.set_size_request(width, DOCK_HEIGHT)
-        self.panel.resize(width, DOCK_HEIGHT)
-        self.panel.move(g.x + DOCK_MARGIN, g.y + g.height - DOCK_MARGIN - DOCK_HEIGHT)
+        x, y, w, h = dock_geometry(self.settings.snapshot(), g.width, g.height)
+        return g.x + x, g.y + y, w, h
+
+    def _place_panel(self) -> None:
+        x, y, w, h = self._dock_rect()
+        if self._dock_hidden:
+            g = self._geometry()
+            y = g.y + g.height - AUTOHIDE_SLIVER  # all but a sliver below the screen edge
+        self.panel.set_size_request(w, h)
+        self.panel.resize(w, h)
+        self.panel.move(x, y)
+
+    # ---- taskbar auto-hide and full-screen apps ------------------------------------------
+    def _on_panel_enter(self, *_):
+        if self._dock_timer:
+            GLib.source_remove(self._dock_timer)
+            self._dock_timer = 0
+        if self._dock_hidden:
+            self._dock_hidden = False
+            self._place_panel()
+        return False
+
+    def _on_panel_leave(self, _win, event):
+        if event.detail != Gdk.NotifyType.INFERIOR:
+            self._schedule_dock_hide()
+        return False
+
+    def _schedule_dock_hide(self) -> None:
+        if not self.settings.get("taskbarAutoHide") or self._dock_timer:
+            return
+
+        def hide():
+            self._dock_timer = 0
+            if self._popup is None and not self._pointer_in_panel():
+                self._dock_hidden = True
+                self._place_panel()
+            elif self._popup is not None:
+                self._schedule_dock_hide()
+            return False
+
+        self._dock_timer = GLib.timeout_add(AUTOHIDE_DELAY_MS, hide)
+
+    def _pointer_in_panel(self) -> bool:
+        win = self.panel.get_window()
+        if win is None:
+            return False
+        pointer = Gdk.Display.get_default().get_default_seat().get_pointer()
+        _screen, px, py = pointer.get_position()
+        ox, oy = win.get_origin()[1:]
+        return ox <= px < ox + win.get_width() and oy <= py < oy + win.get_height()
+
+    def _apply_taskbar(self, settings: dict) -> None:
+        """Taskbar style / auto-hide changed: move the bar and tell openbox how much room to keep."""
+        self._dock_hidden = bool(settings["taskbarAutoHide"]) and not self._pointer_in_panel()
+        self._place_panel()
+        scale = self.panel.get_scale_factor() or 1
+        theme.set_openbox_margin(paths.runtime_dir() / "openbox-rc.xml", panel_margin(settings) * scale)
+
+    def _sync_fullscreen(self) -> None:
+        """Full-screen apps (videos, games, F11 in a browser) cover the taskbar completely."""
+        active = self.wscreen.get_active_window()
+        full = bool(active is not None and active.is_fullscreen()
+                    and active.get_class_group_name() != "PolyOS")
+        if full == self._fullscreen_app:
+            return
+        self._fullscreen_app = full
+        if full:
+            self.panel.hide()
+        else:
+            self.panel.show_all()
+            self.panel.stick()
+            self._place_panel()
 
     def _x_time(self) -> int:
         try:
@@ -206,6 +308,34 @@ class DesktopShell(Backend):
                 log.warning("could not open %s: %s", uri, exc.message)
         return True
 
+    @staticmethod
+    def _enable_features(prefs, names) -> None:
+        if not hasattr(WebKit2.Settings, "get_all_features"):
+            return
+        try:
+            features = WebKit2.Settings.get_all_features()
+            for i in range(features.get_length()):
+                feature = features.get(i)
+                if feature.get_identifier() in names:
+                    prefs.set_feature_enabled(feature, True)
+        except (AttributeError, GLib.Error) as exc:
+            log.debug("WebKit features unavailable: %s", exc)
+
+    def _on_camera_permission(self, _view, request):
+        """Only the Camera app may use the webcam, and only while Privacy & security allows it."""
+        device_info = getattr(WebKit2, "DeviceInfoPermissionRequest", None)
+        if device_info is not None and isinstance(request, device_info):  # camera names, to switch cameras
+            (request.allow if self.settings.get("cameraAccess") else request.deny)()
+            return True
+        if isinstance(request, WebKit2.UserMediaPermissionRequest):
+            audio = WebKit2.user_media_permission_is_for_audio_device(request)
+            video = WebKit2.user_media_permission_is_for_video_device(request)
+            allowed = (not video or self.settings.get("cameraAccess")) and (not audio or self.settings.get("micAccess"))
+            (request.allow if allowed else request.deny)()
+            return True
+        request.deny()
+        return True
+
     def _on_web_crash(self, view, reason):
         log.error("web process for %s terminated (%s); reloading", view.get_uri(), reason)
         GLib.timeout_add(500, lambda: (view.reload(), False)[1])
@@ -216,6 +346,9 @@ class DesktopShell(Backend):
 
     def _show_popup_main(self, popup: dict):
         g = self._geometry()
+        if self._dock_hidden and not popup.get("fullscreen"):
+            self._dock_hidden = False  # e.g. the Windows key: the menu opens from a visible taskbar
+            self._place_panel()
         if popup.get("fullscreen"):  # app launcher: whole monitor, dock stays on top
             x, y, width, height = 0, 0, g.width, g.height
         elif popup.get("tall"):  # widgets board: full height along the left edge
@@ -224,7 +357,8 @@ class DesktopShell(Backend):
         else:
             width, height = popup["width"], popup["height"]
             anchor = popup.get("anchorX")
-            x = 12 if anchor is None else int(DOCK_MARGIN + anchor - width / 2)  # anchor is dock-relative
+            dock_x = self._dock_rect()[0] - g.x
+            x = 12 if anchor is None else int(dock_x + anchor - width / 2)  # anchor is dock-relative
             x = max(12, min(x, g.width - width - 12))
             y = g.height - PANEL_HEIGHT - height - 4
         self.popup.set_size_request(width, height)
@@ -243,7 +377,7 @@ class DesktopShell(Backend):
         return False
 
     def _hide_popup(self) -> None:
-        GLib.idle_add(lambda: (self.popup.hide(), False)[1])
+        GLib.idle_add(lambda: (self.popup.hide(), self._schedule_dock_hide(), False)[2])
 
     def _on_popup_focus_out(self, *_):
         GLib.timeout_add(120, self._check_popup_focus)
@@ -264,6 +398,8 @@ class DesktopShell(Backend):
             app_id = info.get_id()
             if not app_id or app_id in infos:
                 continue
+            if app_id == CAMERA_APP and not self._camera:
+                continue  # the Camera app only appears on computers with a webcam
             infos[app_id] = info
             apps.append({
                 "id": app_id,
@@ -442,6 +578,7 @@ class DesktopShell(Backend):
         def fire():
             self._win_timer = 0
             self.bus.publish("windows", windows=self._windows_main())
+            self._sync_fullscreen()
             return False
 
         self._win_timer = GLib.timeout_add(60, fire)
@@ -587,6 +724,40 @@ class DesktopShell(Backend):
         time.sleep(0.5)
         self._refresh_system(("network",))
 
+    # ---- power mode, screen off and sleep ------------------------------------------------
+    def _apply_power(self, settings: dict, initial: bool = False) -> None:
+        profile = power.apply_mode(settings["powerMode"])
+        screen_off, _sleep = power.timers(settings)
+        power.apply_screen_off(screen_off)
+        if settings["powerMode"] == "saver" and not initial:
+            level = self.backlight.get()
+            if level.get("available") and level.get("level", 0) > power.SAVER_BRIGHTNESS:
+                self.set_brightness(level=power.SAVER_BRIGHTNESS)
+        log.info("power mode %s (profile %s), screen off %s min", settings["powerMode"], profile, screen_off)
+
+    def _idle_tick(self):
+        """Lock when the screen turns off, and sleep after the chosen idle time (not on the live USB)."""
+        idle = self._idle.idle_ms() if self._idle else None
+        if idle is None:
+            return True
+        settings = self.settings.snapshot()
+        screen_off, sleep_after = power.timers(settings)
+        minutes = idle / 60000
+        if minutes < 1:
+            self._idle_slept = False
+            return True
+        if screen_off and minutes >= screen_off and settings["lockOnSleep"] and self.lock_window is None \
+                and not self.env()["live"]:
+            self.lock()
+        if sleep_after and minutes >= sleep_after and not self._idle_slept and not self.env()["live"] \
+                and self.jobs.running() is None:
+            self._idle_slept = True
+            try:
+                self.power("suspend")
+            except (ApiError, RuntimeError) as exc:
+                log.warning("idle sleep failed: %s", exc)
+        return True
+
     def power(self, action: str):
         self.popup_closed()
         if action == "logout":
@@ -594,7 +765,7 @@ class DesktopShell(Backend):
             return
         if action == "lock":
             return self.lock()
-        if action == "suspend":
+        if action == "suspend" and self.settings.get("lockOnSleep"):
             self.lock()  # wake up to the lock screen
         system.power(action)
 
@@ -690,7 +861,7 @@ class DesktopShell(Backend):
         login1 = "org.freedesktop.login1"
         bus.signal_subscribe(login1, login1 + ".Manager", "PrepareForSleep", "/org/freedesktop/login1", None,
                              Gio.DBusSignalFlags.NONE,
-                             lambda *args: self.lock() if args[5].unpack()[0] else None)
+                             lambda *args: self.lock() if args[5].unpack()[0] and self.settings.get("lockOnSleep") else None)
         try:
             session_id = os.environ.get("XDG_SESSION_ID")
             if session_id:
@@ -835,6 +1006,10 @@ class DesktopShell(Backend):
 
     def update_settings(self, patch: dict) -> dict:
         settings = super().update_settings(patch)
+        if {"taskbarStyle", "taskbarAutoHide"} & set(patch):
+            GLib.idle_add(lambda: (self._apply_taskbar(settings), False)[1])
+        if {"powerMode", "screenOff", "sleepAfter"} & set(patch):
+            threading.Thread(target=self._apply_power, args=(settings,), daemon=True).start()
         if "theme" in patch:
             try:
                 theme.apply_gtk(settings["theme"])

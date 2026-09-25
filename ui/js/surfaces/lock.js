@@ -20,5 +20,6 @@ export function mount(root, store) {
     signIn: (_user, password) => api.post('/api/lock/unlock', { password }),
     recover: (_user, key, password) => api.post('/api/lock/recover', { key, password }),
     power: (action) => api.post('/api/power', { action: POWER[action] }),
+    headline: () => api.get('/api/widgets/news').then((n) => (n.items[0] ? { title: n.items[0].title, source: n.source } : null)),
   });
 }

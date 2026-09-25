@@ -26,7 +26,8 @@ function placePopup(p) {
   } else if (p.tall) {
     Object.assign(popup.style, { left: '12px', top: '12px', width: `${Math.min(p.width, W - 24)}px`, height: `${H - panelHeight - 16}px` });
   } else {
-    let x = p.anchorX == null ? 12 : Math.round(dockMargin + p.anchorX - p.width / 2);
+    const dockX = state.settings.taskbarStyle === 'full' ? 0 : dockMargin;
+    let x = p.anchorX == null ? 12 : Math.round(dockX + p.anchorX - p.width / 2);
     x = Math.max(12, Math.min(x, W - p.width - 12));
     Object.assign(popup.style, {
       left: `${x}px`, top: `${H - panelHeight - p.height - 4}px`, width: `${p.width}px`, height: `${p.height}px`,
@@ -37,7 +38,8 @@ function placePopup(p) {
 }
 
 // ---- fake window manager --------------------------------------------------------------
-const OWN = { 'polyos-taskmgr.desktop': 'taskmgr', 'polyos-drivers.desktop': 'drivers', 'polyos-store.desktop': 'store' };
+const OWN = { 'polyos-taskmgr.desktop': 'taskmgr', 'polyos-drivers.desktop': 'drivers', 'polyos-store.desktop': 'store',
+  'polyos-camera.desktop': 'camera' };
 const els = new Map();
 const positions = new Map();
 let cascade = 0;
@@ -54,7 +56,8 @@ function makeWindow(win) {
   } else if (win.appId === 'polyos-files.desktop') {
     body.append(h('iframe', { src: `/index.html?surface=files&path=${encodeURIComponent(win.page || '')}`, title: 'Files' }));
   } else if (OWN[win.appId]) {
-    body.append(h('iframe', { src: `/index.html?surface=${OWN[win.appId]}${win.page ? `&page=${encodeURIComponent(win.page)}` : ''}`, title: win.title }));
+    body.append(h('iframe', { src: `/index.html?surface=${OWN[win.appId]}${win.page ? `&page=${encodeURIComponent(win.page)}` : ''}`, title: win.title,
+      allow: 'camera; microphone' }));
   } else {
     const app = state.apps.find((a) => a.id === win.appId);
     body.append(h('div.mock-placeholder', h('img', { src: withToken(win.icon), alt: '' }), h('b', app ? app.name : win.title),
@@ -142,7 +145,12 @@ on('windows', (e) => {
   state.windows = e.windows;
   renderWindows(e.windows);
 });
-on('settings', (e) => { applyTheme({ ...state, settings: e.settings }); syncSetup(e.settings); });
+// Taskbar style and auto-hide (mirrors DesktopShell._layout and the openbox margin).
+function syncTaskbar(settings) {
+  screen.classList.toggle('tb-full', settings.taskbarStyle === 'full');
+  screen.classList.toggle('tb-autohide', settings.taskbarAutoHide);
+}
+on('settings', (e) => { state.settings = e.settings; applyTheme({ ...state, settings: e.settings }); syncSetup(e.settings); syncTaskbar(e.settings); });
 on('power', (e) => {
   const labels = { lock: 'Locked', logout: 'Signed out', suspend: 'Sleeping', reboot: 'Restarting…', poweroff: 'Shutting down…', 'restart-shell': 'Restarting the shell…' };
   overlay.replaceChildren(h('div', labels[e.action] || e.action), h('small', 'Simulated in dev mode. Click to return.'));
@@ -157,4 +165,5 @@ overlay.addEventListener('click', () => { overlay.hidden = true; });
 // Clicking anything outside the popup iframe blurs it, which closes it like the real shell.
 renderWindows(state.windows);
 syncSetup(state.settings);
+syncTaskbar(state.settings);
 connectEvents();

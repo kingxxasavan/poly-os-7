@@ -1,13 +1,55 @@
-// Desktop: wallpaper, clock widget, installer card on live media, right-click menu.
+// Desktop: wallpaper, app shortcuts, optional clock widget, installer card on live media,
+// right-click menu.
 
-import { api, openSettings, withToken } from '../api.js';
+import { api, launch, openSettings, saveSettings, withToken } from '../api.js';
 import { clockTicker, fmtDate, fmtTime, greeting, h, icon } from '../ui.js';
 
 export function mount(root, store) {
   root.className = 'desktop';
   const wall = h('div.wallpaper');
   const clock = h('div.desk-clock');
-  root.append(wall, clock);
+  const icons = h('div.desk-icons', { role: 'list', 'aria-label': 'Desktop shortcuts' });
+  root.append(wall, icons, clock);
+
+  // ---- shortcuts on the desktop (like Windows): double-click to open, right-click for more ----
+  let selected = null;
+  const run = (fn) => Promise.resolve().then(fn).catch((err) => console.warn(err.message));
+  function renderIcons() {
+    const { settings, apps } = store.state;
+    const byId = new Map(apps.map((a) => [a.id, a]));
+    const items = settings.desktopIcons.map((id) => byId.get(id)).filter(Boolean);
+    const single = settings.desktopOpen === 'single';
+    icons.replaceChildren(...items.map((app) => {
+      const el = h('button.desk-icon', { role: 'listitem', class: app.id === selected ? 'sel' : '', title: app.description || app.name },
+        h('img', { src: withToken(app.icon), alt: '', draggable: 'false' }), h('span', app.name));
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (single) return run(() => launch(app.id));
+        selected = app.id;
+        renderIcons();
+      });
+      el.addEventListener('dblclick', () => { if (!single) run(() => launch(app.id)); });
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter') run(() => launch(app.id)); });
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        selected = app.id;
+        renderIcons();
+        const { pinned, desktopIcons } = store.state.settings;
+        const onDock = pinned.includes(app.id);
+        showMenu(e, [
+          ['arrowRight', 'Open', () => launch(app.id)],
+          [onDock ? 'unpin' : 'pin', onDock ? 'Unpin from dock' : 'Pin to dock',
+            () => saveSettings({ pinned: onDock ? pinned.filter((id) => id !== app.id) : [...pinned, app.id] })],
+          null,
+          ['close', 'Remove from desktop', () => saveSettings({ desktopIcons: desktopIcons.filter((id) => id !== app.id) })],
+        ]);
+      });
+      return el;
+    }));
+    root.classList.toggle('has-icons', items.length > 0);
+  }
+  root.addEventListener('click', () => { if (selected) { selected = null; renderIcons(); } });
 
   let wallpaperKey = null;
   function renderWallpaper() {
@@ -84,6 +126,9 @@ export function mount(root, store) {
   };
   const open = (app, page) => api.post('/api/open', { app, page });
   const items = [
+    ['plus', 'Add apps to the desktop', () => api.post('/api/popup', { view: 'launcher', data: { target: 'desktop' } })],
+    ['taskbar', 'Taskbar settings', () => openSettings('taskbar')],
+    null,
     ['palette', 'Personalize', () => openSettings('appearance')],
     ['monitor', 'Display settings', () => openSettings('display')],
     null,
@@ -97,13 +142,16 @@ export function mount(root, store) {
   ];
   root.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    showMenu(e, items);
+  });
+  function showMenu(e, list) {
     closeMenu();
     menu = h(
       'div.menu',
       { role: 'menu' },
-      items.map((it) =>
+      list.map((it) =>
         it
-          ? h('button.menu-item', { role: 'menuitem', onclick: () => { closeMenu(); it[2]().catch?.((err) => console.warn(err.message)); } },
+          ? h('button.menu-item', { role: 'menuitem', onclick: () => { closeMenu(); run(it[2]); } },
             icon(it[0]), it[1])
           : h('div.menu-sep'),
       ),
@@ -113,7 +161,7 @@ export function mount(root, store) {
     const r = menu.getBoundingClientRect();
     menu.style.left = `${Math.min(e.clientX, w - r.width - 8)}px`;
     menu.style.top = `${Math.min(e.clientY, hgt - r.height - 8)}px`;
-  });
+  }
   root.addEventListener('pointerdown', (e) => {
     if (menu && !menu.contains(e.target)) closeMenu();
   });
@@ -126,7 +174,9 @@ export function mount(root, store) {
       renderClock();
       syncCard();
     }
+    if (changed.has('settings') || changed.has('apps')) renderIcons();
   });
+  renderIcons();
   renderWallpaper();
   clockTicker(renderClock, () => false);
 }

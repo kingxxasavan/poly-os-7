@@ -48,12 +48,24 @@ class WallpaperTests(unittest.TestCase):
             path = Path(tmp) / "s.json"
             path.write_text(json.dumps({"wallpaper": "builtin:aurora.svg"}))  # shipped in 0.1, since removed
             backend = MockBackend(Settings(path), EventBus(), home=Path(tmp) / "home")
-            self.assertEqual(backend.wallpaper_path().name, "polyos-dusk.jpg")
+            self.assertEqual(backend.wallpaper_path().name, "polyos-prism.jpg")
 
     def test_builtins_are_listed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            names = [w["id"] for w in MockBackend(Settings(Path(tmp) / "s.json"), EventBus(), home=Path(tmp) / "home").wallpapers()]
+            walls = MockBackend(Settings(Path(tmp) / "s.json"), EventBus(), home=Path(tmp) / "home").wallpapers()
+        names = [w["id"] for w in walls]
         self.assertIn("builtin:polyos-dusk.jpg", names)
+        # the PolyOS 7 crystals come first, the default one named "Crystal"
+        self.assertEqual(names[:2], ["builtin:polyos-prism.jpg", "builtin:polyos-amethyst.jpg"])
+        self.assertEqual(walls[0]["name"], "Crystal")
+
+    def test_lock_screen_has_its_own_wallpaper(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = MockBackend(Settings(Path(tmp) / "s.json"), EventBus(), home=Path(tmp) / "home")
+            self.assertEqual(backend.wallpaper_path("lockWallpaper").name, "polyos-amethyst.jpg")
+            backend.update_settings({"lockWallpaper": "builtin:polyos-night.jpg"})
+            self.assertEqual(backend.wallpaper_path("lockWallpaper").name, "polyos-night.jpg")
+            self.assertEqual(backend.wallpaper_path().name, "polyos-prism.jpg")
 
 
 class PopupTests(unittest.TestCase):

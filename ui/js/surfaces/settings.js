@@ -1,4 +1,5 @@
-// Settings app: appearance, Wi-Fi, sound, display, power, about.
+// Settings app: appearance, taskbar, Wi-Fi, sound, display, power, account, privacy & security,
+// Vara, about.
 
 import { withAdmin } from '../admin.js';
 import { api, launch, on, params, power, saveSettings, withToken } from '../api.js';
@@ -7,16 +8,22 @@ import { formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from
 
 const PAGES = [
   ['appearance', 'Appearance', 'palette'],
+  ['taskbar', 'Taskbar & Desktop', 'taskbar'],
   ['network', 'Wi-Fi & Network', 'wifi'],
   ['sound', 'Sound', 'volume'],
   ['display', 'Display', 'monitor'],
-  ['power', 'Power', 'power'],
+  ['power', 'Power & Performance', 'bolt'],
   ['account', 'Account', 'user'],
+  ['privacy', 'Privacy & Security', 'shield'],
   ['vara', 'Vara', 'chat'],
   ['about', 'About', 'info'],
 ];
 // PolyOS blue first; the rest share its softness so text on them stays readable.
 const ACCENTS = ['#678fd9', '#9b7fe0', '#d97fb8', '#e0906a', '#d9c46a', '#81d862', '#5fc4c4', '#b5b5b5'];
+const MINUTES = (n) => (n === 0 ? 'Never' : n < 60 ? `${n} minute${n === 1 ? '' : 's'}` : `${n / 60} hour${n === 60 ? '' : 's'}`);
+const SCREEN_OFF = [1, 2, 3, 5, 10, 15, 30, 60, 0];
+const SLEEP_AFTER = [5, 10, 15, 30, 60, 120, 240, 0];
+const MODE_ICONS = { saver: 'leaf', balanced: 'activity', performance: 'bolt', maximum: 'sparkle' };
 const CREDITS =
   'PolyOS began as an operating system built in Scratch by AndrewInput and PIXAPoLY Software. ' +
   'This edition, presented by Cryptic Software, brings PolyOS 7 to real hardware on top of Debian, with the team’s blessing. ' +
@@ -28,6 +35,67 @@ function pageHead(title, subtitle) {
 
 function save(patch, errEl) {
   saveSettings(patch).then(() => errEl && errorText(errEl, ''), (err) => errEl && errorText(errEl, err.message));
+}
+
+// Segmented control (radio pills): options = [[value, label, icon?], ...]
+function seg(label, options, onPick) {
+  const el = h('div.seg', { role: 'radiogroup', 'aria-label': label },
+    options.map(([value, text, ico]) => h('button.seg-btn', { role: 'radio', 'data-value': String(value), onclick: () => onPick(value) },
+      ico ? icon(ico) : null, text)));
+  return Object.assign(el, {
+    set: (v) => el.querySelectorAll('.seg-btn').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.value === String(v)))),
+  });
+}
+
+// Drop-down of numbers: options = [[value, label], ...]
+function choose(label, options, onPick) {
+  const el = h('select.select', { 'aria-label': label }, options.map(([value, text]) => h('option', { value }, text)));
+  el.addEventListener('change', () => onPick(Number(el.value)));
+  return Object.assign(el, { set: (v) => { el.value = String(v); } });
+}
+
+// Built-in wallpapers for a setting ("wallpaper" or "lockWallpaper"); browse adds any picture.
+function wallGrid(store, key, err, browse) {
+  const grid = h('div.wall-grid');
+  const update = () => {
+    const cur = store.state.settings[key];
+    grid.querySelectorAll('.wall[data-id]').forEach((el) => el.classList.toggle('sel', el.dataset.id === cur));
+    grid.querySelector('.wall-add')?.classList.toggle('sel', !cur.startsWith('builtin:'));
+  };
+  api.get('/api/wallpapers').then((list) => {
+    for (const w of list) {
+      grid.append(h('button.wall', { 'data-id': w.id, title: w.name, style: { backgroundImage: `url("${withToken(w.url)}")` },
+        onclick: () => save({ [key]: w.id }, err) }, h('span', w.name)));
+    }
+    if (browse && !store.state.env.dev) {
+      grid.append(h('button.wall.wall-add', { onclick: () => api.post('/api/pick-wallpaper').catch((e) => errorText(err, e.message)) },
+        icon('plus'), h('span', 'Browse…')));
+    }
+    update();
+  }, (e) => errorText(err, e.message));
+  return Object.assign(grid, { update });
+}
+
+// A list of apps (dock pins or desktop shortcuts) with remove buttons.
+function appList(store, key, empty) {
+  const list = h('div.app-list');
+  const update = () => {
+    const { settings, apps } = store.state;
+    const byId = new Map(apps.map((a) => [a.id, a]));
+    const items = settings[key].map((id) => byId.get(id)).filter(Boolean);
+    list.replaceChildren(...(items.length ? items.map((app, i) => h('div.app-row',
+      h('img', { src: withToken(app.icon), alt: '' }), h('span', app.name),
+      h('button.icon-btn.flip-up', { title: 'Move up', 'aria-label': `Move ${app.name} up`, disabled: i === 0, onclick: () => {
+        const ids = items.map((a) => a.id);
+        [ids[i - 1], ids[i]] = [ids[i], ids[i - 1]];
+        save({ [key]: ids });
+      } }, icon('chevronDown')),
+      h('button.icon-btn', { title: 'Remove', 'aria-label': `Remove ${app.name}`,
+        onclick: () => save({ [key]: settings[key].filter((id) => id !== app.id) }) }, icon('close'))))
+      : [h('p.muted.small.pad', empty)]));
+  };
+  update();
+  return Object.assign(list, { update });
 }
 
 // Button that opens an installed helper app, or explains what to install.
@@ -52,18 +120,8 @@ const pages = {
     }
     swatches.append(custom);
 
-    const walls = h('div.wall-grid');
-    api.get('/api/wallpapers').then((list) => {
-      for (const w of list) {
-        walls.append(h('button.wall', { 'data-id': w.id, title: w.name, style: { backgroundImage: `url("${withToken(w.url)}")` },
-          onclick: () => save({ wallpaper: w.id }, err) }, h('span', w.name)));
-      }
-      if (!store.state.env.dev) {
-        walls.append(h('button.wall.wall-add', { onclick: () => api.post('/api/pick-wallpaper').catch((e) => errorText(err, e.message)) },
-          icon('plus'), h('span', 'Browse…')));
-      }
-      update();
-    }, (e) => errorText(err, e.message));
+    const walls = wallGrid(store, 'wallpaper', err, true);
+    const lockWalls = wallGrid(store, 'lockWallpaper', err, false);
 
     // PolyOS 7's accent control: one slider across the color wheel.
     const hue = h('input.range.hue-range', { type: 'range', min: 0, max: 359, value: hexToHue(s().accent), 'aria-label': 'Accent hue' });
@@ -79,7 +137,6 @@ const pages = {
 
     const clock24 = toggle(s().clock24h, (v) => save({ clock24h: v }, err), '24-hour clock');
     const seconds = toggle(s().showSeconds, (v) => save({ showSeconds: v }, err), 'Show seconds');
-    const deskClock = toggle(s().desktopClock, (v) => save({ desktopClock: v }, err), 'Desktop clock');
     const effects = toggle(s().effects, (v) => save({ effects: v }, err), 'Visual effects');
     const allApps = toggle(s().showAllApps, (v) => save({ showAllApps: v }, err), 'Show all apps');
     const modes = h('div.seg', { role: 'radiogroup', 'aria-label': 'Mode' },
@@ -94,13 +151,13 @@ const pages = {
         row('Accent', 'Highlights, sliders and the active app', swatches),
         row('Custom color', 'Slide to pick any hue', h('div.slider-wrap', hue))),
       group('Wallpaper', walls),
+      group('Sign-in and lock screen background', h('p.muted.small.pad', 'Shown softly blurred behind the clock, like PolyOS 7.'), lockWalls),
       group('Windows and effects',
         row('Dock and menu opacity', 'Lower is more see-through', h('div.slider-wrap', glass, glassValue)),
         row('Blur, shadows and rounded corners', 'Takes effect the next time you sign in', effects)),
       group('Clock',
         row('24-hour time', null, clock24),
-        row('Show seconds in the dock', null, seconds),
-        row('Clock on the desktop', 'Large time, date and greeting', deskClock)),
+        row('Show seconds in the taskbar', null, seconds)),
       group('Launcher',
         row('Show all apps', 'Include system tools PolyOS normally hides, like the volume mixer and network editor', allApps)),
     );
@@ -112,17 +169,66 @@ const pages = {
       if (document.activeElement !== hue) hue.value = hexToHue(cur.accent);
       glass.set(cur.glass);
       glassValue.textContent = `${cur.glass}%`;
-      walls.querySelectorAll('.wall[data-id]').forEach((el) => el.classList.toggle('sel', el.dataset.id === cur.wallpaper));
-      walls.querySelector('.wall-add')?.classList.toggle('sel', !cur.wallpaper.startsWith('builtin:'));
+      walls.update();
+      lockWalls.update();
       clock24.set(cur.clock24h);
       seconds.set(cur.showSeconds);
-      deskClock.set(cur.desktopClock);
       effects.set(cur.effects);
       allApps.set(cur.showAllApps);
       modes.querySelectorAll('.seg-btn').forEach((el) => el.setAttribute('aria-checked', String(el.dataset.mode === cur.theme)));
     }
     update();
     return { update: (_st, changed) => changed.has('settings') && update() };
+  },
+
+  taskbar(page, store) {
+    const s = () => store.state.settings;
+    const err = h('div.error-text', { hidden: true });
+    const style = seg('Taskbar style', [['floating', 'Floating'], ['full', 'Edge to edge']], (v) => save({ taskbarStyle: v }, err));
+    const align = seg('Taskbar alignment', [['center', 'Center'], ['left', 'Left']], (v) => save({ taskbarAlign: v }, err));
+    const autoHide = toggle(s().taskbarAutoHide, (v) => save({ taskbarAutoHide: v }, err), 'Automatically hide the taskbar');
+    const widgets = toggle(s().taskbarWidgets, (v) => save({ taskbarWidgets: v }, err), 'Widgets button');
+    const date = toggle(s().taskbarDate, (v) => save({ taskbarDate: v }, err), 'Show the date');
+    const seconds = toggle(s().showSeconds, (v) => save({ showSeconds: v }, err), 'Show seconds');
+    const open = seg('Open desktop shortcuts with', [['double', 'Double-click'], ['single', 'Single click']], (v) => save({ desktopOpen: v }, err));
+    const deskClock = toggle(s().desktopClock, (v) => save({ desktopClock: v }, err), 'Desktop clock');
+    const pins = appList(store, 'pinned', 'Nothing is pinned. Pin apps from the launcher.');
+    const shortcuts = appList(store, 'desktopIcons', 'No shortcuts on the desktop yet.');
+    const launcher = (target) => h('button.btn', {
+      onclick: () => api.post('/api/popup', { view: 'launcher', data: target ? { target } : {} }).catch((e) => errorText(err, e.message)),
+    }, icon('plus'), target ? 'Add apps to the desktop' : 'Pin more apps');
+    page.append(
+      pageHead('Taskbar & Desktop', 'Layout, behaviors and the apps on your taskbar and desktop.'),
+      err,
+      group('Taskbar layout',
+        row('Style', 'Floating is the PolyOS capsule. Edge to edge fills the bottom of the screen, so maximized apps meet it with no gap.', style),
+        row('Alignment', 'Where your apps sit on the taskbar', align)),
+      group('Taskbar behaviors',
+        row('Automatically hide the taskbar', 'Maximized and full-screen apps use the whole screen. Touch the bottom edge to bring the taskbar back.', autoHide),
+        row('Widgets button', 'Weather and the widgets board (Win+W)', widgets),
+        row('Show the date', 'Under the time', date),
+        row('Show seconds', null, seconds)),
+      group('Pinned apps', pins, h('div.pad', launcher(null))),
+      group('Desktop',
+        row('Open shortcuts with', 'Right-click the desktop or any app in the launcher to add shortcuts', open),
+        row('Clock on the desktop', 'Large time, date and greeting', deskClock)),
+      group('Desktop shortcuts', shortcuts, h('div.pad', launcher('desktop'))),
+    );
+    function update() {
+      const cur = s();
+      style.set(cur.taskbarStyle);
+      align.set(cur.taskbarAlign);
+      autoHide.set(cur.taskbarAutoHide);
+      widgets.set(cur.taskbarWidgets);
+      date.set(cur.taskbarDate);
+      seconds.set(cur.showSeconds);
+      open.set(cur.desktopOpen);
+      deskClock.set(cur.desktopClock);
+      pins.update();
+      shortcuts.update();
+    }
+    update();
+    return { update: (_st, changed) => (changed.has('settings') || changed.has('apps')) && update() };
   },
 
   network(page, store) {
@@ -207,28 +313,57 @@ const pages = {
   },
 
   power(page, store) {
+    const s = () => store.state.settings;
+    const err = h('div.error-text', { hidden: true });
     const battery = h('div');
+    const modes = h('div.mode-grid', { role: 'radiogroup', 'aria-label': 'Power mode' });
+    const modeNote = h('p.muted.small.pad', { hidden: true });
+    api.get('/api/power/modes').then((info) => {
+      modes.replaceChildren(...info.modes.map((m) => h('button.mode-card', { role: 'radio', 'data-mode': m.id, onclick: () => save({ powerMode: m.id }, err) },
+        h('span.mode-ico', icon(MODE_ICONS[m.id] || 'bolt')), h('b', m.name), h('small', m.description))));
+      if (!info.switchable) {
+        modeNote.textContent = 'This computer doesn’t offer processor power profiles (install power-profiles-daemon). Screen and sleep timers still follow your mode.';
+        modeNote.hidden = false;
+      }
+      update();
+    }, (e) => errorText(err, e.message));
+    const screenOff = choose('Turn off the screen after', SCREEN_OFF.map((n) => [n, MINUTES(n)]), (v) => save({ screenOff: v }, err));
+    const sleep = choose('Sleep after', SLEEP_AFTER.map((n) => [n, MINUTES(n)]), (v) => save({ sleepAfter: v }, err));
+    const timers = group('Screen and sleep',
+      row('Turn off the screen after', 'When you haven’t used the keyboard or mouse', screenOff),
+      row('Put the computer to sleep after', null, sleep));
+    const maxNote = h('p.muted.small.pad', 'Maximum keeps the screen on and never sleeps on its own. Choose another mode to use these timers.');
     const actions = [
       ['lock', 'Lock', 'lock'], ['logout', 'Sign out', 'logout'], ['moon', 'Sleep', 'suspend'],
       ['restart', 'Restart', 'reboot'], ['power', 'Shut down', 'poweroff'],
     ];
-    const err = h('div.error-text', { hidden: true });
     page.append(
-      pageHead('Power', 'Battery status and session options.'),
+      pageHead('Power & Performance', 'Power modes, battery, screen and sleep.'),
       err,
       battery,
+      group('Power mode', modes, modeNote),
+      timers,
+      maxNote,
       group('Session', h('div.power-grid', actions.map(([ico, label, action]) =>
         h('button.power-tile', { onclick: () => power(action).catch((e) => errorText(err, e.message)) }, icon(ico), h('span', label))))),
     );
     function update() {
+      const cur = s();
       const b = store.state.system.battery;
       battery.replaceChildren(b.present
         ? group('Battery', row(`${b.level}%`, b.charging ? 'Charging' : b.plugged ? 'Plugged in' : 'On battery',
           h('span.battery-big', icon('battery', b.level, b.charging))))
         : '');
+      modes.querySelectorAll('.mode-card').forEach((el) => el.setAttribute('aria-checked', String(el.dataset.mode === cur.powerMode)));
+      screenOff.set(cur.screenOff);
+      sleep.set(cur.sleepAfter);
+      const max = cur.powerMode === 'maximum';
+      timers.classList.toggle('disabled', max);
+      screenOff.disabled = sleep.disabled = max;
+      maxNote.hidden = !max;
     }
     update();
-    return { update: (_st, changed) => changed.has('system') && update() };
+    return { update: (_st, changed) => (changed.has('system') || changed.has('settings')) && update() };
   },
 
   account(page, store) {
@@ -266,6 +401,7 @@ const pages = {
         if (!e.cancelled) errorText(err, e.message);
       }
     });
+    const lockSleep = toggle(store.state.settings.lockOnSleep, (v) => save({ lockOnSleep: v }, err), 'Require sign-in on wake');
     page.append(
       pageHead('Account', 'Your sign-in details.'),
       err,
@@ -276,8 +412,59 @@ const pages = {
         row('Confirm new password', null, h('div.slider-wrap.wide', again))),
       h('div.btn-row', change, note),
       group('Recovery key', row('Forgot your password?', 'A recovery key lets you set a new password from the sign-in or lock screen. Creating a new one replaces the old one.', makeKey), keyBox),
+      group('Sign-in options',
+        row('Require your password after sleep', 'Also when the screen turns off on its own', lockSleep),
+        row('Lock now', 'Win+L', h('button.btn', { onclick: () => power('lock').catch((e) => errorText(err, e.message)) }, icon('lock'), 'Lock'))),
     );
-    return null;
+    return { update: (_st, changed) => changed.has('settings') && lockSleep.set(store.state.settings.lockOnSleep) };
+  },
+
+  privacy(page, store) {
+    const s = () => store.state.settings;
+    const err = h('div.error-text', { hidden: true });
+    const note = h('span.muted.small');
+    const lockSleep = toggle(s().lockOnSleep, (v) => save({ lockOnSleep: v }, err), 'Lock on sleep');
+    const lockNews = toggle(s().lockNews, (v) => save({ lockNews: v }, err), 'Show news on the lock screen');
+    const camera = toggle(s().cameraAccess, (v) => save({ cameraAccess: v }, err), 'Camera access');
+    const mic = toggle(s().micAccess, (v) => save({ micAccess: v }, err), 'Microphone access');
+    const recent = toggle(s().keepRecent, (v) => save({ keepRecent: v }, err), 'Remember recent apps');
+    const camInfo = h('small', 'Checking for a camera…');
+    api.get('/api/camera').then((c) => {
+      camInfo.textContent = c.camera ? 'The Camera app can use your webcam. Photos go to Pictures › Camera.'
+        : 'No camera is connected. The Camera app appears when one is.';
+    }, () => { camInfo.textContent = ''; });
+    const clear = h('button.btn', 'Clear activity history');
+    clear.addEventListener('click', () => saveSettings({ recent: [] })
+      .then(() => { note.textContent = 'Cleared.'; }, (e) => errorText(err, e.message)));
+    page.append(
+      pageHead('Privacy & Security', 'Choose what PolyOS remembers, shows and lets apps use.'),
+      err,
+      group('Lock screen',
+        row('Lock when the computer sleeps', 'And when the screen turns off on its own. Your password is needed to get back in.', lockSleep),
+        row('Show news and performance on the lock screen', 'Anyone who sees the screen can read them', lockNews)),
+      group('App permissions',
+        h('div.row', h('div.row-label', h('span', 'Camera'), camInfo), camera),
+        row('Microphone', 'Sound in Camera videos', mic)),
+      group('Activity history',
+        row('Remember recently opened apps', 'Shown in the Home Menu. Turning this off also clears the list.', recent),
+        row('Clear activity history', null, h('div.btn-row.inline', clear, note))),
+      group('Account security',
+        row('Password and recovery key', 'Change your password, or make a new recovery key for “Forgot Password”',
+          h('button.btn', { onclick: () => navigate('account') }, 'Open Account', icon('chevronRight')))),
+      group('Vara', h('p.prose',
+        'Simple requests to Vara are handled on this computer. Chat messages go to the AI service chosen in Vara settings. ',
+        h('a', { href: '#', onclick: (e) => { e.preventDefault(); navigate('vara'); } }, 'Vara settings'), '.')),
+    );
+    function update() {
+      const cur = s();
+      lockSleep.set(cur.lockOnSleep);
+      lockNews.set(cur.lockNews);
+      camera.set(cur.cameraAccess);
+      mic.set(cur.micAccess);
+      recent.set(cur.keepRecent);
+    }
+    update();
+    return { update: (_st, changed) => changed.has('settings') && update() };
   },
 
   vara(page) {
@@ -377,6 +564,8 @@ const pages = {
   },
 };
 
+let navigate = () => {};
+
 export function mount(root, store) {
   root.className = 'settings';
   const nav = h('nav.nav', { 'aria-label': 'Settings sections' });
@@ -405,6 +594,7 @@ export function mount(root, store) {
     document.title = `${PAGES.find((p) => p[0] === id)[1]} – Settings`;
   }
 
+  navigate = go;
   store.subscribe((state, changed) => pageApi?.update?.(state, changed));
   on('navigate', (e) => { if (e.surface === 'settings' && e.page) go(e.page); });
   go(params.get('page') || 'appearance');
