@@ -78,8 +78,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        if args.command in ("start-menu", "popup"):
-            call("POST", "/api/popup", {"view": getattr(args, "view", "start")})
+        if args.command == "start-menu":  # the Windows key: open the Home Menu, or close any open menu
+            call("POST", "/api/popup", {"view": "start", "toggle": True})
+        elif args.command == "popup":
+            call("POST", "/api/popup", {"view": args.view})
         elif args.command == "open":
             page = args.page
             if page and page.startswith("file://"):  # .desktop %U hands us URIs

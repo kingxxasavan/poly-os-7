@@ -152,7 +152,8 @@ POST_API = {
     "/api/power": lambda be, b: be.power(_choice(b, "action", POWER_ACTIONS)),
     "/api/settings": lambda be, b: be.update_settings(b),
     "/api/popup": lambda be, b: be.popup_request(
-        b.get("view"), anchor_x=_opt_int(b, "anchorX"), data=b.get("data"), height=_opt_int(b, "height")),
+        b.get("view"), anchor_x=_opt_int(b, "anchorX"), data=b.get("data"), height=_opt_int(b, "height"),
+        toggle_any=bool(_opt_bool(b, "toggle"))),
     "/api/popup/closed": lambda be, b: be.popup_closed(),
     "/api/open": lambda be, b: be.open_app(_choice(b, "app", OPEN_APPS), _opt_str(b, "page")),
     "/api/run": lambda be, b: be.run_default(_choice(b, "what", RUN_TARGETS)),

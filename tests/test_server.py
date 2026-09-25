@@ -82,6 +82,11 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(status, 200, view)
             self.assertEqual(json.loads(body)["fullscreen"], view == "power")
         self.request("POST", "/api/popup", {"view": None})
+        # the Windows key closes whatever menu is open, and opens the Home Menu otherwise
+        self.request("POST", "/api/popup", {"view": "launcher"})
+        self.assertIsNone(json.loads(self.request("POST", "/api/popup", {"view": "start", "toggle": True})[1] or b"null").get("view"))
+        self.assertEqual(json.loads(self.request("POST", "/api/popup", {"view": "start", "toggle": True})[1])["view"], "start")
+        self.request("POST", "/api/popup", {"view": None})
 
     def test_files_api(self):
         home = json.loads(self.request("GET", "/api/files/places")[1])["home"]

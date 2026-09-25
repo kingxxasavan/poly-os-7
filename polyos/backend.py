@@ -318,12 +318,15 @@ class Backend:
                 path = self.builtin_wallpaper(builtins[0]["id"].split(":", 1)[1])
         return path
 
-    def popup_request(self, view, anchor_x=None, data=None, height=None):
-        """Open, switch or toggle the shell popup (start menu, quick settings, ...)."""
+    def popup_request(self, view, anchor_x=None, data=None, height=None, toggle_any=False):
+        """Open, switch or toggle the shell popup (start menu, quick settings, ...).
+
+        toggle_any (the Windows key): close whatever popup is open instead of switching to `view`.
+        """
         if data is not None and not isinstance(data, dict):
             raise ApiError("popup data must be an object")
         with self._popup_lock:
-            if view is None:
+            if view is None or (toggle_any and self._popup is not None):
                 return self._close_popup_locked()
             if view not in POPUP_SIZES:
                 raise ApiError(f"unknown popup: {view}")
