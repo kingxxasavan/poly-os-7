@@ -23,7 +23,7 @@ into a real desktop that installs and boots on a PC, on top of Debian.
 
 ## Download
 
-The website's **Download** button always offers the newest
+The website's **Download** buttons (one for Intel/AMD PCs, one for ARM64) always offer the newest
 [release](https://github.com/kingxxasavan/poly-os-7/releases/latest): it asks GitHub for the
 latest release when the page loads, so publishing a release (Actions → Build PolyOS ISO → Run
 workflow with **Publish as a GitHub Release** ticked, see the main README) updates the site with

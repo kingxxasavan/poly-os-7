@@ -131,6 +131,8 @@ def flatpak(args: list[str]) -> None:
             raise AdminError("Couldn't reach Flathub. Check your internet connection and try again.")
         if "No space left" in text:
             raise AdminError("There isn't enough free disk space.")
+        if "No remote refs found" in text or "not available for" in text.lower():
+            raise AdminError("Flathub doesn't have that app for this computer's processor.")
         errs = [ln for ln in tail if "error" in ln.lower()]
         raise AdminError(errs[-1] if errs else "Flathub couldn't install that app.")
 
@@ -140,6 +142,8 @@ def store_action(action: str, app_id: str) -> None:
     app = apps.get(app_id)
     if app is None:
         raise AdminError("That app isn't in PolyMarket.")
+    if action == "install" and not store.available(app):
+        raise AdminError(f"{app['name']} isn't made for this computer's processor (ARM).")
     if action == "install":
         if app["source"] == "debian":
             apt_update()
@@ -186,6 +190,9 @@ def pack_install(name: str, ids: list[str]) -> None:
     if bad or not ids:
         raise AdminError(f"Not part of {pack['name']}: {', '.join(bad) or '(nothing chosen)'}")
     chosen = [apps[i] for i in dict.fromkeys(ids)]
+    wrong = [a["name"] for a in chosen if not store.available(a)]
+    if wrong:
+        raise AdminError(f"Not made for this computer's processor: {', '.join(wrong)}")
     debs = [p for a in chosen if a["source"] == "debian" for p in a["packages"]]
     refs = [a["ref"] for a in chosen if a["source"] == "flathub"]
     skipped: list[str] = []
@@ -246,7 +253,7 @@ def drivers_install(packages: list[str]) -> None:
         raise AdminError(f"Not a driver package: {', '.join(bad) or '(none)'}")
     apt_update()
     apt(["install", *packages], start=0.1)
-    if any(p.startswith(("nvidia", "broadcom-sta")) or p == "linux-headers-amd64" for p in packages):
+    if any(p.startswith(("nvidia", "broadcom-sta", "linux-headers-")) for p in packages):
         emit({"restart": True, "message": "Restart to start using the new driver."})
     emit({"progress": 1.0, "message": "Drivers installed."})
 

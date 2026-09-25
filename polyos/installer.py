@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import recovery, security
+from .arch import EFI, debian_arch
 
 KiB, MiB, GiB = 1024, 1024 ** 2, 1024 ** 3
 MIN_ROOT = 20 * GiB          # smallest PolyOS partition the installer offers
@@ -623,7 +624,7 @@ def probe(emit: Emit | None = None) -> dict:
     secure_boot = False
     if uefi and _have("mokutil"):
         secure_boot = "enabled" in runner.run(["mokutil", "--sb-state"], check=False).lower()
-    return {"uefi": uefi, "secureBoot": secure_boot, "ram": _ram_bytes(), "disks": out,
+    return {"uefi": uefi, "secureBoot": secure_boot, "ram": _ram_bytes(), "disks": out, "arch": debian_arch(),
             "minBytes": MIN_ROOT, "liveDisk": live}
 
 
@@ -634,6 +635,7 @@ class Installer:
         self.r = Runner(emit, dry_run)
         self.dry = dry_run
         self.uefi = Path("/sys/firmware/efi").is_dir()
+        self.arch = debian_arch()
         self.disk = plan["disk"]
         self.root_dev: str | None = None
         self.esp_dev: str | None = None
@@ -667,6 +669,8 @@ class Installer:
     def preflight(self) -> None:
         if not self.dry and not SQUASHFS.is_file():
             raise InstallError("PolyOS can only be installed from the PolyOS USB drive.")
+        if not self.uefi and self.arch != "amd64":
+            raise InstallError("This computer didn't start in UEFI mode. ARM computers need UEFI firmware to run PolyOS.")
         if self.disk == live_disk():
             raise InstallError("That's the drive PolyOS is running from. Choose another disk.")
         disks = {d["path"]: d for d in parse_lsblk(json.loads(self.r.run(["lsblk", "-J", "-b", "-p", "-o", LSBLK_COLUMNS]) or '{"blockdevices": []}'))}
@@ -1094,13 +1098,16 @@ class Installer:
         if debs:
             self.chroot(["dpkg", "-i", *debs], check=False, what="Installing GRUB", timeout=600)
         if self.uefi:
-            signed = self.dry or (TARGET / "usr/lib/shim/shimx64.efi.signed").exists()
-            args = ["grub-install", "--target=x86_64-efi", "--efi-directory=/boot/efi", "--bootloader-id=debian", "--recheck",
+            target, shim, _grub = EFI.get(self.arch, EFI["amd64"])
+            signed = self.dry or (TARGET / f"usr/lib/shim/{shim}.signed").exists()
+            args = ["grub-install", f"--target={target}", "--efi-directory=/boot/efi", "--bootloader-id=debian", "--recheck",
                     "--uefi-secure-boot" if signed else "--no-uefi-secure-boot"]
             if not dual:
                 args.append("--force-extra-removable")  # for firmware that ignores boot entries
             self.chroot(args, what="Installing the boot loader", timeout=600)
             self._efi_label()
+        elif self.arch != "amd64":
+            raise InstallError("This computer didn't start in UEFI mode. ARM computers need UEFI firmware to run PolyOS.")
         else:
             self.chroot(["grub-install", "--target=i386-pc", "--recheck", self.disk], what="Installing the boot loader", timeout=600)
         self.step(0.92, "Finishing the boot menu…")
@@ -1135,8 +1142,9 @@ class Installer:
         for num, label in entries.items():
             if label == "PolyOS":
                 self.r.run(["efibootmgr", "-q", "-b", num, "-B"], check=False)
-        loader = "\\EFI\\debian\\shimx64.efi" if (self.dry or (TARGET / "boot/efi/EFI/debian/shimx64.efi").exists()) \
-            else "\\EFI\\debian\\grubx64.efi"
+        _target, shim, grub = EFI.get(self.arch, EFI["amd64"])
+        loader = f"\\EFI\\debian\\{shim}" if (self.dry or (TARGET / f"boot/efi/EFI/debian/{shim}").exists()) \
+            else f"\\EFI\\debian\\{grub}"
         self.r.run(["efibootmgr", "-q", "-c", "-d", esp_disk, "-p", str(number), "-L", "PolyOS", "-l", loader], check=False)
         if self.dry or "PolyOS" in efi_entries(self.r.run(["efibootmgr"], check=False)).values():
             for num, label in entries.items():

@@ -38,6 +38,7 @@ BUILD = ROOT / "build"
 sys.path.insert(0, str(ROOT))
 
 from polyos import __version__ as VERSION  # noqa: E402
+from polyos.arch import debian_arch  # noqa: E402
 
 MAINTAINER = "PolyOS Team <team@polyos.invalid>"  # set a real contact before publishing packages
 HOMEPAGE = "https://scratch.mit.edu/users/PolyOS/"
@@ -484,9 +485,16 @@ def cmd_iso(args) -> None:
         shutil.rmtree(work)
     work.mkdir(parents=True)
     mirror = args.mirror.rstrip("/") + "/"
+    arch = args.arch or debian_arch()
+    host = debian_arch()
+    if arch != host:
+        sys.exit(f"This is a {host} computer; build the {arch} ISO on a {arch} one (GitHub Actions builds both).")
+    # ARM computers start through UEFI only (no PC BIOS): GRUB for EFI, no ISOLINUX
+    arch_opts = ["--bootloaders", "grub-efi", "--linux-flavours", "arm64"] if arch == "arm64" else []
     sh("lb", "config",
        "--distribution", args.dist,
-       "--architecture", "amd64",
+       "--architecture", arch,
+       *arch_opts,
        "--archive-areas", "main contrib non-free non-free-firmware",
        "--binary-images", "iso-hybrid",
        "--debian-installer", "none",
@@ -524,7 +532,7 @@ def cmd_iso(args) -> None:
     if not isos:
         sys.exit(f"no ISO was produced; see {log_path}")
     DIST.mkdir(exist_ok=True)
-    out = DIST / f"polyos-{VERSION}-{args.dist}-amd64.iso"
+    out = DIST / f"polyos-{VERSION}-{args.dist}-{arch}.iso"
     shutil.move(str(isos[0]), out)
     print(f"\nISO ready: {out}  ({out.stat().st_size / 1024 ** 3:.2f} GiB)\n"
           f"Write it to a USB stick with:  sudo dd if={out} of=/dev/sdX bs=4M status=progress oflag=sync")
@@ -738,6 +746,9 @@ def main() -> None:
     sub.add_parser("uninstall", help="remove PolyOS packages (root)").set_defaults(fn=cmd_uninstall)
     p = sub.add_parser("iso", help="build a live ISO with live-build (root, Debian host)")
     p.add_argument("--dist", default="trixie", choices=["trixie", "bookworm"])
+    p.add_argument("--arch", choices=["amd64", "arm64"],
+                   help="amd64 (Intel/AMD PCs) or arm64 (ARM64 UEFI computers); default: this computer's. "
+                        "Build on a computer of the same kind (live-build doesn't cross-build)")
     p.add_argument("--mirror", default="http://deb.debian.org/debian/")
     p.add_argument("--workdir", help="where live-build works (default build/iso; ~/polyos-iso under WSL)")
     p.set_defaults(fn=cmd_iso)

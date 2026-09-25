@@ -360,3 +360,35 @@ class SecurityTests(unittest.TestCase):
             t.check()
         t.succeeded()
         t.check()
+
+
+class Arm64Tests(unittest.TestCase):
+    def test_arch_names(self):
+        from polyos.arch import debian_arch
+
+        self.assertEqual(debian_arch("x86_64"), "amd64")
+        self.assertEqual(debian_arch("aarch64"), "arm64")
+
+    def test_drivers_use_this_computers_headers(self):
+        nvidia = {"classId": "0300", "className": "VGA compatible controller", "vendorId": "10de", "vendor": "NVIDIA",
+                  "device": "GA106", "deviceId": "2503"}
+        wl = {"classId": "0280", "className": "Network controller", "vendorId": "14e4", "vendor": "Broadcom",
+              "device": "BCM4360", "deviceId": "43a0"}
+        arm = drivers.recommend([nvidia, wl], "nvidia-driver", [], arch="arm64")
+        self.assertIn("linux-headers-arm64", arm[0]["packages"])
+        self.assertTrue(all("broadcom-sta-dkms" not in d["packages"] for d in arm))  # Intel/AMD only
+        self.assertTrue(drivers.DRIVER_PACKAGE_RE.match("linux-headers-arm64"))
+        pc = drivers.recommend([nvidia, wl], "nvidia-driver", [], arch="amd64")
+        self.assertIn("linux-headers-amd64", pc[0]["packages"])
+        self.assertTrue(any("broadcom-sta-dkms" in d["packages"] for d in pc))
+
+    def test_store_hides_intel_only_apps_on_arm(self):
+        data = store.load()
+        arm = store.for_arch(data, "arm64")
+        ids = {a["id"] for a in arm["apps"]}
+        self.assertNotIn("steam", ids)
+        self.assertIn("vscode", ids)
+        self.assertNotIn("steam", [aid for aid, _ in arm["packs"]["gaming"]["apps"]])
+        self.assertIn("steam", {a["id"] for a in store.for_arch(data, "amd64")["apps"]})
+        self.assertFalse(store.available({"arches": ["amd64"]}, "arm64"))
+        self.assertTrue(store.available({}, "arm64"))

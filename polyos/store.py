@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 
 from . import paths
+from .arch import ARCHES, debian_arch
 
 SOURCES = ("debian", "flathub")
 _ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
@@ -43,6 +44,9 @@ def validate(data: dict) -> dict:
                 raise CatalogError(f"{aid}: bad package list")
         elif not _REF.match(app.get("ref", "")):
             raise CatalogError(f"{aid}: bad Flathub id")
+        if "arches" in app and not (isinstance(app["arches"], list) and app["arches"]
+                                    and all(a in ARCHES for a in app["arches"])):
+            raise CatalogError(f"{aid}: bad arches")
         for key in ("name", "summary", "description"):
             if not isinstance(app.get(key), str) or not app[key]:
                 raise CatalogError(f"{aid}: missing {key}")
@@ -54,6 +58,21 @@ def validate(data: dict) -> dict:
             if not (isinstance(item, list) and len(item) == 2 and item[0] in apps and isinstance(item[1], bool)):
                 raise CatalogError(f"pack {name}: bad app {item!r}")
     return apps
+
+
+def available(app: dict, arch: str | None = None) -> bool:
+    """Whether this app exists for this computer's processor (Steam, Chrome... are Intel/AMD only)."""
+    return (arch or debian_arch()) in app.get("arches", ARCHES)
+
+
+def for_arch(data: dict, arch: str | None = None) -> dict:
+    """The catalog without apps this computer can't run (and packs without them)."""
+    arch = arch or debian_arch()
+    apps = [a for a in data["apps"] if available(a, arch)]
+    ids = {a["id"] for a in apps}
+    packs = {name: {**info, "apps": [item for item in info["apps"] if item[0] in ids]}
+             for name, info in (data.get("packs") or {}).items()}
+    return {**data, "apps": apps, "packs": packs}
 
 
 def pack(data: dict, name: str) -> dict | None:
@@ -88,6 +107,7 @@ def installed_flatpaks() -> set[str]:
 
 
 def catalog_with_status(data: dict) -> dict:
+    data = for_arch(data)
     debs = installed_debian(sorted({p for a in data["apps"] if a["source"] == "debian" for p in a["packages"]}))
     flats = installed_flatpaks()
     apps = []
@@ -104,7 +124,7 @@ def packs_with_status(data: dict) -> dict:
     """The editions' app packs for Settings and the welcome screens, with what's installed."""
     by_id = {a["id"]: a for a in catalog_with_status(data)["apps"]}
     out = {}
-    for name, info in (data.get("packs") or {}).items():
+    for name, info in (for_arch(data).get("packs") or {}).items():
         out[name] = {"name": info["name"], "summary": info["summary"],
                      "apps": [{**by_id[aid], "default": default} for aid, default in info["apps"]]}
     return out

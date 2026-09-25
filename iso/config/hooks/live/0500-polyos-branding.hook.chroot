@@ -20,7 +20,11 @@ fi
 # GRUB packages for the PolyOS installer, so installing works without internet. The live
 # system can't have grub-pc and grub-efi-amd64 installed together, so keep their .debs.
 debs=/usr/share/polyos/installer/debs
-for spec in efi:grub-efi-amd64 bios:grub-pc; do
+case "$(dpkg --print-architecture)" in
+    arm64) specs="efi:grub-efi-arm64" ;;           # ARM computers start through UEFI only
+    *)     specs="efi:grub-efi-amd64 bios:grub-pc" ;;
+esac
+for spec in $specs; do
     kind=${spec%%:*}
     pkg=${spec#*:}
     mkdir -p "$debs/$kind"

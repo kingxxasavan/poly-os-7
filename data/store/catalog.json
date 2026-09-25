@@ -1,5 +1,5 @@
 {
-  "comment": "PolyMarket: apps PolyOS offers to install. Only these can be installed through polyos-admin. source=debian installs Debian packages with apt; source=flathub installs from Flathub. 'desktop' lists the launcher ids to open after installing; 'icons' are icon-theme names tried in order. 'packs' are the Gaming and Developer editions: sets of these apps installed together (true = picked by default).",
+  "comment": "PolyMarket: apps PolyOS offers to install. Only these can be installed through polyos-admin. source=debian installs Debian packages with apt; source=flathub installs from Flathub. 'desktop' lists the launcher ids to open after installing; 'icons' are icon-theme names tried in order. 'packs' are the Gaming and Developer editions: sets of these apps installed together (true = picked by default). 'arches' limits an app to those processor types (amd64: Intel/AMD PCs; arm64); without it the app is offered on both.",
   "categories": [
     [
       "featured",
@@ -91,7 +91,10 @@
       ],
       "featured": true,
       "summary": "Google's browser, with sign-in and sync.",
-      "description": "Sign in with your Google account to bring your bookmarks, passwords and extensions from your other computers."
+      "description": "Sign in with your Google account to bring your bookmarks, passwords and extensions from your other computers.",
+      "arches": [
+        "amd64"
+      ]
     },
     {
       "id": "brave",
@@ -125,7 +128,10 @@
       ],
       "featured": true,
       "summary": "Voice, video and text chat with friends.",
-      "description": "Hang out in servers, voice channels and DMs with your friends and communities."
+      "description": "Hang out in servers, voice channels and DMs with your friends and communities.",
+      "arches": [
+        "amd64"
+      ]
     },
     {
       "id": "telegram",
@@ -176,7 +182,10 @@
         "us.zoom.Zoom"
       ],
       "summary": "Video meetings and classes.",
-      "description": "Join and host video meetings, share your screen and chat."
+      "description": "Join and host video meetings, share your screen and chat.",
+      "arches": [
+        "amd64"
+      ]
     },
     {
       "id": "thunderbird",
@@ -212,7 +221,10 @@
       ],
       "featured": true,
       "summary": "Millions of songs and podcasts.",
-      "description": "Stream music and podcasts, and pick up where you left off on your phone."
+      "description": "Stream music and podcasts, and pick up where you left off on your phone.",
+      "arches": [
+        "amd64"
+      ]
     },
     {
       "id": "vlc",
@@ -302,7 +314,10 @@
       ],
       "featured": true,
       "summary": "Thousands of games, many of them for Linux.",
-      "description": "Buy and play games. Proton runs many Windows games on PolyOS too."
+      "description": "Buy and play games. Proton runs many Windows games on PolyOS too.",
+      "arches": [
+        "amd64"
+      ]
     },
     {
       "id": "prism",
@@ -334,7 +349,10 @@
         "heroic"
       ],
       "summary": "Your Epic and GOG games.",
-      "description": "Play the games you own on the Epic Games Store, GOG and Amazon."
+      "description": "Play the games you own on the Epic Games Store, GOG and Amazon.",
+      "arches": [
+        "amd64"
+      ]
     },
     {
       "id": "supertuxkart",
@@ -738,7 +756,10 @@
         "lutris"
       ],
       "summary": "All your games in one library.",
-      "description": "Install and play games from Battle.net, EA, Ubisoft, GOG, emulators and more with community install scripts."
+      "description": "Install and play games from Battle.net, EA, Ubisoft, GOG, emulators and more with community install scripts.",
+      "arches": [
+        "amd64"
+      ]
     },
     {
       "id": "protonup",
@@ -754,7 +775,10 @@
         "protonup-qt"
       ],
       "summary": "Newer Proton and Wine versions for Steam and Lutris.",
-      "description": "Add community builds like Proton-GE, which fix many Windows games in Steam, Lutris and Heroic."
+      "description": "Add community builds like Proton-GE, which fix many Windows games in Steam, Lutris and Heroic.",
+      "arches": [
+        "amd64"
+      ]
     },
     {
       "id": "gamemode",

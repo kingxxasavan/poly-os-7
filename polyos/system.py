@@ -463,6 +463,10 @@ def sysinfo() -> dict:
         if line.startswith("model name"):
             cpu = line.split(":", 1)[1].strip()
             break
+    else:  # ARM: /proc/cpuinfo has no model name; the board or VM name is the useful part
+        board = _read(Path("/sys/firmware/devicetree/base/model")).strip("\x00\n ")
+        if platform.machine() in ("aarch64", "arm64"):
+            cpu = f"ARM64 ({board})" if board else "ARM64 processor"
     mem_kb = 0
     for line in _read(Path("/proc/meminfo")).splitlines():
         if line.startswith("MemTotal:"):

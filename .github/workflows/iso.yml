@@ -1,8 +1,10 @@
-# Builds the PolyOS live ISO on GitHub's servers (Debian inside a privileged container).
+# Builds the PolyOS live ISOs on GitHub's servers (Debian inside a privileged container):
+# amd64 for Intel/AMD PCs and arm64 for ARM64 UEFI computers, each on a runner of its own kind.
+#
 # Run it from the Actions tab ("Run workflow"). Tick "Publish as a GitHub Release" to publish
-# the ISO as release v<version> (from polyos/__init__.py); otherwise it's a test build with a
-# 14-day download on the run. Pushing a tag like v0.6.0 also publishes a release. The website's
-# Download button always offers the newest release.
+# both ISOs as release v<version> (from polyos/__init__.py); otherwise it's a test build with
+# 14-day downloads on the run. Pushing a tag like v0.6.0 also publishes a release. The website's
+# Download buttons always offer the newest release.
 name: Build PolyOS ISO
 
 on:
@@ -14,7 +16,7 @@ on:
         options: [trixie, bookworm]
         default: trixie
       release:
-        description: Publish as a GitHub Release (the website's Download button offers it)
+        description: Publish as a GitHub Release (the website's Download buttons offer it)
         type: boolean
         default: false
   push:
@@ -23,82 +25,122 @@ on:
 permissions:
   contents: write  # publishing releases
 
+env:
+  DIST: ${{ inputs.dist || 'trixie' }}
+
 jobs:
-  iso:
+  setup:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
-    env:
-      DIST: ${{ inputs.dist || 'trixie' }}
+    outputs:
+      publish: ${{ steps.kind.outputs.publish }}
+      tag: ${{ steps.kind.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Release or test build?
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"; echo "PUBLISH=yes" >> "$GITHUB_ENV"
-          elif [ "${{ inputs.release }}" = "true" ]; then
-            echo "TAG=v$(python3 -c 'import polyos; print(polyos.__version__)')" >> "$GITHUB_ENV"; echo "PUBLISH=yes" >> "$GITHUB_ENV"
-          fi
-
       - name: Checks and tests
         run: python3 main.py check && python3 main.py test
+
+      - name: Release or test build?
+        id: kind
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"; echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.release }}" = "true" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "tag=v$(python3 -c 'import polyos; print(polyos.__version__)')" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  iso:
+    needs: setup
+    strategy:
+      fail-fast: false  # one architecture failing still publishes the other
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            grub: grub-efi-amd64-bin grub-pc-bin
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            grub: grub-efi-arm64-bin
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Free disk space for the build
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
 
-      - name: Build the ISO in Debian ${{ env.DIST }}
+      - name: Build the ${{ matrix.arch }} ISO in Debian ${{ env.DIST }}
         run: |
           docker run --rm --privileged -v "$PWD":/src -w /src "debian:$DIST" bash -euxc "
             apt-get update
             apt-get install -y --no-install-recommends live-build debootstrap python3 ca-certificates \
-              xorriso squashfs-tools grub-efi-amd64-bin grub-pc-bin mtools dosfstools
-            python3 main.py iso --dist $DIST --workdir /tmp/polyos-iso
+              xorriso squashfs-tools ${{ matrix.grub }} mtools dosfstools
+            python3 main.py iso --dist $DIST --arch ${{ matrix.arch }} --workdir /tmp/polyos-iso
           "
+          sudo chown -R "$(id -u):$(id -g)" dist
           ls -lh dist/
 
-      - name: Upload the ISO (test builds; tagged builds become a release below)
-        if: env.PUBLISH != 'yes'
+      - name: Upload the ISO
         uses: actions/upload-artifact@v4
         with:
-          name: polyos-${{ env.DIST }}-amd64-iso
+          name: polyos-${{ env.DIST }}-${{ matrix.arch }}-iso
           path: dist/*.iso
           compression-level: 0
-          retention-days: 14
+          retention-days: ${{ needs.setup.outputs.publish == 'true' && 1 || 14 }}
 
-      - name: Checksums (and parts, if the ISO is over GitHub's 2 GB per-file limit)
-        if: env.PUBLISH == 'yes'
+  release:
+    needs: [setup, iso]
+    if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the ISOs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: polyos-*-iso
+          merge-multiple: true
+          path: dist
+
+      - name: Checksums (and parts, if an ISO is over GitHub's 2 GB per-file limit)
         run: |
           cd dist
-          sudo chown "$(id -u):$(id -g)" . ./*.iso
+          ls *.iso >/dev/null  # stop if no ISO was built at all
           sha256sum ./*.iso | sed 's#\./##' > SHA256SUMS
-          iso=$(ls *.iso)
-          if [ "$(stat -c %s "$iso")" -gt 2000000000 ]; then
-            split -b 1900M -d -a 1 "$iso" "$iso.part"
-            sha256sum "$iso".part* >> SHA256SUMS
-            rm "$iso"
-            echo "PARTS=yes" >> "$GITHUB_ENV"
-          fi
+          for iso in *.iso; do
+            if [ "$(stat -c %s "$iso")" -gt 2000000000 ]; then
+              split -b 1900M -d -a 1 "$iso" "$iso.part"
+              sha256sum "$iso".part* >> SHA256SUMS
+              rm "$iso"
+              echo "PARTS=yes" >> "$GITHUB_ENV"
+            fi
+          done
           ls -lh
 
       - name: Publish the release
-        if: env.PUBLISH == 'yes'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG }}
+          tag_name: ${{ needs.setup.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: PolyOS ${{ env.TAG }}
+          name: PolyOS ${{ needs.setup.outputs.tag }}
           files: |
             dist/*.iso
             dist/*.iso.part*
             dist/SHA256SUMS
           body: |
-            **PolyOS 7 for Debian ${{ env.TAG }}** (Debian ${{ env.DIST }}, 64-bit PC)
+            **PolyOS 7 for Debian ${{ needs.setup.outputs.tag }}** (Debian ${{ env.DIST }})
 
-            1. Download the `.iso` below${{ env.PARTS && ' (in parts: join them with `cat polyos-*.part* > polyos.iso` on Linux/macOS, or `copy /b part0+part1 polyos.iso` on Windows)' || '' }}.
-            2. Write it to a USB drive (8 GB or more) with balenaEtcher, or Rufus in DD mode.
-            3. Start the computer from the USB drive, try PolyOS, and choose **Install PolyOS 7**.
+            | File | For |
+            |---|---|
+            | `…-amd64.iso` | Intel and AMD PCs and laptops (almost every Windows PC) |
+            | `…-arm64.iso` | ARM64 computers with UEFI: Apple Silicon Macs in UTM, Parallels or VMware Fusion, ARM servers and VMs |
 
-            Check the download against `SHA256SUMS`. Full notes: see the commits since the last release.
+            1. Download the `.iso` for your computer${{ env.PARTS && ' (in parts: join them with `cat polyos-*.part* > polyos.iso` on Linux/macOS, or `copy /b part0+part1 polyos.iso` on Windows)' || '' }}.
+            2. Write it to a USB drive (8 GB or more) with balenaEtcher, or Rufus in DD mode, or start it in a virtual machine.
+            3. Start the computer from it, try PolyOS, and choose **Install PolyOS 7**.
+
+            Check the download against `SHA256SUMS`.
           generate_release_notes: true

@@ -115,8 +115,11 @@ this step.
 
 ## Build the live USB / installer ISO
 
-**Just want the ISO?** Download the newest release from the website's Download button or from
-[GitHub Releases](https://github.com/kingxxasavan/poly-os-7/releases/latest).
+**Just want the ISO?** Download the newest release from the website's Download buttons or from
+[GitHub Releases](https://github.com/kingxxasavan/poly-os-7/releases/latest). Each release has two:
+`…-amd64.iso` for Intel/AMD PCs and `…-arm64.iso` for ARM64 computers with UEFI (Apple Silicon Macs in
+UTM, Parallels or VMware Fusion; ARM servers and VMs). `sudo python3 main.py iso` builds the one for
+the computer it runs on (`--arch`); GitHub Actions builds both.
 
 **Publishing a new release:** bump `__version__` in `polyos/__init__.py` and push it to `main`.
 Then on GitHub open **Actions → Build PolyOS ISO → Run workflow**, tick **Publish as a GitHub
@@ -216,6 +219,9 @@ closing apps.
 
 ## Current limits
 
+- ARM64: needs UEFI firmware (Raspberry Pi works only with UEFI firmware installed). Apps built only
+  for Intel/AMD PCs (Steam, Discord, Spotify, Chrome and a few more) aren't offered there; cloud
+  gaming works in the browser instead.
 - Custom installs use existing partitions or whole drives; they don't create or resize single
   partitions (Dual boot does that, or use the Advanced installer). Disk encryption isn't offered yet.
 - Edition apps come from Debian and Flathub, so the first sign-in needs the internet. Packages a

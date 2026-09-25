@@ -1,4 +1,5 @@
-# Installed into the live image. polyos-desktop and polyos-shell come from
+# Installed into the live image. "#if ARCHITECTURES" blocks apply to amd64 (Intel/AMD PCs)
+# or arm64 only (live-build conditionals). polyos-desktop and polyos-shell come from
 # config/packages.chroot (copied there by `main.py iso`).
 polyos-desktop
 
@@ -24,17 +25,25 @@ os-prober
 efibootmgr
 mokutil
 grub2-common
+shim-signed
+#if ARCHITECTURES amd64
 grub-pc-bin
 grub-efi-amd64-bin
 grub-efi-amd64-signed
-shim-signed
+#endif
+#if ARCHITECTURES arm64
+grub-efi-arm64-bin
+grub-efi-arm64-signed
+#endif
 
 # Driver Manager and PolyMarket
 pciutils
 usbutils
 isenkram-cli
-nvidia-detect
 flatpak
+#if ARCHITECTURES amd64
+nvidia-detect
+#endif
 
 # Everyday apps and hardware (webcam for the Camera app, power modes, idle timers)
 evince
@@ -66,5 +75,7 @@ firmware-atheros
 firmware-brcm80211
 firmware-libertas
 firmware-sof-signed
+#if ARCHITECTURES amd64
 intel-microcode
 amd64-microcode
+#endif

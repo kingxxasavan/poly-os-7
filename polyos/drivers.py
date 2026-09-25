@@ -16,7 +16,7 @@ import subprocess
 # Anything the Driver Manager may ask polyos-admin to install.
 DRIVER_PACKAGE_RE = re.compile(
     r"^(firmware-[a-z0-9.+-]+|nvidia-driver|nvidia-tesla-\d+-driver|nvidia-open-kernel-dkms|nvidia-kernel-dkms|"
-    r"linux-headers-amd64|broadcom-sta-dkms|mesa-vulkan-drivers|mesa-va-drivers|mesa-vdpau-drivers|libgl1-mesa-dri|"
+    r"linux-headers-(amd64|arm64)|broadcom-sta-dkms|mesa-vulkan-drivers|mesa-va-drivers|mesa-vdpau-drivers|libgl1-mesa-dri|"
     r"intel-media-va-driver-non-free|intel-media-va-driver|i965-va-driver|va-driver-all|vdpau-driver-all|"
     r"xserver-xorg-video-(amdgpu|ati|intel|nouveau)|intel-microcode|amd64-microcode|bluez-firmware|"
     r"nvidia-vaapi-driver|nvidia-settings|vulkan-tools|mesa-utils)$"
@@ -97,8 +97,13 @@ def _short_vendor(dev: dict) -> str:
             "atheros": "Qualcomm Atheros", "qualcomm": "Qualcomm", "mediatek": "MediaTek"}.get(name or "", dev.get("vendor", ""))
 
 
-def recommend(devices: list[dict], nvidia_pkg: str | None = None, isenkram: list[str] | None = None) -> list[dict]:
+def recommend(devices: list[dict], nvidia_pkg: str | None = None, isenkram: list[str] | None = None,
+              arch: str | None = None) -> list[dict]:
     """One entry per interesting device: what it is, whether it works, and what to install."""
+    from .arch import debian_arch
+
+    arch = arch or debian_arch()
+    headers = f"linux-headers-{arch}"  # for drivers built on this computer (NVIDIA, Broadcom wl)
     out = []
     for dev in devices:
         kind = kind_of(dev)
@@ -109,7 +114,7 @@ def recommend(devices: list[dict], nvidia_pkg: str | None = None, isenkram: list
         if kind == "graphics":
             if vendor == "nvidia":
                 pkg = nvidia_pkg or "nvidia-driver"
-                packages = ["linux-headers-amd64", pkg, "firmware-misc-nonfree"]
+                packages = [headers, pkg, "firmware-misc-nonfree"]
                 note = ("NVIDIA's own driver gives the best speed for games and video. Restart after installing. "
                         "With Secure Boot on, you'll be asked to enroll a key at the next start (or turn Secure Boot off).")
             elif vendor == "amd":
@@ -121,8 +126,8 @@ def recommend(devices: list[dict], nvidia_pkg: str | None = None, isenkram: list
             else:
                 continue  # virtual GPUs (VirtualBox, QEMU) need nothing extra
         elif kind == "wifi":
-            if vendor == "broadcom" and dev.get("deviceId") in BROADCOM_WL_IDS:
-                packages = ["linux-headers-amd64", "broadcom-sta-dkms"]
+            if vendor == "broadcom" and dev.get("deviceId") in BROADCOM_WL_IDS and arch == "amd64":
+                packages = [headers, "broadcom-sta-dkms"]  # Broadcom's wl driver exists for Intel/AMD PCs only
                 note = "This Broadcom Wi-Fi chip needs Broadcom's driver. Restart after installing."
             elif vendor == "intel":
                 packages = ["firmware-iwlwifi"]

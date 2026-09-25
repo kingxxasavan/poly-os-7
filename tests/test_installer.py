@@ -324,3 +324,30 @@ class CustomLayoutTests(unittest.TestCase):
                 self.assertRaises(InstallError):
             installer.Installer(plan, events.append, dry_run=True).run()
         self.assertFalse(any("wipefs" in e.get("log", "") for e in events))
+
+
+class Arm64InstallTests(unittest.TestCase):
+    def plan(self):
+        return installer.validate_plan({"mode": "erase", "disk": "/dev/nvme0n1", "hostname": "t-polyos", "timezone": "UTC",
+                                        "user": {"fullName": "T", "username": "tester", "password": "pw"},
+                                        "appearance": {"theme": "dark", "accent": "#678fd9"}})
+
+    def test_arm64_installs_arm_grub(self):
+        events = []
+        with mock.patch.object(installer, "live_disk", return_value="/dev/sdb"), \
+                mock.patch.object(installer, "debian_arch", return_value="arm64"), \
+                mock.patch.object(installer, "_have", return_value=True), \
+                mock.patch("pathlib.Path.is_dir", return_value=True):
+            installer.Installer(self.plan(), events.append, dry_run=True).run()
+        joined = "\n".join(e["log"].replace("\\", "/") for e in events if "log" in e)
+        self.assertIn("grub-install --target=arm64-efi", joined)
+        self.assertIn("/EFI/debian/shimaa64.efi", joined)
+        self.assertNotIn("x86_64", joined)
+
+    def test_arm64_needs_uefi_before_touching_disks(self):
+        events = []
+        with mock.patch.object(installer, "live_disk", return_value="/dev/sdb"), \
+                mock.patch.object(installer, "debian_arch", return_value="arm64"), \
+                mock.patch("pathlib.Path.is_dir", return_value=False), self.assertRaises(InstallError):
+            installer.Installer(self.plan(), events.append, dry_run=True).run()
+        self.assertFalse(any("wipefs" in e.get("log", "") for e in events))

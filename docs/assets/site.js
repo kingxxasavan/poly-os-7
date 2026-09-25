@@ -67,13 +67,30 @@ function gb(bytes) {
   return `${(bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1)} GB`;
 }
 
-function downloadButton(href, text, primary) {
+function downloadButton(href, text, primary, detail) {
   const a = document.createElement('a');
   a.className = primary ? 'btn primary big' : 'btn big';
   a.href = href;
   a.innerHTML = '<svg class="ico"><use href="#i-download"/></svg>';
   a.append(text);
+  if (detail) {
+    const small = document.createElement('small');
+    small.textContent = detail;
+    a.append(small);
+  }
   return a;
+}
+
+// Each release has an ISO per processor type: ...-amd64.iso (Intel/AMD PCs) and ...-arm64.iso.
+const ARCHES = [['amd64', 'PC (Intel/AMD)'], ['arm64', 'ARM64']];
+
+async function visitorOnArm() {
+  try {
+    const hints = await navigator.userAgentData?.getHighEntropyValues(['architecture']);
+    return hints?.architecture === 'arm';
+  } catch {
+    return false;
+  }
 }
 
 async function showRelease() {
@@ -88,22 +105,27 @@ async function showRelease() {
     return;
   }
   const assets = release.assets || [];
-  const iso = assets.find((a) => a.name.endsWith('.iso'));
-  const parts = assets.filter((a) => /\.iso\.part\d+$/.test(a.name)).sort((a, b) => a.name.localeCompare(b.name));
+  const builds = ARCHES.map(([arch, label]) => {
+    const iso = assets.find((a) => a.name.endsWith(`-${arch}.iso`));
+    const parts = assets.filter((a) => a.name.includes(`-${arch}.iso.part`)).sort((a, b) => a.name.localeCompare(b.name));
+    return { arch, label, iso, parts, size: iso ? iso.size : parts.reduce((n, p) => n + p.size, 0) };
+  }).filter((b) => b.iso || b.parts.length);
+  if (!builds.length) return;
+  if (builds.length > 1 && await visitorOnArm()) builds.reverse(); // offer ARM64 first on ARM computers
   const sums = assets.find((a) => a.name === 'SHA256SUMS');
-  if (!iso && !parts.length) return;
   const date = new Date(release.published_at).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
-  const total = iso ? iso.size : parts.reduce((n, p) => n + p.size, 0);
   document.querySelector('[data-release-version]').textContent = release.tag_name;
   document.querySelector('[data-release-meta]').textContent =
-    `Live USB and installer · 64-bit PC · ${gb(total)} · released ${date}`;
-  buttons.replaceChildren(...(iso
-    ? [downloadButton(iso.browser_download_url, 'Download the ISO', true)]
-    : parts.map((p, i) => downloadButton(p.browser_download_url, `Part ${i + 1} of ${parts.length}`, i === 0))));
-  const note = document.querySelector('[data-release-note]');
-  if (!iso) {
-    note.innerHTML = 'This release comes in parts. Download them all, then join them: <code>cat polyos-*.part* &gt; polyos.iso</code> '
-      + '(Linux, macOS) or <code>copy /b part0+part1 polyos.iso</code> (Windows).';
+    `Live USB and installer · ${builds.map((b) => b.label).join(' and ')} · released ${date}`;
+  buttons.replaceChildren(...builds.flatMap((b, i) => (b.iso
+    ? [downloadButton(b.iso.browser_download_url, `Download for ${b.label}`, i === 0, gb(b.size))]
+    : b.parts.map((p, n) => downloadButton(p.browser_download_url, `${b.label}, part ${n + 1} of ${b.parts.length}`, i === 0 && n === 0,
+      gb(p.size))))));
+  const which = document.querySelector('.dl-which');
+  if (which && builds.length < 2) which.hidden = true;
+  if (builds.some((b) => !b.iso)) {
+    document.querySelector('[data-release-note]').innerHTML = 'Some downloads come in parts. Download them all, then join them: '
+      + '<code>cat polyos-*.part* &gt; polyos.iso</code> (Linux, macOS) or <code>copy /b part0+part1 polyos.iso</code> (Windows).';
   }
   const link = document.querySelector('[data-release-sums]');
   if (sums) link.href = sums.browser_download_url;

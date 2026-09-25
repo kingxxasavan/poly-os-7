@@ -502,7 +502,7 @@ class MockBackend(Backend):
 
     # ---- PolyMarket ------------------------------------------------------------------------
     def store_list(self):
-        data = store.load()
+        data = store.for_arch(store.load())
         apps = [{**a, "installed": a["id"] in self._store_installed} for a in data["apps"]]
         return {"categories": data["categories"], "apps": apps, "flatpak": True}
 
@@ -544,7 +544,7 @@ class MockBackend(Backend):
 
     # ---- editions, cloud gaming and security (simulated) --------------------------------------
     def packs(self):
-        data = store.load()
+        data = store.for_arch(store.load())
         out = {}
         by_id = {a["id"]: a for a in self.store_list()["apps"]}
         for name, info in data["packs"].items():
