@@ -507,3 +507,41 @@ class DriveChangeTests(unittest.TestCase):
         self.assertEqual(esp["size"] * 512, installer.ESP_BYTES)
         self.assertEqual(root["start"], esp["start"] + esp["size"])
         self.assertIn(["mkfs.vfat", "-F", "32", "-n", "EFI", "/dev/sda1"], [c[0] for c in drive.commands])
+
+
+class DualBootTests(unittest.TestCase):
+    """Windows with a C: and a D: drive, with and without BitLocker."""
+
+    def laptop(self, c_fs="ntfs"):
+        d = disk(parts=[part("/dev/sda1", 1, 100 * MiB, "vfat", installer.ESP_GUID.lower()),
+                        part("/dev/sda2", 2, 16 * MiB, "", installer.MSR_GUID.lower()),
+                        part("/dev/sda3", 3, 250 * GiB, c_fs),
+                        part("/dev/sda4", 4, 200 * GiB)])
+        d["partitions"][2]["label"] = "" if c_fs == "BitLocker" else "Windows"
+        d["partitions"][3]["label"] = "New Volume"
+        table = {"label": "gpt", "sector": 512, "first": 2048, "last": 500 * GiB // 512 - 34, "partitions": [
+            {"node": "/dev/sda1", "number": 1, "start": 2048, "size": 204800, "type": "x"},
+            {"node": "/dev/sda2", "number": 2, "start": 206848, "size": 32768, "type": "x"},
+            {"node": "/dev/sda3", "number": 3, "start": 239616, "size": 250 * GiB // 512, "type": "x"},
+            {"node": "/dev/sda4", "number": 4, "start": 239616 + 250 * GiB // 512, "size": 200 * GiB // 512, "type": "x"}]}
+        resize = {"/dev/sda3": {"fs": "ntfs", "min": 80 * GiB, "used": 80 * GiB, "reason": None}} if c_fs == "ntfs" else {}
+        return [installer.describe_disk(d, table, {}, True, None, resize)]
+
+    def test_d_drive_is_offered_and_not_called_windows(self):
+        (out,) = installer.finish_install_options(self.laptop(), True)
+        c, d = out["partitions"][2], out["partitions"][3]
+        self.assertEqual((c["os"], d["os"]), ("Windows", None))
+        self.assertTrue(d["install"]["possible"])
+        self.assertTrue(out["alongside"]["possible"])
+        self.assertEqual(installer.bitlocker_volumes([out]), [])
+
+    def test_bitlocker_blocks_dual_boot(self):
+        (out,) = installer.finish_install_options(self.laptop("BitLocker"), True)
+        self.assertEqual([v["path"] for v in installer.bitlocker_volumes([out])], ["/dev/sda3"])
+        self.assertFalse(out["alongside"]["possible"])
+        self.assertTrue(out["alongside"]["bitlocker"])
+        c, d = out["partitions"][2], out["partitions"][3]
+        self.assertFalse(d["install"]["possible"])  # Windows would stay, encrypted
+        self.assertIn("BitLocker", d["install"]["reason"])
+        self.assertTrue(c["install"]["possible"])  # erasing the encrypted partition itself is fine
+        self.assertTrue(all(not r["install"]["possible"] for r in out["free"]))

@@ -18,7 +18,8 @@ from .privileged import NeedPassword
 
 GB = 1000 ** 3
 OWN_APPS = {"polyos-settings.desktop": "settings", "polyos-files.desktop": "files", "polyos-taskmgr.desktop": "taskmgr",
-            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store", "polyos-camera.desktop": "camera"}
+            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store", "polyos-camera.desktop": "camera",
+            "polyos-install.desktop": "setup"}
 
 _APPS = [
     ("firefox-esr.desktop", "Firefox ESR", "Browse the World Wide Web", "Network;WebBrowser"),
@@ -63,12 +64,15 @@ class MockBackend(Backend):
         self._lock = threading.Lock()
         apps = list(_APPS)
         if live:
-            apps.append(("install-debian.desktop", "Install PolyOS", "Install to this computer", "System"))
+            apps.append(("polyos-install.desktop", "Install PolyOS 7", "Install PolyOS on this computer, or next to Windows", "System"))
+            apps.append(("install-debian.desktop", "PolyOS Advanced Installer", "Install PolyOS with manual partitioning", "System"))
         self._apps = sorted(
             ({"id": i, "name": DISPLAY_NAMES.get(i, n), "description": d, "categories": c.split(";"), "keywords": [],
               "icon": f"/icon/app/{i}", "hidden": i in HIDDEN_APPS} for i, n, d, c in apps),
             key=lambda a: a["name"].casefold())
         self._admin_ready = live  # the live USB's account needs no password; "polyos" unlocks the mock
+        if live:
+            self.show_install_app()
         self._store_installed = {"firefox"}
         self._driver_state: set[str] = {"firmware-iwlwifi", "firmware-sof-signed"}
         self._procs_seed = random.Random(7)
@@ -219,7 +223,8 @@ class MockBackend(Backend):
     def app_icon(self, app_id):
         own = {"polyos-settings.desktop": "settings.svg", "polyos-files.desktop": "files.svg",
                "polyos-taskmgr.desktop": "taskmgr.svg", "polyos-drivers.desktop": "drivers.svg",
-               "polyos-store.desktop": "store.svg", "polyos-camera.desktop": "camera.svg"}
+               "polyos-store.desktop": "store.svg", "polyos-camera.desktop": "camera.svg",
+               "polyos-install.desktop": "install.svg"}
         if app_id in own:
             return (paths.UI_DIR / "img" / own[app_id]).read_bytes(), "image/svg+xml"
         if app_id.startswith("polyos-cloud-"):
@@ -520,15 +525,39 @@ DP-1 disconnected (normal left inverted right x axis y axis)
         resize = {"/dev/nvme0n1p3": {"fs": "ntfs", "min": 131 * GB, "used": 131 * GB, "reason": None}}
         disks = [installer.describe_disk(copy.deepcopy(d["disk"]), copy.deepcopy(d["table"]), prober, uefi, "/dev/sdb", resize)
                  for d in self._drives]
-        return {"uefi": uefi, "secureBoot": True, "ram": 8 * 1024 ** 3, "disks": installer.finish_install_options(disks, uefi),
-                "minBytes": installer.MIN_ROOT, "liveDisk": "/dev/sdb"}
+        disks = installer.finish_install_options(disks, uefi)
+        return {"uefi": uefi, "secureBoot": True, "ram": 8 * 1024 ** 3, "disks": disks,
+                "minBytes": installer.MIN_ROOT, "liveDisk": "/dev/sdb", "bitlocker": installer.bitlocker_volumes(disks)}
 
     @staticmethod
     def _sample_drives():
-        """A laptop with Windows 11, a second SSD, an empty hard drive and the PolyOS USB stick."""
+        """A laptop with Windows 11, a second SSD, an empty hard drive and the PolyOS USB stick.
+
+        POLYOS_MOCK_DRIVES=laptop is one SSD with Windows (C:) and a D: drive made for PolyOS;
+        "bitlocker" is the same with BitLocker still on."""
         def part(path, number, size, fstype, label, parttype, mounts=()):
             return {"path": path, "number": number, "size": size, "fstype": fstype, "label": label,
                     "parttype": parttype, "mounts": list(mounts)}
+        kind = os.environ.get("POLYOS_MOCK_DRIVES", "")
+        if kind in ("laptop", "bitlocker"):
+            c_fs = "BitLocker" if kind == "bitlocker" else "ntfs"
+            disk = {"path": "/dev/nvme0n1", "size": 512 * GB, "model": "SK hynix BC711", "transport": "nvme",
+                    "removable": False, "readonly": False, "table": "gpt", "mounts": [], "partitions": [
+                        part("/dev/nvme0n1p1", 1, 260 * 1024 ** 2, "vfat", "SYSTEM", installer.ESP_GUID.lower()),
+                        part("/dev/nvme0n1p2", 2, 16 * 1024 ** 2, "", "", installer.MSR_GUID.lower()),
+                        part("/dev/nvme0n1p3", 3, 300 * GB, c_fs, "" if c_fs == "BitLocker" else "Windows", installer.MS_BASIC_GUID.lower()),
+                        part("/dev/nvme0n1p4", 4, 210 * GB, "ntfs", "New Volume", installer.MS_BASIC_GUID.lower()),
+                        part("/dev/nvme0n1p5", 5, 1024 ** 3, "ntfs", "Recovery", installer.WINRE_GUID.lower())]}
+            s = 2048
+            rows = []
+            for p in disk["partitions"]:
+                rows.append({"node": p["path"], "number": p["number"], "start": s, "size": p["size"] // 512, "type": "x"})
+                s += p["size"] // 512
+            usb = {"path": "/dev/sdb", "size": 32 * GB, "model": "SanDisk Ultra", "transport": "usb", "removable": True,
+                   "readonly": False, "table": "dos", "mounts": [], "partitions": [
+                       part("/dev/sdb1", 1, 32 * GB, "iso9660", "PolyOS", "0x0", ["/run/live/medium"])]}
+            return [{"disk": disk, "table": {"label": "gpt", "sector": 512, "first": 2048, "last": disk["size"] // 512 - 34, "partitions": rows}},
+                    {"disk": usb, "table": {"label": "dos", "sector": 512, "first": 0, "last": None, "partitions": []}}]
         nvme = {"path": "/dev/nvme0n1", "size": 512 * GB, "model": "Samsung SSD 970 EVO Plus", "transport": "nvme",
                 "removable": False, "readonly": False, "table": "gpt", "mounts": [], "partitions": [
                     part("/dev/nvme0n1p1", 1, 100 * 1024 ** 2, "vfat", "SYSTEM", installer.ESP_GUID.lower()),

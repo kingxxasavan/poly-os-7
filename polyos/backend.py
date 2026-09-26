@@ -49,6 +49,7 @@ POWER_ACTIONS = ("lock", "logout", "suspend", "reboot", "poweroff")
 RUN_TARGETS = ("terminal", "files", "browser")
 MIXER_TABS = {"playback": 1, "recording": 2, "output": 3, "input": 4, "configuration": 5}  # pavucontrol --tab
 OPEN_APPS = ("settings", "files", "setup", "taskmgr", "drivers", "store", "camera")
+INSTALL_APP = "polyos-install.desktop"  # "Install PolyOS 7": only while trying PolyOS from the USB
 CAMERA_APP = "polyos-camera.desktop"  # listed only when a webcam is connected
 CAMERA_TYPES = {"photo": {"image/jpeg": ".jpg", "image/png": ".png"},
                 "video": {"video/webm": ".webm", "video/mp4": ".mp4"}}
@@ -529,6 +530,18 @@ class Backend:
             except ValueError:
                 continue
             system.run(display.command(name, cfg.get("size"), cfg.get("rate"), cfg.get("rotation"), cfg.get("primary")), 15)
+
+    # ---- trying PolyOS from the USB -----------------------------------------------------------
+    def show_install_app(self) -> None:
+        """On the USB: "Install PolyOS 7" first in the dock and on the desktop, to get back to the installer."""
+        pinned, icons = self.settings.get("pinned"), self.settings.get("desktopIcons")
+        patch = {}
+        if INSTALL_APP not in pinned:
+            patch["pinned"] = [INSTALL_APP, *pinned][:24]
+        if INSTALL_APP not in icons:
+            patch["desktopIcons"] = [INSTALL_APP, *icons][:24]
+        if patch:
+            self.update_settings(patch)
 
     # ---- the hardware check (first start, and Settings > Power & Performance) ----------------
     def hardware_check(self) -> dict:

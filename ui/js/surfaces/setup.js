@@ -344,7 +344,9 @@ export function mount(root, store) {
         erase ? 'too small or read-only.' : d.alongside.reason));
       return [...head(title, erase ? 'PolyOS couldn’t find a disk to install on.' : 'PolyOS can’t fit next to your other system yet.'),
         h('ul.su-reasons', reasons.length ? reasons : [h('li', 'No internal disk was found.')]),
-        nav(erase ? h('span') : next('Fresh install instead', () => { plan.mode = 'erase'; go(step); }))];
+        nav(erase ? h('span') : h('button.su-link', { onclick: () => { plan.mode = 'pick'; go(step); } }, 'Choose a partition or space'),
+          erase ? null : next('Fresh install instead', () => { plan.mode = 'erase'; go(step); })),
+        erase ? null : bitlockerMessage()];
     }
     if (!usable.some((d) => d.path === plan.disk)) {
       const internal = usable.filter((d) => !d.removable);
@@ -392,7 +394,9 @@ export function mount(root, store) {
       if (opt.kind === 'shrink') body.push(h('p.su-note', icon('info'), `${other} will be shrunk to make room. This can take a while.`));
     }
     if (probe.uefi && probe.secureBoot) body.push(h('p.su-note', icon('lock'), 'Secure Boot is on. PolyOS supports it.'));
-    return [...head(title, sub), ...body, nav(install)];
+    // Made a partition for PolyOS in Windows (a D: drive, say)? Pick it on the drive screen instead.
+    const pickInstead = erase ? h('span') : h('button.su-link', { onclick: () => { plan.mode = 'pick'; go(step); } }, 'Choose a partition instead (like a D: drive)');
+    return [...head(title, sub), ...body, nav(pickInstead, install), erase ? null : bitlockerMessage()];
   }
 
   // ---- "Where do you want to install PolyOS?": every drive's partitions and unallocated space,
@@ -522,7 +526,27 @@ export function mount(root, store) {
     const install = next('Next', () => sel && installHere(sel), { primary: true, disabled: !sel?.install?.possible });
     setTimeout(() => table.querySelector('.su-prow.on')?.scrollIntoView({ block: 'nearest' }), 0); // the chosen row stays in sight
     if (probe.uefi && probe.secureBoot) tools.append(h('span.su-psb', icon('lock'), 'Secure Boot is on. PolyOS supports it.'));
-    return [...head(title, sub), table, tools, form, status, nav(install), overlay];
+    return [...head(title, sub), table, tools, form, status, nav(install), overlay || bitlockerMessage()];
+  }
+
+  // The system message when a drive is encrypted with BitLocker: PolyOS can't go next to Windows
+  // until it's turned off (it can't shrink the partition, and Windows would ask for its recovery key).
+  let bitlockerSeen = false;
+  function bitlockerMessage() {
+    if (!probe?.bitlocker?.length || bitlockerSeen) return null;
+    const drives = probe.bitlocker.map((v) => `${v.label ? `“${v.label}”, ` : ''}the ${formatBytes(v.size)} partition on ${v.model}`).join('; ');
+    return h('div.su-confirm', { role: 'alertdialog', 'aria-label': 'BitLocker is on' },
+      h('div.su-confirm-box.su-sysmsg',
+        h('div.su-sysmsg-head', icon('lock'), h('b', 'BitLocker is on')),
+        h('p', `PolyOS can’t be installed next to Windows while BitLocker encrypts ${probe.bitlocker.length > 1 ? 'these partitions' : 'this partition'}: ${drives}. Turn it off first:`),
+        h('ol.su-steps',
+          h('li', 'Start Windows. Make sure you have your BitLocker recovery key (aka.ms/myrecoverykey).'),
+          h('li', 'Open Settings › Privacy & security › Device encryption and turn it off, or Control Panel › BitLocker Drive Encryption › Turn off BitLocker, for every drive.'),
+          h('li', 'Wait until Windows says decryption is complete. It can take an hour or more; keep the computer plugged in.'),
+          h('li', 'Turn off Fast Startup too (Control Panel › Power Options › Choose what the power buttons do), then shut down.'),
+          h('li', 'Start from this USB drive again and choose Dual boot.')),
+        h('p', 'Installing PolyOS on a whole drive (erasing it) or on the encrypted partition itself still works.'),
+        h('div.su-confirm-btns', h('button.su-next.primary', { onclick: () => { bitlockerSeen = true; go(step); } }, 'OK'))));
   }
 
   function askDelete(it) {

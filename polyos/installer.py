@@ -331,8 +331,36 @@ def partition_option(part: dict, disk: dict) -> dict:
     return {"possible": True}
 
 
+BITLOCKER_REASON = ("BitLocker is on, so PolyOS can't be installed next to Windows. Turn BitLocker off in "
+                    "Windows, wait until it has finished decrypting, then start this USB drive again.")
+
+
+def bitlocker_volumes(disks: list[dict]) -> list[dict]:
+    """Partitions encrypted with BitLocker (still encrypting or decrypting counts too)."""
+    return [{"path": p["path"], "disk": d["path"], "model": d.get("model") or d["path"], "size": p["size"],
+             "label": p.get("label") or ""}
+            for d in disks if not d.get("isLive") for p in d["partitions"] if (p.get("fstype") or "").lower() == "bitlocker"]
+
+
 def finish_install_options(disks: list[dict], uefi: bool) -> list[dict]:
-    """A partition only works in UEFI mode if some drive has an EFI system partition PolyOS can share."""
+    """A partition only works in UEFI mode if some drive has an EFI system partition PolyOS can share.
+
+    And while BitLocker is on, PolyOS doesn't go next to Windows: it can't shrink an encrypted
+    partition, and a new boot manager would make Windows ask for its BitLocker recovery key.
+    Deleting the encrypted partition (or erasing the whole drive) is still fine."""
+    locked = {v["path"] for v in bitlocker_volumes(disks)}
+    if locked:
+        for disk in disks:
+            if disk.get("isLive"):
+                continue
+            if disk["alongside"].get("possible") or any(p["path"] in locked for p in disk["partitions"]):
+                disk["alongside"] = {"possible": False, "reason": BITLOCKER_REASON, "bitlocker": True}
+            for region in disk["free"]:
+                if region["install"]["possible"]:
+                    region["install"] = {"possible": False, "reason": BITLOCKER_REASON, "bitlocker": True}
+            for part in disk["partitions"]:
+                if part["install"]["possible"] and locked - {part["path"]}:
+                    part["install"] = {"possible": False, "reason": BITLOCKER_REASON, "bitlocker": True}
     has_esp = any(p.get("esp") and p["size"] >= MIN_ESP for d in disks if not d.get("isLive") for p in d["partitions"])
     if uefi and not has_esp:
         for disk in disks:
@@ -360,6 +388,15 @@ def describe_disk(disk: dict, table: dict | None, prober: dict[str, str], uefi: 
         placed = next((t for t in (table or {}).get("partitions", []) if t["node"] == part["path"]
                        or (t["number"] is not None and t["number"] == part["number"])), None)
         part["start"] = placed["start"] if placed else None  # in sectors, for listing in disk order
+    # The size-based guess can call every big NTFS partition "Windows"; Windows lives on one of
+    # them (C:), the others are data drives like D:. Keep the guess for the likeliest one only.
+    guessed = [p for p in disk["partitions"] if p["os"] and p["path"] not in prober and p["fstype"] == "ntfs"]
+    if len(guessed) > 1:
+        named = [p for p in guessed if re.search(r"windows|^os$|system|^c$", p.get("label") or "", re.I)]
+        keep = named[0] if named else min(guessed, key=lambda p: (p["start"] is None, p["start"] or 0, p["number"] or 0))
+        for part in guessed:
+            if part is not keep:
+                part["os"] = None
     disk["table"] = label
     disk["sector"] = table["sector"] if table else 512
     disk["free"] = [{"start": r["start"], "bytes": r["size"] * table["sector"]}
@@ -709,7 +746,7 @@ def probe(emit: Emit | None = None) -> dict:
     if uefi and _have("mokutil"):
         secure_boot = "enabled" in runner.run(["mokutil", "--sb-state"], check=False).lower()
     return {"uefi": uefi, "secureBoot": secure_boot, "ram": _ram_bytes(), "disks": finish_install_options(out, uefi),
-            "arch": debian_arch(), "minBytes": MIN_ROOT, "liveDisk": live}
+            "arch": debian_arch(), "minBytes": MIN_ROOT, "liveDisk": live, "bitlocker": bitlocker_volumes(out)}
 
 
 # ==== the drive screen's Delete and New (run as root, right away, like Windows Setup) ======

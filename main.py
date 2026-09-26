@@ -204,7 +204,7 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         (ROOT / "ui/img/logo.svg", "usr/share/icons/hicolor/scalable/apps/polyos-setup.svg", 0o644),
         (ROOT / "ui/img/cloud-gaming.svg", "usr/share/icons/hicolor/scalable/apps/polyos-cloud-gaming.svg", 0o644),
         *[(ROOT / f"ui/img/{n}.svg", f"usr/share/icons/hicolor/scalable/apps/polyos-{n}.svg", 0o644)
-          for n in ("taskmgr", "drivers", "store", "camera")],
+          for n in ("taskmgr", "drivers", "store", "camera", "install")],
         # Poppins (SIL OFL 1.1) for window titles and the login screen, not just the web UI
         *[(p, f"usr/share/fonts/truetype/polyos/{p.name}", 0o644) for p in sorted((ROOT / "ui/fonts").glob("*.ttf"))],
         (ROOT / "ui/fonts/OFL.txt", "usr/share/doc/polyos-shell/Poppins-OFL.txt", 0o644),

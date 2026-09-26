@@ -93,11 +93,13 @@ export function mount(root, store) {
     }, Math.max(0, 1400 - (Date.now() - started)));
   };
 
-  // Live USB: the PolyOS "It's time to get started" card (behind the installer until it's closed).
+  // Live USB: the PolyOS "It's time to get started" card, behind the installer until it's closed.
+  // Once you choose to try PolyOS it goes away; "Install PolyOS 7" in the dock and on the desktop
+  // brings the installer back.
   const { env } = store.state;
   let card = null;
   const syncCard = () => {
-    const want = env.live;
+    const want = env.live && !store.state.settings.setupDone;
     if (want && !card) {
       card = h('div.welcome',
         h('div.welcome-main',
@@ -106,7 +108,7 @@ export function mount(root, store) {
           h('button.choice', { onclick: () => api.post('/api/open', { app: 'setup' }) },
             h('span.choice-text', h('b', 'Install PolyOS 7'), h('small', 'Start a fresh install or dual boot')),
             h('img', { src: '/img/logo-white.svg', alt: '' })),
-          h('button.choice.secondary', { onclick: () => { card.hidden = true; } },
+          h('button.choice.secondary', { onclick: () => api.post('/api/setup/done', {}) },
             h('span.choice-text', h('b', 'Keep exploring'), h('small', 'Try PolyOS from this USB drive')),
             icon('arrowRight'))),
         h('img.welcome-mark', { src: '/img/logo.svg', alt: '' }));

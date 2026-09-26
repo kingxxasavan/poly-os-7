@@ -37,7 +37,7 @@ from gi.repository import Gdk, GdkPixbuf, GdkX11, Gio, GLib, Gtk, WebKit2, Wnck 
 
 from . import __version__, gaming, paths, power, system, theme  # noqa: E402
 from .fsbar import FullscreenBar  # noqa: E402
-from .backend import (CAMERA_APP, DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT,  # noqa: E402
+from .backend import (CAMERA_APP, DISPLAY_NAMES, INSTALL_APP, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT,  # noqa: E402
                       Backend, dock_geometry, panel_margin)
 from .core import IMAGE_TYPES, ApiError, EventBus, Settings, bundled_icon, icon_names, letter_icon  # noqa: E402
 from .mainloop import on_main  # noqa: E402
@@ -50,7 +50,8 @@ EXIT_LOGOUT, EXIT_RESTART = 0, 3
 SOLID_BG = "#151515"
 # PolyOS's own apps: launching their .desktop entries opens them in the shell directly.
 OWN_APPS = {"polyos-settings.desktop": "settings", "polyos-files.desktop": "files", "polyos-taskmgr.desktop": "taskmgr",
-            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store", CAMERA_APP: "camera"}
+            "polyos-drivers.desktop": "drivers", "polyos-store.desktop": "store", CAMERA_APP: "camera",
+            INSTALL_APP: "setup"}
 # name: (surface, window title, WM class, default size)
 SINGLE_WINDOWS = {
     "taskmgr": ("taskmgr", "Task Manager", "polyos-taskmgr", (940, 640)),
@@ -103,6 +104,7 @@ class DesktopShell(Backend):
         self._idle = None
         self._idle_slept = False
         self._camera = power.has_camera()
+        self._live = Path("/run/live/medium").exists()  # trying PolyOS from the USB
         self._game_active = False  # Game Mode: a full-screen game is in front
         self._poll_interval = 2.0
 
@@ -443,6 +445,8 @@ class DesktopShell(Backend):
                 continue
             if app_id == CAMERA_APP and not self._camera:
                 continue  # the Camera app only appears on computers with a webcam
+            if app_id == INSTALL_APP and not self._live:
+                continue  # "Install PolyOS 7" is for the USB only
             cid = gaming.cloud_id(app_id)
             if cid and cid not in cloud_on:
                 continue  # a cloud gaming service that isn't switched on (Settings > Gaming)
@@ -593,7 +597,7 @@ class DesktopShell(Backend):
 
     def env(self) -> dict:
         installer = next((i for i in ("install-debian.desktop", "calamares.desktop") if i in self._infos), None)
-        return {"dev": False, "composited": self.composited, "live": Path("/run/live/medium").exists(),
+        return {"dev": False, "composited": self.composited, "live": self._live,
                 "installer": installer, "panelHeight": PANEL_HEIGHT, "dockHeight": DOCK_HEIGHT,
                 "dockMargin": DOCK_MARGIN, "version": __version__}
 
@@ -1166,6 +1170,8 @@ def main(argv: list[str] | None = None) -> int:
     paths.write_runtime_info({"port": server.port, "token": token, "pid": os.getpid(), "version": __version__})
 
     shell.start(server.base_url)
+    if shell._live:
+        shell.show_install_app()
     if not settings.get("setupDone"):
         shell.open_app("setup")  # live USB: the installer; first sign-in: PolyOS's welcome
     if args.autostart:

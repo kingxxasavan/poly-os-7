@@ -1699,3 +1699,9 @@ html.lite *, html.lite *::before, html.lite *::after {
   backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
   transition-duration: 0.08s !important; animation-duration: 0.12s !important;
 }
+
+/* Setup: the BitLocker system message */
+.su-sysmsg { width: min(560px, 100%); }
+.su-sysmsg-head { display: flex; align-items: center; gap: 10px; }
+.su-sysmsg-head .ico { font-size: 22px; color: #e0a13a; }
+.su-steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--su-text-2); font-size: 13.5px; line-height: 1.45; }

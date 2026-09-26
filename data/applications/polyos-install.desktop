@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Install PolyOS 7
+GenericName=Installer
+Comment=Install PolyOS on this computer, or next to Windows
+Exec=polyos-ctl open setup
+Icon=polyos-install
+Terminal=false
+Categories=System;
+Keywords=install;installer;setup;dual;boot;partition;
+StartupWMClass=polyos-setup
+OnlyShowIn=PolyOS;
