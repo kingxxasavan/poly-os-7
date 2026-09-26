@@ -1,0 +1,17 @@
+{
+  "name": "polyos-website",
+  "private": true,
+  "description": "The PolyOS website (docs/) and Poly Account backend (api/, server/) on Vercel.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "dev": "node server/dev.js",
+    "test": "node --test server/tests/*.test.js"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
+  }
+}

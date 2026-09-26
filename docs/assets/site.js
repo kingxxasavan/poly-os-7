@@ -13,58 +13,58 @@ for (const tab of tabs) {
   });
 }
 
-const box = document.querySelector('.lightbox');
-const boxImg = box.querySelector('img');
-const boxCap = box.querySelector('figcaption');
-let current = 0;
-let opener = null;
+const box = document.querySelector('.lightbox'); // only on the home page
+if (box) {
+  const boxImg = box.querySelector('img');
+  const boxCap = box.querySelector('figcaption');
+  let current = 0;
+  let opener = null;
 
-function show(index) {
-  current = (index + visible.length) % visible.length;
-  const fig = visible[current];
-  boxImg.src = fig.dataset.full;
-  boxImg.alt = fig.querySelector('b').textContent;
-  boxCap.innerHTML = fig.querySelector('figcaption').innerHTML;
-}
+  function show(index) {
+    current = (index + visible.length) % visible.length;
+    const fig = visible[current];
+    boxImg.src = fig.dataset.full;
+    boxImg.alt = fig.querySelector('b').textContent;
+    boxCap.innerHTML = fig.querySelector('figcaption').innerHTML;
+  }
 
-function open(fig) {
-  opener = fig;
-  show(visible.indexOf(fig));
-  box.hidden = false;
-  document.body.style.overflow = 'hidden';
-  box.querySelector('.lb-close').focus();
-}
+  function open(fig) {
+    opener = fig;
+    show(visible.indexOf(fig));
+    box.hidden = false;
+    document.body.style.overflow = 'hidden';
+    box.querySelector('.lb-close').focus();
+  }
 
-function close() {
-  box.hidden = true;
-  document.body.style.overflow = '';
-  opener?.focus();
-}
+  function close() {
+    box.hidden = true;
+    document.body.style.overflow = '';
+    opener?.focus();
+  }
 
-for (const fig of figures) {
-  fig.tabIndex = 0;
-  fig.setAttribute('role', 'button');
-  fig.setAttribute('aria-label', `Open screenshot: ${fig.querySelector('b').textContent}`);
-  fig.addEventListener('click', () => open(fig));
-  fig.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(fig); } });
+  for (const fig of figures) {
+    fig.tabIndex = 0;
+    fig.setAttribute('role', 'button');
+    fig.setAttribute('aria-label', `Open screenshot: ${fig.querySelector('b').textContent}`);
+    fig.addEventListener('click', () => open(fig));
+    fig.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(fig); } });
+  }
+  box.querySelector('.lb-close').addEventListener('click', close);
+  box.querySelector('.lb-prev').addEventListener('click', () => show(current - 1));
+  box.querySelector('.lb-next').addEventListener('click', () => show(current + 1));
+  box.addEventListener('click', (e) => { if (e.target === box) close(); });
+  document.addEventListener('keydown', (e) => {
+    if (box.hidden) return;
+    if (e.key === 'Escape') close();
+    if (e.key === 'ArrowLeft') show(current - 1);
+    if (e.key === 'ArrowRight') show(current + 1);
+  });
 }
-box.querySelector('.lb-close').addEventListener('click', close);
-box.querySelector('.lb-prev').addEventListener('click', () => show(current - 1));
-box.querySelector('.lb-next').addEventListener('click', () => show(current + 1));
-box.addEventListener('click', (e) => { if (e.target === box) close(); });
-document.addEventListener('keydown', (e) => {
-  if (box.hidden) return;
-  if (e.key === 'Escape') close();
-  if (e.key === 'ArrowLeft') show(current - 1);
-  if (e.key === 'ArrowRight') show(current + 1);
-});
 
 // ---- Download ------------------------------------------------------------------------------
-// The buttons link to this site's own /download/pc and /download/arm64 (vercel.json sends them to
-// the newest release file), so downloading starts right here. The newest release's details
-// (version, sizes) come from GitHub's API; where the site's links don't exist (another host, an
-// older release with different file names) the buttons use the release files directly.
-const REPO = 'kingxxasavan/poly-os-7-debain-receration';
+// The buttons link to this site's own /download/pc and /download/arm64, which the Poly Account API
+// forwards to the newest release file. The release's details (version, sizes) come from the same
+// API (/api/releases/latest), so the site works the same whether the source code is public or not.
 const ARCHES = { amd64: ['pc', 'PC (Intel/AMD)'], arm64: ['arm64', 'ARM64'] };
 
 function gb(bytes) {
@@ -95,56 +95,40 @@ async function visitorOnArm() {
   }
 }
 
-// True when this site forwards /download/... (hosted on Vercel with vercel.json).
-async function siteLinks() {
-  try {
-    const res = await fetch('download/checksums', { method: 'HEAD', redirect: 'manual', cache: 'no-store' });
-    return res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400);
-  } catch {
-    return false;
-  }
-}
-
 async function showRelease() {
   const buttons = document.querySelector('[data-release-buttons]');
   if (!buttons) return;
-  const [release, local, onArm] = await Promise.all([
-    fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } })
-      .then((r) => (r.ok ? r.json() : null), () => null),
-    siteLinks(),
+  const [release, onArm] = await Promise.all([
+    fetch('/api/releases/latest').then((r) => (r.ok ? r.json() : null), () => null),
     visitorOnArm(),
   ]);
   if (!release) {
     if (onArm) buttons.prepend(buttons.querySelector('[data-arch="arm64"]'));
     return;
   }
-  const assets = release.assets || [];
+  const assets = Object.entries(release.assets || {}).map(([name, a]) => ({ name, url: a.url, size: a.size }));
   const builds = Object.entries(ARCHES).map(([arch, [slug, label]]) => {
-    const iso = assets.find((a) => a.name.endsWith(`-${arch}.iso`));
-    const parts = assets.filter((a) => a.name.includes(`-${arch}.iso.part`)).sort((a, b) => a.name.localeCompare(b.name));
-    // the site's own link works when the release uses the fixed name it forwards to
-    const href = iso && local && iso.name === `polyos-${arch}.iso` ? `download/${slug}` : iso?.browser_download_url;
-    return { arch, label, iso, parts, href, size: iso ? iso.size : parts.reduce((n, p) => n + p.size, 0) };
+    const iso = assets.find((a) => a.name === `polyos-${arch}.iso`);
+    const parts = assets.filter((a) => a.name.startsWith(`polyos-${arch}.iso.part`)).sort((a, b) => a.name.localeCompare(b.name));
+    return { arch, label, iso, parts, href: `/download/${slug}`, size: iso ? iso.size : parts.reduce((n, p) => n + p.size, 0) };
   }).filter((b) => b.iso || b.parts.length);
   if (!builds.length) return;
   if (builds.length > 1 && onArm) builds.reverse(); // ARM64 first on ARM computers
-  const date = new Date(release.published_at).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
-  document.querySelector('[data-release-version]').textContent = release.tag_name;
+  const date = new Date(release.published).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' });
+  document.querySelector('[data-release-version]').textContent = `v${release.version}`;
   document.querySelector('[data-release-meta]').textContent =
     `Live USB and installer · ${builds.map((b) => b.label).join(' and ')} · released ${date}`;
   buttons.replaceChildren(...builds.flatMap((b, i) => (b.iso
     ? [downloadButton(b.href, b.arch, `Download for ${b.label}`, i === 0, gb(b.size))]
-    : b.parts.map((p, n) => downloadButton(p.browser_download_url, b.arch, `${b.label}, part ${n + 1} of ${b.parts.length}`,
+    : b.parts.map((p, n) => downloadButton(p.url, b.arch, `${b.label}, part ${n + 1} of ${b.parts.length}`,
       i === 0 && n === 0, gb(p.size))))));
   if (builds.length < 2) document.querySelector('.dl-which')?.setAttribute('hidden', '');
   if (builds.some((b) => !b.iso)) {
     document.querySelector('[data-release-note]').innerHTML = 'Some downloads come in parts. Download them all, then join them: '
       + '<code>cat polyos-*.part* &gt; polyos.iso</code> (Linux, macOS) or <code>copy /b part0+part1 polyos.iso</code> (Windows).';
   }
-  const sums = assets.find((a) => a.name === 'SHA256SUMS');
   const link = document.querySelector('[data-release-sums]');
-  if (sums && !local) link.href = sums.browser_download_url;
-  if (!sums) link.hidden = true;
+  if (link && !release.assets.SHA256SUMS) link.hidden = true;
 }
 showRelease();
 
