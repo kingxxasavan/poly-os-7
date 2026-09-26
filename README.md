@@ -54,6 +54,13 @@ Everything goes through `main.py`, which uses only the Python standard library.
 | `sudo python3 main.py iso` | Debian | builds `dist/polyos-<version>-trixie-amd64.iso`: a live USB with the Calamares installer |
 | `python3 main.py nested` | Debian desktop | runs the real session in a Xephyr window for development |
 | `python main.py branding` | any OS | re-renders the crystal backdrop, boot splash and installer images (needs Pillow) |
+| `python main.py deb --manifest` | any OS | also writes `polyos-update.json` (and signs it when `POLYOS_UPDATE_KEY` holds the release key) |
+| `npm install && npm run dev` | Node 20+ | the website and Poly Account API at http://localhost:8792 (PGlite stands in for the database) |
+| `npm test` | Node 20+ | Poly Account API tests |
+| `python3 tools/website_pages.py` | any OS | rewrites the website's secondary pages and the shared header and footer |
+
+`POLYOS_SERVER=http://localhost:8792 python main.py dev` connects the PolyOS preview to that local
+website, so Poly Account, check-ins, remote actions and sync can be tried end to end.
 
 ## Install on a PC or VM
 
@@ -107,7 +114,8 @@ this step.
 | **Settings** | In this order: **Display** (resolution, refresh rate, orientation and main display for every screen, with a 15-second *Keep these settings?* undo; brightness, scale, graphics cards and drivers), **Sound** (output and input devices, volume, microphone level and mute, an *Advanced* button on every section for the full mixer, per-app volume, surround and HDMI profiles), Account, Privacy & Security, Wi-Fi & Network, Appearance, Taskbar & Desktop, Gaming, Vara, then **Apps** (what starts when you sign in, switched on or off, added or removed; uninstall any app with a button, no commands), Power & Performance (power modes, the hardware check and how PolyOS runs, screen-off and sleep timers), Developer (with developer mode on), About |
 | **Full screen** | The title bar's middle button, Win+F or *Full screen* in the taskbar's right-click menu shows only the app: no title bar, no taskbar. Rest the pointer on the top edge for a bar with Minimize, *Exit full screen* and Close. Double-click the title bar (or Win+Up) to maximize instead |
 | **Hardware check** | When PolyOS first starts it checks the processor, memory and graphics and says how well the PC fits. Most get *Everything on*; PCs with software graphics get *Smooth* (no blur); 2–3 GB or single-core PCs get *Light*: no blur, shadows or see-through glass, quicker animations, fewer widgets. Change it or check again in Settings > Power & Performance. It also reads the exact model and firmware year (e.g. *Lenovo IdeaPad 5 15ALC05*, no serial number needed), eases off on computers eight or more years old, and recommends *Limit background activity* on small or older laptops (Vara's programs at low priority, fewer status checks and widget refreshes) |
-| **Updates** | Settings > About: *Update now* installs a new PolyOS release (its packages and checksums are published with every release; polyos-admin checks them) without a new USB drive, *Update everything* installs Debian's updates, and PolyOS says when a new version is out. Installed computers that share with Windows get a PolyOS-themed boot menu |
+| **Updates** | Settings > Updates: the update service (a systemd timer) checks every few hours, downloads in the background and installs only at your preferred time (automatic install, or *Install tonight*), with *Install now*, *Check now*, *Ask before restarting* and Stable/Beta/Developer channels, and a calm “PolyOS 0.9.0 is ready” notice. Every update is **signed**: PolyOS checks the manifest's Ed25519 signature and each package's checksum before installing anything. Works with or without an account; update checks send only the version, channel and architecture. *Update everything* installs Debian's updates. Installed computers that share with Windows get a PolyOS-themed boot menu |
+| **Poly Account** | Optional, never required. Connect during setup or in Settings > Poly Account (sign in, create an account, or a 6-digit code entered at /link), or keep using PolyOS locally with no prompts. Connected computers show up at /account (Dashboard, Devices, Updates, Sync, Security, Privacy, Recovery, Notifications, Account); Poly Sync keeps settings the same; Remote management (restart, lock, install updates from the website) is off until switched on at the computer. Each computer has its own revocable credential and never keeps the password |
 | **Trying it** | On the USB drive, *Try PolyOS first* clears the desktop; *Install PolyOS 7* in the dock and on the desktop goes back to the installer |
 | **Camera** | Photos and videos from the webcam (self-timer, mirror, switch camera), saved to Pictures › Camera. Only listed on computers with a camera |
 | **Vara** | AI agent for code, 3D and robots (see [Vara, the agent](#vara-the-agent)); simple requests ("open firefox", "volume 40", "turn wifi off") run right on the PC |
@@ -300,6 +308,8 @@ closing apps.
   firmware). Apps built only
   for Intel/AMD PCs (Steam, Discord, Spotify, Chrome and a few more) aren't offered there; cloud
   gaming works in the browser instead.
+- Poly Account: two-step sign-in, passkeys and Wi-Fi/browser sync aren't there yet; syncing files
+  isn't planned for Poly Sync (that would be a separate service).
 - Custom installs use existing partitions or whole drives; they don't create or resize single
   partitions (Dual boot does that, or use the Advanced installer). Disk encryption isn't offered yet.
 - Edition apps come from Debian and Flathub, so the first sign-in needs the internet. Packages a
@@ -323,6 +333,30 @@ closing apps.
 - The look follows PolyOS 7: the logo is the original vector, and the palette was measured from
   the Scratch costumes (`:root` in `ui/css/polyos.css`). The two crystal photos are third-party
   images; check their license before sharing builds publicly (see `CREDITS.md`).
+
+## Website, Poly Account and releases
+
+The website is `docs/` (static pages) plus one Vercel function, `api/index.js` → `server/app.js`,
+the Poly Account API; `vercel.json` sends `/api/…` and `/download/…` to it. Poly Account data lives
+in Postgres. PolyOS itself never needs any of this: updates keep working if the website is down.
+
+**Vercel settings** (Project > Settings > Environment Variables):
+
+| Name | What it's for |
+|---|---|
+| `DATABASE_URL` | Set for you when you add a Neon Postgres database (Storage > Create Database). Tables are created on first use |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Account emails (verification, password reset, security alerts) through resend.com, e.g. `Poly <accounts@your-domain>`. Without them, accounts work but no emails are sent |
+| `RELEASES_REPO` | The public repository with the releases (default: this one) |
+| `GITHUB_TOKEN` | Optional: a read-only token, so release lookups aren't rate-limited |
+| `SITE_URL` | Optional: the site's address for links in emails (default: the address it was reached on) |
+
+**GitHub settings** for releases (Settings > Secrets and variables > Actions): the secret
+`POLYOS_UPDATE_KEY` (Poly's Ed25519 release key, PEM) signs every release's `polyos-update.json`;
+PolyOS 0.9 and later only install signed updates, checked against `TRUSTED_KEYS` in
+`polyos/updates.py`. To keep this repository private, create a public repository for releases,
+set the variable `RELEASES_REPO` to its name and the secret `RELEASES_TOKEN` to a token that can
+create releases there (and set the same `RELEASES_REPO` on Vercel). To change the release key,
+add the new public key to `TRUSTED_KEYS` one release before switching the secret.
 
 ## Credits and license
 
