@@ -436,11 +436,11 @@ function toggleRow(label, sub, checked, onChange, disabled) {
 function syncPage() {
   const s = me.user.prefs.sync;
   const items = [['settings', 'Settings', 'Taskbar, clock, desktop and power choices'], ['themes', 'Themes', 'Dark or light, accent color'],
-    ['wallpapers', 'Wallpapers', 'Your desktop and lock screen pictures (built-in ones)'], ['wifi', 'Wi-Fi networks', 'Network names and passwords'],
+    ['wallpapers', 'Wallpapers', 'Your desktop and lock screen pictures (built-in ones)'], ['wifi', 'Wi-Fi networks', 'Coming later'],
     ['browser', 'Browser settings', 'Coming later'], ['apps', 'Installed-app preferences', 'Your pinned apps and desktop shortcuts'],
     ['accessibility', 'Accessibility', 'Scale and motion settings']];
   return shell('sync', head('Poly Sync', 'Keep your PolyOS the same on every computer.'),
-    card('What syncs', items.map(([key, label, sub]) => toggleRow(label, sub, s[key], (v) => prefsSave({ sync: { [key]: v } }), key === 'browser')),
+    card('What syncs', items.map(([key, label, sub]) => toggleRow(label, sub, s[key], (v) => prefsSave({ sync: { [key]: v } }), key === 'browser' || key === 'wifi')),
       h('p.muted', 'Syncing is also switched on or off on each computer (Settings › Poly Account). Personal files aren’t synced; Poly Sync is for settings only.')));
 }
 

@@ -1250,6 +1250,7 @@ def main(argv: list[str] | None = None) -> int:
         GLib.timeout_add_seconds(2, shell.run_autostart)
     if not shell._live:  # the update service's news: "ready" and "installed" notices
         GLib.timeout_add_seconds(90, shell.start_update_watch)
+        GLib.timeout_add_seconds(60, shell.start_account_loop)  # Poly Account check-ins, when connected
     for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signum, shell.quit, EXIT_LOGOUT)
     try:

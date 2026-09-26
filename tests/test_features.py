@@ -3,6 +3,7 @@
 import datetime
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -895,3 +896,91 @@ class UpdateNoticeTests(unittest.TestCase):
             self.assertEqual((n["kind"], n["ask"]), ("restart", True))
             self.assertIsNone(be.update_notice(seen))
             self.assertTrue(be.updates_status()["restartNeeded"])
+
+
+class PolyAccountClientTests(unittest.TestCase):
+    """Poly Account on the computer, against a stand-in for the website."""
+
+    def setUp(self):
+        from polyos import polyaccount
+
+        self.pa = polyaccount
+        self.saved_http = polyaccount.http
+        self.calls = []
+        self.server = {"commands": [], "items": {}, "removed": False}
+
+        def fake_http(method, path, body=None, credential=None):
+            self.calls.append((method, path, body, credential))
+            if path == "/api/v1/device/signin":
+                return {"credential": "pd_test", "account": {"name": "Savan", "email": "s@example.com"}, "device": {"id": "d1", "name": "PC"}}
+            if self.server["removed"]:
+                raise polyaccount.AccountError("removed", 401, {"removed": True})
+            if path == "/api/v1/device/checkin":
+                cmds, self.server["commands"] = self.server["commands"], []
+                return {"account": {"name": "Savan"}, "device": {"id": "d1", "name": "PC"}, "commands": cmds,
+                        "sync": {"revision": "r2", "prefs": {"themes": True, "apps": False}}, "telemetry": "minimal"}
+            if path == "/api/v1/sync" and method == "GET":
+                return {"items": {k: {"value": v} for k, v in self.server["items"].items()}}
+            if path == "/api/v1/sync" and method == "PUT":
+                self.server["items"].update(body["items"])
+                return {"ok": True}
+            return {"ok": True}
+        polyaccount.http = fake_http
+
+    def tearDown(self):
+        self.pa.http = self.saved_http
+
+    def backend(self, tmp):
+        from polyos.core import EventBus, Settings
+        from polyos.mock import MockBackend
+
+        be = MockBackend(Settings(Path(tmp) / "s.json"), EventBus(), home=Path(tmp) / "home")
+        be.actions = []
+        be.updates_action = lambda kind: be.actions.append(kind)
+        be.lock = lambda: be.actions.append("lock")
+        return be
+
+    def test_sync_rules(self):
+        state = {"sync": True, "syncPrefs": {"themes": True, "apps": False}}
+        keys = self.pa.synced_keys(state)
+        self.assertIn("accent", keys)
+        self.assertNotIn("pinned", keys)
+        self.assertEqual(self.pa.synced_keys({"sync": False}), [])
+        self.assertFalse(self.pa.shareable("wallpaper", "/home/me/cat.jpg"))
+        self.assertTrue(self.pa.shareable("wallpaper", "builtin:polyos-prism.jpg"))
+
+    def test_sign_in_checkin_commands_and_sync(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            be = self.backend(tmp)
+            status = be.poly_account_signin("s@example.com", "a good password")
+            self.assertTrue(status["connected"])
+            path = self.pa.state_path(Path(tmp) / "home")
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertNotIn("a good password", path.read_text())  # never kept
+            # a restart from the website: refused while Remote management is off, reported as failed
+            self.server["commands"] = [{"id": "c1", "kind": "check-updates"}, {"id": "c2", "kind": "restart"}]
+            self.server["items"] = {"settings.accent": "#d97fb8", "settings.pinned": ["x.desktop"]}
+            be.poly_account_checkin()
+            self.assertEqual(be.actions, ["check"])
+            reports = {c[1].rsplit("/", 1)[1]: c[2]["status"] for c in self.calls if "/commands/" in c[1]}
+            self.assertEqual(reports, {"c1": "done", "c2": "failed"})
+            # synced settings arrive (only the categories that sync) and aren't pushed straight back
+            self.assertEqual(be.settings.get("accent"), "#d97fb8")
+            self.assertNotEqual(be.settings.get("pinned"), ["x.desktop"])
+            self.assertFalse([c for c in self.calls if c[0] == "PUT"])
+            # a change made here is sent
+            be.update_settings({"accent": "#678fd9"})
+            time.sleep(0.2)
+            self.assertEqual(self.server["items"]["settings.accent"], "#678fd9")
+            # removed on the website: the computer forgets its credential
+            self.server["removed"] = True
+            be.poly_account_checkin()
+            self.assertFalse(be.poly_account_status()["connected"])
+
+    def test_late_writes_dont_undo_disconnect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            self.pa.save({"credential": "pd_old", "sync": True}, home)
+            self.pa.forget(home)
+            self.assertIsNone(self.pa.merge("pd_old", {"lastCheckin": 1}, home))
+            self.assertFalse(self.pa.state_path(home).exists())

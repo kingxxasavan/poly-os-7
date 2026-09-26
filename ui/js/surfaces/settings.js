@@ -10,6 +10,7 @@ const PAGES = [
   ['display', 'Display', 'monitor'],
   ['sound', 'Sound', 'volume'],
   ['account', 'Account', 'user'],
+  ['polyaccount', 'Poly Account', 'globe'],
   ['privacy', 'Privacy & Security', 'shield'],
   ['network', 'Wi-Fi & Network', 'wifi'],
   ['appearance', 'Appearance', 'palette'],
@@ -942,6 +943,129 @@ const pages = {
     load();
     loadAgent();
     return null;
+  },
+
+  // Settings > Poly Account: optional. Connect (sign in, a code, or a new account), sync, remote management.
+  polyaccount(page, store) {
+    const err = h('div.error-text', { hidden: true });
+    const body = h('div');
+    let st = null;
+    let tab = 'signin';
+    let recovery = null; // shown once after creating an account here
+    let countries = null;
+    const fail = (x) => errorText(err, x.message);
+    const site = () => (st?.server || '').replace(/^https?:\/\//, '');
+    const openSite = (path) => api.post('/api/run-command', { command: `${st.server}${path}` }).catch(fail);
+    const when = (t) => {
+      if (!t) return 'not yet';
+      const mins = Math.round((Date.now() / 1000 - t) / 60);
+      return mins < 1 ? 'just now' : mins < 60 ? `${mins} minutes ago` : `${Math.round(mins / 60)} hours ago`;
+    };
+    const input = (type, placeholder, extra = {}) => h('input.input', { type, placeholder, 'aria-label': placeholder, ...extra });
+    const submit = (btn, fn) => async () => {
+      btn.disabled = true;
+      errorText(err, '');
+      try { await fn(); } catch (x) { fail(x); } finally { btn.disabled = false; }
+    };
+
+    function connectedView() {
+      const a = st.account || {};
+      const sync = toggle(st.sync, (v) => api.post('/api/polyaccount/settings', { sync: v }).then(show, fail), 'Poly Sync');
+      const remote = toggle(st.remoteManagement, (v) => api.post('/api/polyaccount/settings', { remoteManagement: v }).then(show, fail), 'Remote management');
+      const disconnect = h('button.btn.danger', {}, 'Disconnect');
+      disconnect.addEventListener('click', async () => {
+        if (!confirm('Disconnect this computer from your Poly Account? PolyOS keeps working, and updates keep coming; you can connect again any time.')) return;
+        show(await api.post('/api/polyaccount/disconnect'));
+      });
+      return [
+        recovery ? group('Save your recovery key', h('p.prose', 'If you forget your password, this key and your email get you back in. Poly can’t show it again.'),
+          h('div.recovery-key', recovery), row('I saved it', null, h('button.btn.primary', { onclick: () => { recovery = null; render(); } }, 'Done'))) : null,
+        group(`${(a.name || '').split(' ')[0] || 'Your'}’s Poly Account`,
+          row('Status', st.error ? st.error : `Connected · last check-in ${when(st.lastCheckin)}`, h('span.pa-dot', { class: st.error ? 'warn' : '' }, st.error ? 'Offline' : '● Connected')),
+          row('Email', a.emailVerified ? 'Verified' : 'Not verified yet: open the link we emailed you', h('span.value', a.email || '')),
+          row('This computer', 'Its name in your account (rename it on the website)', h('span.value', st.device?.name || ''))),
+        group('On this computer',
+          row('Poly Sync', 'Keep your theme, wallpapers, taskbar and pinned apps the same on your computers', sync),
+          row('Remote management', 'Let your Poly Account restart, lock and install updates on this computer from the website. Off unless you turn it on.', remote),
+          row('Updates', 'Signed updates on your schedule, with or without an account', h('button.btn', { onclick: () => navigate('updates') }, 'Updates', icon('chevronRight')))),
+        group(null,
+          row('Manage your account', `Devices, security, recovery and privacy at ${site()}/account`, h('button.btn', { onclick: () => openSite('/account') }, 'Open', icon('external'))),
+          row('Disconnect', 'This computer leaves your Poly Account', disconnect)),
+      ];
+    }
+
+    function signInForm() {
+      const email = input('email', 'Email', { autocomplete: 'email' });
+      const password = input('password', 'Password', { autocomplete: 'current-password' });
+      const btn = h('button.btn.primary', {}, 'Sign in');
+      btn.addEventListener('click', submit(btn, async () => show(await api.post('/api/polyaccount/signin', { email: email.value, password: password.value }))));
+      return [row('Email', null, email), row('Password', 'Used once to connect this computer. PolyOS doesn’t keep it.', password),
+        row('', h('a', { href: '#', onclick: (e) => { e.preventDefault(); openSite('/account#forgot'); } }, 'Forgot password?'), btn)];
+    }
+
+    function codeView() {
+      const l = st.link;
+      if (!l || l.status === 'expired') {
+        const btn = h('button.btn.primary', {}, l ? 'Get a new code' : 'Get a code');
+        btn.addEventListener('click', submit(btn, async () => show(await api.post('/api/polyaccount/link'))));
+        return [row(l ? 'That code expired' : 'Connect with a code', `Sign in at ${site()}/link on your phone or another computer, and enter the code shown here.`, btn)];
+      }
+      return [h('div.pa-code', { 'aria-label': `Code ${l.userCode}` }, `${l.userCode.slice(0, 3)} ${l.userCode.slice(3)}`),
+        row(`Go to ${site()}/link`, 'Sign in and enter this code. This page updates by itself when you’re done.',
+          h('button.btn', { onclick: async () => show(await api.post('/api/polyaccount/link/cancel')) }, 'Cancel'))];
+    }
+
+    function createForm() {
+      const name = input('text', 'Name', { autocomplete: 'name', maxlength: 80 });
+      const email = input('email', 'Email', { autocomplete: 'email' });
+      const password = input('password', 'Password (10 characters or more)', { autocomplete: 'new-password' });
+      const confirmPw = input('password', 'Confirm password', { autocomplete: 'new-password' });
+      const country = h('select.select', { 'aria-label': 'Country' }, h('option', { value: '' }, 'Country…'),
+        (countries || []).map((c) => h('option', { value: c }, c)));
+      const terms = h('input', { type: 'checkbox', 'aria-label': 'I agree to the Terms of Service' });
+      const privacy = h('input', { type: 'checkbox', 'aria-label': 'I acknowledge the Privacy Policy' });
+      const btn = h('button.btn.primary', {}, 'Create account');
+      btn.addEventListener('click', submit(btn, async () => {
+        if (password.value !== confirmPw.value) throw new Error('The passwords don’t match.');
+        if (!terms.checked || !privacy.checked) throw new Error('Agree to the Terms of Service and acknowledge the Privacy Policy to continue.');
+        const r = await api.post('/api/polyaccount/register', { name: name.value, email: email.value, password: password.value, country: country.value, acceptTerms: true });
+        recovery = r.recoveryKey || null;
+        show(r);
+      }));
+      const link = (text, path) => h('a', { href: '#', onclick: (e) => { e.preventDefault(); openSite(path); } }, text);
+      return [row('Name', null, name), row('Email', null, email), row('Password', null, password), row('Confirm password', null, confirmPw),
+        row('Country', null, country),
+        h('label.pa-check', terms, h('span', 'I agree to the ', link('Terms of Service', '/terms'))),
+        h('label.pa-check', privacy, h('span', 'I acknowledge the ', link('Privacy Policy', '/privacy'))),
+        row('', 'We only ask for your name, email, password and country.', btn)];
+    }
+
+    function localView() {
+      const tabs = seg('How to connect', [['signin', 'Sign in'], ['code', 'Use a code'], ['create', 'Create account']], (v) => {
+        tab = v;
+        if (v === 'create' && !countries) api.get('/api/polyaccount/countries').then((r) => { countries = r.countries; render(); }, fail);
+        render();
+      });
+      tabs.set(tab);
+      return [
+        group('Poly Account', row('Status', 'Local. PolyOS works fully without an online account, and updates without one.', h('span.pa-dot', 'Local'))),
+        group('Connect a Poly Account',
+          h('p.prose.pad', 'Optional. Adds managing your computers from the website, account recovery, Poly Sync for your settings, and account emails.'),
+          row('', null, tabs),
+          ...(tab === 'signin' ? signInForm() : tab === 'code' ? codeView() : createForm())),
+      ];
+    }
+
+    function render() {
+      if (!st) return;
+      fill(body, ...(st.live ? [group('Poly Account', row('Not on the USB drive', 'Install PolyOS first, then connect a Poly Account here or while setting it up.'))]
+        : st.connected ? connectedView() : localView()));
+    }
+    function show(r) { st = r; errorText(err, ''); render(); }
+    const offAccount = on('polyaccount', () => api.get('/api/polyaccount').then(show, fail));
+    page.append(pageHead('Poly Account', 'Optional: device management, recovery and sync.'), err, body);
+    api.get('/api/polyaccount').then(show, fail);
+    return { close: () => offAccount() };
   },
 
   updates(page, store) {

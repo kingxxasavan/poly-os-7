@@ -1716,3 +1716,18 @@ html.lite *, html.lite *::before, html.lite *::after {
   border-top-color: var(--accent); animation: upd-spin 0.9s linear infinite; flex: none; }
 @keyframes upd-spin { to { transform: rotate(360deg); } }
 .warn-text { color: #f0b85a; margin: 6px 4px 0; }
+
+/* Settings > Poly Account */
+.pa-dot { font-size: 13px; font-weight: 600; color: #9fe38a; white-space: nowrap; }
+.pa-dot.warn { color: #f0b85a; }
+.pa-code { margin: 6px 0 4px; text-align: center; font: 700 40px ui-monospace, "Cascadia Code", Menlo, monospace; letter-spacing: 0.14em; }
+.pa-check { display: flex; align-items: center; gap: 10px; padding: 6px 18px; font-size: 13.5px; color: var(--text-2); }
+.pa-check input { width: 17px; height: 17px; accent-color: var(--accent); }
+.recovery-key { margin: 8px 18px; padding: 14px; border-radius: 12px; border: 1px dashed var(--line); text-align: center;
+  font: 600 18px ui-monospace, "Cascadia Code", Menlo, monospace; letter-spacing: 0.06em; user-select: all; -webkit-user-select: all; }
+
+/* Setup: Poly Account */
+.su-code { margin: 18px 0 10px; font: 700 44px ui-monospace, "Cascadia Code", Menlo, monospace; letter-spacing: 0.16em; }
+.su-code.small { font-size: 20px; letter-spacing: 0.06em; padding: 14px 18px; border-radius: 16px; border: 1px dashed rgba(255, 255, 255, 0.3); max-width: 560px; user-select: all; }
+.su-bullets { max-width: 560px; margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; color: var(--su-text-2); font-size: 15px; }
+.su-form.one { grid-template-columns: 1fr; max-width: 420px; }

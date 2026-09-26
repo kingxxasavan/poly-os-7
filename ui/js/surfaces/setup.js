@@ -5,7 +5,7 @@
 //   first sign-in: Wi-Fi → Drivers → your edition's apps → Vara → Tour → done
 
 import { withAdmin, watchJobs } from '../admin.js';
-import { api, launch, saveSettings, withToken } from '../api.js';
+import { api, launch, on, saveSettings, withToken } from '../api.js';
 import { VARA_PROVIDERS, packPanel, providerFor, wifiPanel } from '../components.js';
 import { fill, formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
 
@@ -161,7 +161,7 @@ export function mount(root, store) {
 
   // ---- steps ---------------------------------------------------------------------------
   const installSteps = [start, check, terms, edition, account, appearance, target, installing];
-  const welcomeSteps = [check, connect, drivers, editionApps, vara, tour, done];
+  const welcomeSteps = [check, connect, polyAccount, drivers, editionApps, vara, tour, done];
   const steps = live ? installSteps : welcomeSteps;
   let step = 0;
 
@@ -784,6 +784,121 @@ export function mount(root, store) {
     }
     return [...head('Get connected', 'Connect to the internet for drivers, apps and updates.'), body,
       nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Skip'), next())];
+  }
+
+  // Poly Account: optional. Connect to Poly services (sign in, create an account, or a code), or
+  // use PolyOS locally; either way nothing else changes, and Settings › Poly Account can switch later.
+  let pa = { view: 'choose', status: null, key: null, countries: null };
+  function polyAccount() {
+    const field = (label, input, hint) => h('label.su-field', h('span', label), input, hint ? h('small', hint) : null);
+    const err = h('div.su-error', { hidden: true });
+    const fail = (x) => { err.textContent = x.message; err.hidden = false; };
+    const view = (v) => { pa.view = v; go(step); };
+    const site = () => (pa.status?.server || '').replace(/^https?:\/\//, '');
+    // inside this step, Back goes to the step's previous screen
+    const paNav = (prev, ...right) => h('div.su-nav', h('button.su-back', { onclick: prev, title: 'Back' }, icon('chevronLeft'), 'Back'),
+      h('div.su-nav-right', ...right));
+    if (!pa.status) {
+      api.get('/api/polyaccount').then((s) => { pa.status = s; if (s.connected && pa.view === 'choose') pa.view = 'connected'; go(step); },
+        () => { pa.status = { server: '' }; go(step); });
+      return [...head('Connect to Poly?'), h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'One moment…')];
+    }
+    const refresh = (s) => { pa.status = s; if (s.connected) pa.view = 'connected'; go(step); };
+    if (pa.view === 'choose') {
+      return [...head('Connect to Poly services?', 'Optional. PolyOS works just the same without an account.'),
+        h('div.su-options',
+          option('Connect to Poly services', 'Device management, account recovery, sync and account emails, with a Poly Account.',
+            h('span.su-dual', icon('globe')), () => view('have')),
+          option('Use PolyOS locally', 'No online account. Updates still install from Settings › Updates.', h('span.su-dual', icon('user')), () => view('local'))),
+        nav(h('span'))];
+    }
+    if (pa.view === 'local') {
+      return [...head('You’re using PolyOS locally', 'No online account needed, and nothing will nag you about one.'),
+        h('ul.su-bullets', h('li', 'PolyOS updates itself from Settings › Updates; no account needed.'),
+          h('li', `Or download the newest version any time from ${site() || 'the PolyOS website'}/download.`),
+          h('li', 'Want an account later? Settings › Poly Account.')),
+        paNav(() => view('choose'), next('Continue', () => go(step + 1), { primary: true }))];
+    }
+    if (pa.view === 'have') {
+      return [...head('Connect to Poly', 'Do you already have a Poly Account?'),
+        h('div.su-options',
+          option('Sign in', 'With your Poly Account email and password.', h('span.su-dual', icon('user')), () => view('signin')),
+          option('Create a Poly Account', 'Name, email, password and country. That’s all.', h('span.su-dual', icon('plus')), () => view('create'))),
+        h('div.su-foot', h('button.su-link', { onclick: () => view('code') }, 'Use a code instead'), h('span.su-dot', '·'),
+          h('button.su-link', { onclick: () => view('local') }, 'Use PolyOS locally')),
+        paNav(() => view('choose'))];
+    }
+    if (pa.view === 'signin') {
+      const email = h('input.su-input', { type: 'email', placeholder: 'you@example.com', autocomplete: 'email', autofocus: true });
+      const password = h('input.su-input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password' });
+      const btn = next('Sign in', null, { primary: true });
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        try { refresh(await api.post('/api/polyaccount/signin', { email: email.value, password: password.value })); } catch (x) { fail(x); btn.disabled = false; }
+      });
+      return [...head('Sign in to Poly', 'Your password connects this computer once. PolyOS doesn’t keep it.'),
+        h('div.su-form.one', field('Email', email), field('Password', password)), err,
+        h('div.su-foot', h('button.su-link', { onclick: () => view('code') }, 'Use a code instead'), h('span.su-dot', '·'),
+          h('button.su-link', { onclick: () => view('create') }, 'Create an account')),
+        paNav(() => view('have'), btn)];
+    }
+    if (pa.view === 'code') {
+      const l = pa.status.link;
+      if (!l || l.status === 'expired') {
+        api.post('/api/polyaccount/link').then((s) => { pa.status = s; go(step); }, fail);
+        return [...head('Connect with a code'), h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'Getting a code…'), err,
+          paNav(() => view('have'))];
+      }
+      const off = on('polyaccount', () => api.get('/api/polyaccount').then((s) => { if (s.connected) { off(); refresh(s); } }));
+      return [...head('Enter this code on the website', `On your phone or another computer, go to ${site()}/link, sign in, and enter:`),
+        h('div.su-code', `${l.userCode.slice(0, 3)} ${l.userCode.slice(3)}`),
+        h('p.su-note', icon('info'), 'This screen moves on by itself when you’re done. The code works for 10 minutes.'),
+        paNav(() => { off(); api.post('/api/polyaccount/link/cancel'); pa.status.link = null; view('have'); })];
+    }
+    if (pa.view === 'create') {
+      if (!pa.countries) {
+        api.get('/api/polyaccount/countries').then((r) => { pa.countries = r.countries; go(step); }, (x) => { pa.countries = ['Other']; fail(x); go(step); });
+        return [...head('Create your Poly Account'), h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'One moment…')];
+      }
+      const name = h('input.su-input', { value: store.state.user.fullName || '', placeholder: 'Your name', autocomplete: 'name', maxlength: 80 });
+      const email = h('input.su-input', { type: 'email', placeholder: 'you@example.com', autocomplete: 'email' });
+      const password = h('input.su-input', { type: 'password', placeholder: '10 characters or more', autocomplete: 'new-password' });
+      const confirmPw = h('input.su-input', { type: 'password', placeholder: 'Type it again', autocomplete: 'new-password' });
+      const guess = Intl.DateTimeFormat().resolvedOptions().timeZone?.startsWith('America/') ? 'United States' : '';
+      const country = h('select.su-input', h('option', { value: '' }, 'Choose…'), pa.countries.map((c) => h('option', { value: c, selected: c === guess }, c)));
+      const terms = h('input', { type: 'checkbox' });
+      const privacy = h('input', { type: 'checkbox' });
+      const btn = next('Create account', null, { primary: true });
+      btn.addEventListener('click', async () => {
+        err.hidden = true;
+        if (password.value !== confirmPw.value) return fail(new Error('The passwords don’t match.'));
+        if (!terms.checked || !privacy.checked) return fail(new Error('Agree to the Terms of Service and acknowledge the Privacy Policy to continue.'));
+        btn.disabled = true;
+        try {
+          const r = await api.post('/api/polyaccount/register', { name: name.value, email: email.value, password: password.value, country: country.value, acceptTerms: true });
+          pa.key = r.recoveryKey;
+          refresh(r);
+        } catch (x) { fail(x); btn.disabled = false; }
+      });
+      return [...head('Create your Poly Account', `Terms: ${site()}/terms · Privacy: ${site()}/privacy`),
+        h('div.su-form', field('Name', name), field('Email', email), field('Password', password), field('Confirm password', confirmPw), field('Country', country)),
+        h('label.su-check', terms, h('span', 'I agree to the Terms of Service')),
+        h('label.su-check', privacy, h('span', 'I acknowledge the Privacy Policy')), err,
+        paNav(() => view('have'), btn)];
+    }
+    // connected
+    const a = pa.status.account || {};
+    if (pa.key) {
+      const saved = h('input', { type: 'checkbox' });
+      const cont = next('Continue', () => { pa.key = null; go(step + 1); }, { primary: true, disabled: true });
+      saved.addEventListener('change', () => { cont.disabled = !saved.checked; });
+      return [...head('Save your recovery key', 'If you forget your password, this key and your email get you back in. Poly can’t show it again.'),
+        h('div.su-code.small', pa.key), h('label.su-check', saved, h('span', 'I saved my recovery key somewhere safe')), nav(cont)];
+    }
+    return [...head(`Connected, ${(a.name || '').split(' ')[0] || 'welcome'}`, `This computer is part of ${a.email || 'your Poly Account'}.`),
+      h('ul.su-bullets', h('li', `Manage it at ${site()}/account.`), h('li', 'Poly Sync keeps your settings the same on your computers.'),
+        h('li', 'Remote management stays off until you turn it on in Settings › Poly Account.')),
+      nav(next('Next', () => go(step + 1), { primary: true }))];
   }
 
   // The hardware check: is this PC a good fit, and if it's on the slower side, a lighter PolyOS for it.

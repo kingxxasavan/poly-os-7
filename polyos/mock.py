@@ -73,6 +73,8 @@ class MockBackend(Backend):
         self._admin_ready = live  # the live USB's account needs no password; "polyos" unlocks the mock
         if live:
             self.show_install_app()
+        if os.environ.get("POLYOS_SERVER") and not live:  # a local website (npm run dev): real Poly Account check-ins
+            self.start_account_loop(first_delay=2, every=15)
         self._store_installed = {"firefox"}
         self._driver_state: set[str] = {"firmware-iwlwifi", "firmware-sof-signed"}
         self._procs_seed = random.Random(7)

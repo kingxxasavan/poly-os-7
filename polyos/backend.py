@@ -606,6 +606,214 @@ class Backend:
                     "autoInstall": st["policy"]["autoInstall"], "time": st["policy"]["time"]}
         return None
 
+    # ---- Poly Account (optional; polyos/polyaccount.py) -----------------------------------------
+    def _pa_home(self) -> Path:
+        return self.files.home
+
+    def _pa_hardware(self) -> dict:
+        from . import hwcheck
+        try:
+            return self._hardware_facts(hwcheck.gather(self.graphics_info(), ""))
+        except Exception:  # noqa: BLE001 - only nice-to-have details
+            return {}
+
+    def _pa_device_name(self) -> str:
+        hw = self._pa_hardware().get("computer") or {}
+        return " ".join(x for x in (hw.get("maker"), hw.get("model")) if x)[:60] or socket.gethostname()[:60]
+
+    def poly_account_status(self) -> dict:
+        from . import polyaccount, updates
+        state = polyaccount.load(self._pa_home())
+        link = getattr(self, "_pa_link", None)
+        return {
+            "connected": bool(state.get("credential")), "live": self._is_live(), "server": updates.server(),
+            "account": state.get("account"), "device": state.get("device"), "sync": bool(state.get("sync")),
+            "remoteManagement": bool(state.get("remoteManagement")), "lastCheckin": state.get("lastCheckin"),
+            "error": state.get("lastError"), "telemetry": state.get("telemetry", "minimal"),
+            "link": {k: link[k] for k in ("userCode", "verificationUrl", "expiresAt", "status")} if link else None,
+        }
+
+    def _pa_connected(self, recovery_key: str = "") -> dict:
+        self._pa_link = None
+        threading.Thread(target=self.poly_account_checkin, daemon=True).start()
+        self.bus.publish("polyaccount")
+        return {**self.poly_account_status(), "recoveryKey": recovery_key}
+
+    def poly_account_link_start(self) -> dict:
+        """A 6-digit code to enter on the website; PolyOS waits for it in the background."""
+        from . import polyaccount
+        try:
+            r = polyaccount.start_link(self._pa_device_name(), polyaccount.device_info(self._pa_hardware()))
+        except polyaccount.AccountError as exc:
+            raise ApiError(str(exc)) from None
+        link = {"userCode": r["userCode"], "verificationUrl": r["verificationUrl"], "status": "waiting",
+                "expiresAt": time.time() + r.get("expiresIn", 600), "deviceCode": r["deviceCode"], "interval": r.get("interval", 5)}
+        self._pa_link = link
+
+        def wait():
+            while self._pa_link is link and time.time() < link["expiresAt"]:
+                time.sleep(link["interval"])
+                try:
+                    res = polyaccount.poll_link(link["deviceCode"], self._pa_home())
+                except polyaccount.AccountError:
+                    continue
+                if res.get("status") == "approved":
+                    self._pa_connected()
+                    return
+                if res.get("status") == "expired":
+                    break
+            if self._pa_link is link:
+                link["status"] = "expired"
+                self.bus.publish("polyaccount")
+        threading.Thread(target=wait, name="poly-link", daemon=True).start()
+        return self.poly_account_status()
+
+    def poly_account_link_cancel(self) -> dict:
+        self._pa_link = None
+        return self.poly_account_status()
+
+    def poly_account_signin(self, email: str, password: str) -> dict:
+        from . import polyaccount
+        try:
+            polyaccount.sign_in(email, password, self._pa_device_name(), polyaccount.device_info(self._pa_hardware()), self._pa_home())
+        except polyaccount.AccountError as exc:
+            raise ApiError(str(exc), 400) from None
+        return self._pa_connected()
+
+    def poly_account_register(self, fields: dict) -> dict:
+        from . import polyaccount
+        try:
+            _state, key = polyaccount.register(fields, self._pa_device_name(), polyaccount.device_info(self._pa_hardware()), self._pa_home())
+        except polyaccount.AccountError as exc:
+            raise ApiError(str(exc), 400) from None
+        return self._pa_connected(key)
+
+    def poly_account_countries(self) -> dict:
+        from . import polyaccount
+        try:
+            return polyaccount.http("GET", "/api/countries")
+        except polyaccount.AccountError as exc:
+            raise ApiError(str(exc)) from None
+
+    def poly_account_set(self, sync: bool | None, remote: bool | None) -> dict:
+        from . import polyaccount
+        state = polyaccount.load(self._pa_home())
+        if not state.get("credential"):
+            raise ApiError("Connect a Poly Account first.")
+        if sync is not None:
+            state["sync"] = sync
+        if remote is not None:
+            state["remoteManagement"] = remote
+        polyaccount.save(state, self._pa_home())
+        threading.Thread(target=self.poly_account_checkin, daemon=True).start()
+        self.bus.publish("polyaccount")
+        return self.poly_account_status()
+
+    def poly_account_disconnect(self) -> dict:
+        from . import polyaccount
+        polyaccount.disconnect(self._pa_home())
+        self.bus.publish("polyaccount")
+        return self.poly_account_status()
+
+    def poly_account_checkin(self) -> dict | None:
+        """Report in, run waiting actions from the website, and bring in synced settings."""
+        from . import autoupdate, polyaccount
+        home = self._pa_home()
+        state = polyaccount.load(home)
+        if not state.get("credential"):
+            return None
+        try:
+            r = polyaccount.checkin(state, autoupdate.load_policy(), self._pa_hardware(), home)
+        except polyaccount.AccountError as exc:
+            if exc.status != 401:
+                polyaccount.merge(state["credential"], {"lastError": str(exc)}, home)
+            self.bus.publish("polyaccount")
+            return None
+        state.update(lastCheckin=time.time(), lastError=None)
+        polyaccount.merge(state["credential"], {"lastCheckin": state["lastCheckin"], "lastError": None}, home)
+        for cmd in r.get("commands") or []:
+            self._pa_run(state, cmd)
+        self._pa_pull(state, r.get("sync", {}).get("revision"))
+        self.bus.publish("polyaccount")
+        return r
+
+    def start_account_loop(self, first_delay: float = 0, every: float | None = None):
+        """Check in every 15 minutes (30 with background activity limited) while connected."""
+        def loop():
+            time.sleep(first_delay)
+            while True:
+                try:
+                    self.poly_account_checkin()
+                except Exception:  # noqa: BLE001 - try again next time
+                    pass
+                time.sleep(every or (1800 if self.settings.get("backgroundLimit") == "reduced" else 900))
+        threading.Thread(target=loop, name="poly-account", daemon=True).start()
+        return False
+
+    def _pa_run(self, state: dict, cmd: dict) -> None:
+        from . import polyaccount
+        kind = cmd.get("kind")
+        try:
+            if kind == "check-updates":
+                self.updates_action("check")
+            elif not state.get("remoteManagement"):
+                raise ApiError("Remote management is off on this computer.")
+            elif kind == "update":
+                self.updates_action("now")
+            elif kind == "lock":
+                self.lock()
+            elif kind == "restart":
+                polyaccount.report(state, cmd["id"], "done", "Restarting")
+                self.power("reboot")
+                return
+            else:
+                raise ApiError(f"Unknown action: {kind}")
+            polyaccount.report(state, cmd["id"], "done")
+        except Exception as exc:  # noqa: BLE001 - reported back to the website
+            polyaccount.report(state, cmd["id"], "failed", str(exc))
+
+    def _pa_pull(self, state: dict, revision: str | None) -> None:
+        from . import polyaccount
+        keys = polyaccount.synced_keys(state)
+        if not keys or not revision or revision == state.get("pulledRevision"):
+            return
+        try:
+            values = polyaccount.pull(state, keys)
+        except polyaccount.AccountError:
+            return
+        current = self.settings.snapshot()
+        changes = {k: v for k, v in values.items() if current.get(k) != v and polyaccount.shareable(k, v)}
+        if changes:
+            self._pa_applying = True
+            try:
+                self.update_settings(changes)  # _pa_applying: not pushed straight back
+            except ApiError:
+                pass
+            finally:
+                self._pa_applying = False
+        state["pulledRevision"] = revision
+        polyaccount.merge(state["credential"], {"pulledRevision": revision}, self._pa_home())
+
+    def _pa_push(self, patch: dict) -> None:
+        """Settings changed here: send the synced ones to the account (in the background)."""
+        from . import polyaccount
+        if getattr(self, "_pa_applying", False):
+            return
+        state = polyaccount.load(self._pa_home())
+        if not state.get("credential"):
+            return
+        keys = [k for k in polyaccount.synced_keys(state) if k in patch]
+        if not keys:
+            return
+        settings = self.settings.snapshot()
+
+        def send():
+            try:
+                polyaccount.push(state, settings, keys)
+            except polyaccount.AccountError:
+                pass
+        threading.Thread(target=send, daemon=True).start()
+
     # ---- trying PolyOS from the USB -----------------------------------------------------------
     def show_install_app(self) -> None:
         """On the USB: "Install PolyOS 7" first in the dock and on the desktop, to get back to the installer."""
@@ -805,6 +1013,7 @@ class Backend:
             patch = {**patch, "recent": []}  # turning activity history off forgets it too
         settings = self.settings.update(patch)
         self.bus.publish("settings", settings=settings)
+        self._pa_push(patch)  # Poly Sync, when connected
         return settings
 
     def wallpapers(self) -> list[dict]:
