@@ -11,6 +11,7 @@
     polyos-admin disk new DISK START BYTES     ... or make one in unallocated space (START in sectors)
     polyos-admin pack NAME ID...           an edition's apps (gaming, developer), only ids in its catalog pack
     polyos-admin security firewall|updates on|off   the firewall (ufw) and automatic security updates
+    polyos-admin update polyos|system      online updates: the newest PolyOS release, or Debian's updates
 
 Every command prints JSON lines: {"progress": 0..1, "message": "..."} while it works,
 {"result": ...} for data, and {"error": "..."} (exit status 1) when it fails.
@@ -331,6 +332,28 @@ def account(path: Path) -> None:
     emit({"progress": 1.0, "message": "Saved."})
 
 
+def update(what: str) -> None:
+    """Online updates: "polyos" installs the newest PolyOS release's packages (checksums checked);
+    "system" installs Debian's updates for everything else."""
+    from . import updates
+    if what == "polyos":
+        apt_update()
+        try:
+            version, files = updates.download(emit)
+        except ValueError as exc:
+            raise AdminError(str(exc)) from None
+        except OSError as exc:
+            raise AdminError(f"Couldn't download the update ({exc}). Check your internet connection.") from None
+        apt(["install", *[str(f) for f in files]], start=0.5)
+        emit({"progress": 1.0, "message": f"PolyOS {version} is installed.", "result": {"version": version}})
+    elif what == "system":
+        apt_update()
+        apt(["full-upgrade"], start=0.1)
+        emit({"progress": 1.0, "message": "Everything is up to date."})
+    else:
+        raise AdminError("Choose PolyOS or system updates.")
+
+
 def reboot() -> None:
     """Restart now, without waiting on services (the install is already synced to disk)."""
     if not installer.LIVE_MEDIUM.exists():
@@ -387,6 +410,8 @@ def main(argv: list[str] | None = None) -> int:
             emit({"result": {"ok": True}})
         elif cmd == "pack" and len(rest) >= 2:
             pack_install(rest[0], rest[1:])
+        elif cmd == "update" and len(rest) == 1:
+            update(rest[0])
         elif cmd == "security" and len(rest) == 2:
             security(rest[0], rest[1])
         else:

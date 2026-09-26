@@ -122,12 +122,19 @@ jobs:
     if: ${{ !cancelled() && needs.setup.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Get the ISOs
         uses: actions/download-artifact@v4
         with:
           pattern: polyos-*-iso
           merge-multiple: true
           path: dist
+
+      # Online updates: PolyOS's own packages and polyos-update.json (their checksums), which
+      # Settings > About on installed computers reads to update without a new ISO.
+      - name: PolyOS packages for online updates
+        run: python3 main.py deb --out dist --manifest
 
       - name: Checksums (and parts, if an ISO is over GitHub's 2 GB per-file limit)
         run: |
@@ -158,6 +165,8 @@ jobs:
             dist/*.iso
             dist/*.iso.part*
             dist/SHA256SUMS
+            dist/*.deb
+            dist/polyos-update.json
           body: |
             **PolyOS 7 for Debian ${{ needs.setup.outputs.tag }}** (Debian ${{ env.DIST }})
 
@@ -169,6 +178,8 @@ jobs:
             1. Download the `.iso` for your computer${{ env.PARTS && ' (in parts: join them with `cat polyos-*.part* > polyos.iso` on Linux/macOS, or `copy /b part0+part1 polyos.iso` on Windows)' || '' }}.
             2. Write it to a USB drive (8 GB or more) with balenaEtcher, or Rufus in DD mode, or start it in a virtual machine.
             3. Start the computer from it, try PolyOS, and choose **Install PolyOS 7**.
+
+            **Already on PolyOS?** Open Settings › About › *Check for updates* to install this version without a new USB drive.
 
             Check the download against `SHA256SUMS`.
           generate_release_notes: true

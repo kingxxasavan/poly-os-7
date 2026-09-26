@@ -686,6 +686,36 @@ DP-1 disconnected (normal left inverted right x axis y axis)
         return self.jobs.start("drivers", "Installing drivers", [], runner=runner,
                                on_done=lambda j: self.bus.publish("drivers"))
 
+    # ---- online updates --------------------------------------------------------------------
+    def _is_live(self):
+        return self.live
+
+    def _fetch_updates(self):
+        time.sleep(0.6)
+        if getattr(self, "_updated", False):
+            return {"current": "0.7.1", "latest": "0.7.1", "available": False, "notes": "", "size": 0}
+        return {"current": __version__, "latest": "0.7.1", "available": True, "size": 2_734_000,
+                "packages": ["polyos-desktop", "polyos-shell"], "published": "2026-10-02T18:00:00Z",
+                "url": "https://github.com/kingxxasavan/poly-os-7-debain-receration/releases",
+                "notes": "Touchscreen and camera drivers, BitLocker help for dual boot, online updates."}
+
+    def updates_install(self, what):
+        if self.live:
+            raise ApiError("Install PolyOS first; updates install on the installed system.")
+        if not self._admin_ready:
+            raise NeedPassword()
+
+        def finish():
+            if what == "polyos":
+                self._updated = True
+            self._updates_cache = None
+        steps = (["Checking Debian for the latest versions…", "Downloading polyos-desktop…", "Downloading polyos-shell…",
+                  "Installing…"] if what == "polyos" else ["Checking Debian for the latest versions…", "Downloading…",
+                                                           "Installing updates…", "Configuring…"])
+        runner = self._simulate(steps, 5, finish)
+        return self.jobs.start("update", "Updating PolyOS" if what == "polyos" else "Installing Debian updates", [],
+                               target=what, runner=runner, on_done=lambda j: self.bus.publish("updates"))
+
     # ---- PolyMarket ------------------------------------------------------------------------
     def store_list(self):
         data = store.for_arch(store.load())

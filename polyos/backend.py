@@ -534,6 +534,54 @@ class Backend:
                 continue
             system.run(display.command(name, cfg.get("size"), cfg.get("rate"), cfg.get("rotation"), cfg.get("primary")), 15)
 
+    # ---- online updates (Settings > About) -----------------------------------------------------
+    def _is_live(self) -> bool:
+        return Path("/run/live/medium").exists()
+
+    def _fetch_updates(self) -> dict:
+        from . import updates
+        return updates.check()
+
+    def updates_check(self, force: bool = False) -> dict:
+        """The newest PolyOS release and whether it can be installed from here (cached for an hour)."""
+        import time as _time
+        if self._is_live():
+            return {"current": __version__, "latest": __version__, "available": False, "live": True, "notes": ""}
+        cached = getattr(self, "_updates_cache", None)
+        if cached and not force and _time.time() - cached[0] < 3600:
+            return cached[1]
+        try:
+            result = self._fetch_updates()
+        except (OSError, ValueError) as exc:
+            reason = getattr(exc, "reason", None) or exc
+            raise ApiError(f"Couldn't check for updates: {reason}. Check your internet connection.", 502) from None
+        self._updates_cache = (_time.time(), result)
+        return result
+
+    def notify_updates(self) -> None:
+        """After sign-in: a quiet check, and a notification when a new PolyOS is out."""
+        from . import system
+        try:
+            result = self.updates_check()
+        except ApiError:
+            return  # offline: try again next time
+        if result.get("available") and system.have("notify-send"):
+            system.spawn(["notify-send", "-a", "PolyOS", "-i", "polyos", f"PolyOS {result['latest']} is available",
+                          "Open Settings › About to update. No new USB drive needed."])
+        self.bus.publish("updates")
+
+    def updates_install(self, what: str) -> dict:
+        if self._is_live():
+            raise ApiError("Install PolyOS first; updates install on the installed system.")
+        if what == "polyos" and not self.updates_check().get("available"):
+            raise ApiError("PolyOS is already up to date.")
+        title = "Updating PolyOS" if what == "polyos" else "Installing Debian updates"
+
+        def done(job):
+            self._updates_cache = None
+            self.bus.publish("updates")
+        return self.jobs.start("update", title, ["update", what], target=what, on_done=done)
+
     # ---- trying PolyOS from the USB -----------------------------------------------------------
     def show_install_app(self) -> None:
         """On the USB: "Install PolyOS 7" first in the dock and on the desktop, to get back to the installer."""

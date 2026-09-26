@@ -193,6 +193,12 @@ def parse_input_devices(text: str) -> list[dict]:
     return out
 
 
+def _touch_title(what: str, name: str) -> str:
+    """"ELAN9008:00 04F3:2C82" -> "Touchscreen (ELAN)"; "Wacom HID 5256 Finger" -> "Touchscreen (Wacom)"."""
+    maker = re.match(r"[A-Za-z]+", name or "")
+    return f"{what} ({maker.group(0)})" if maker and maker.group(0).lower() not in ("hid", "i2c", "usb") else what
+
+
 def extra_devices(touch: list[dict], webcam: bool, pci: list[dict], sensors: list[str]) -> list[dict]:
     """Touchscreens, pens, webcams and Intel IPU6 cameras, beyond what lspci's classes cover."""
     out = []
@@ -204,11 +210,11 @@ def extra_devices(touch: list[dict], webcam: bool, pci: list[dict], sensors: lis
         if "accel" in sensors:
             packages.append("iio-sensor-proxy")
             note += ", and the tilt sensor 2-in-1s use to turn the screen"
-        out.append({"id": "touchscreen", "kind": "touch", "title": screens[0]["name"] or "Touchscreen", "vendor": "",
+        out.append({"id": "touchscreen", "kind": "touch", "title": _touch_title("Touchscreen", screens[0]["name"]), "vendor": "",
                     "driver": "libinput", "working": True, "packages": packages, "restart": False,
                     "note": note + ". Desktop icons then open with one tap.", "touch": True})
     if pens:
-        out.append({"id": "pen", "kind": "touch", "title": pens[0]["name"], "vendor": "", "driver": "libinput",
+        out.append({"id": "pen", "kind": "touch", "title": _touch_title("Pen", pens[0]["name"]), "vendor": "", "driver": "libinput",
                      "working": True, "packages": ["xserver-xorg-input-wacom"], "restart": False,
                      "note": "Pressure and buttons for the pen."})
     ipu = [d for d in pci if d.get("vendorId") == "8086" and d.get("deviceId") in IPU6_IDS]

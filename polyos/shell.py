@@ -1182,6 +1182,8 @@ def main(argv: list[str] | None = None) -> int:
         shell.open_app("setup")  # live USB: the installer; first sign-in: PolyOS's welcome
     if args.autostart:
         GLib.timeout_add_seconds(2, shell.run_autostart)
+    if not shell._live:  # look for a new PolyOS two minutes after signing in
+        GLib.timeout_add_seconds(120, lambda: (threading.Thread(target=shell.notify_updates, daemon=True).start(), False)[1])
     for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signum, shell.quit, EXIT_LOGOUT)
     try:

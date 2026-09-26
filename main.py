@@ -20,6 +20,7 @@ import argparse
 import configparser
 import hashlib
 import io
+import json
 import os
 import re
 import secrets
@@ -293,7 +294,8 @@ def build_deb(name: str, out_dir: Path) -> Path:
 def build_debs(out_dir: Path = DIST) -> list[Path]:
     debs = [build_deb(name, out_dir) for name in PACKAGES]
     for deb in debs:
-        print(f"  built {deb.relative_to(ROOT)}  ({deb.stat().st_size / 1024:.0f} KiB)")
+        shown = deb.relative_to(ROOT) if deb.is_relative_to(ROOT) else deb
+        print(f"  built {shown}  ({deb.stat().st_size / 1024:.0f} KiB)")
         if shutil.which("dpkg-deb"):  # validate with the real tool when available
             subprocess.run(["dpkg-deb", "--info", str(deb)], check=True, stdout=subprocess.DEVNULL)
     return debs
@@ -439,7 +441,13 @@ def cmd_check(_args) -> None:
 
 def cmd_deb(args) -> None:
     print(f"Building PolyOS {VERSION} packages")
-    build_debs(Path(args.out).resolve())
+    out = Path(args.out).resolve()
+    debs = build_debs(out)
+    if args.manifest:  # for online updates: the release lists its packages and their checksums
+        from polyos import updates
+        path = out / updates.MANIFEST
+        path.write_text(json.dumps(updates.build_manifest(VERSION, debs), indent=2) + "\n", "utf-8")
+        print(f"  wrote {path}")
 
 
 def cmd_install(args) -> None:
@@ -831,6 +839,7 @@ def main() -> None:
     sub.add_parser("check", help="static checks").set_defaults(fn=cmd_check)
     p = sub.add_parser("deb", help="build .deb packages")
     p.add_argument("--out", default=str(DIST))
+    p.add_argument("--manifest", action="store_true", help="also write polyos-update.json (online updates)")
     p.set_defaults(fn=cmd_deb)
     p = sub.add_parser("install", help="install on this Debian system (root)")
     p.add_argument("--shell-only", action="store_true", help="only polyos-shell: add a PolyOS session to an existing desktop")

@@ -726,7 +726,7 @@ const pages = {
         renderApps();
       }
     }
-    const offJobs = watchJobs((job) => {
+    const { off: offJobs } = watchJobs((job) => {
       if (job.kind !== 'app' || !status.has(job.target)) return;
       if (job.state === 'running') status.set(job.target, job.message || 'Removing…');
       else {
@@ -948,10 +948,73 @@ const pages = {
     const specs = h('div');
     const devMode = toggle(store.state.settings.developerMode, (v) => save({ developerMode: v }), 'Developer mode');
     const edition = { regular: 'Regular', developer: 'Developer', gaming: 'Gaming' }[store.state.settings.edition] || 'Regular';
+
+    // Online updates: a new PolyOS installs from here (no new USB drive), and Debian's updates too.
+    const updBox = h('div');
+    const updErr = h('div.error-text', { hidden: true });
+    let upd = null;         // /api/updates
+    let running = null;     // 'polyos' | 'system' while a job runs
+    let progress = '';
+    let finished = false;   // PolyOS was updated: restart to use it
+    const install = async (what) => {
+      errorText(updErr, '');
+      try {
+        running = what;
+        progress = 'Starting…';
+        renderUpd();
+        await withAdmin(() => api.post('/api/updates/install', { what }),
+          { title: what === 'polyos' ? 'Update PolyOS' : 'Install updates', text: 'Enter your password to install updates.' });
+      } catch (x) {
+        running = null;
+        if (!x.cancelled) errorText(updErr, x.message);
+        renderUpd();
+      }
+    };
+    function renderUpd() {
+      const btn = (label, onclick, primary) => h(primary ? 'button.btn.primary' : 'button.btn', { onclick, disabled: !!running }, label);
+      let main;
+      if (!upd) main = row('Checking for updates…', null);
+      else if (upd.live) main = row('Updates', 'Install PolyOS first. After that, updates install from here.');
+      else if (finished) {
+        main = row(`PolyOS ${upd.latest} is installed`, 'Restart PolyOS to start using it. Your apps and files stay as they are.',
+          h('button.btn.primary', { onclick: () => api.post('/api/shell/restart') }, icon('restart'), 'Restart PolyOS'));
+      } else if (running === 'polyos') main = row(`Updating to PolyOS ${upd.latest}…`, progress);
+      else if (upd.available) {
+        main = row(`PolyOS ${upd.latest} is available`, `You have ${upd.current}. ${upd.size ? `${formatBytes(upd.size)} download. ` : ''}No new USB drive needed.`,
+          btn('Update now', () => install('polyos'), true));
+      } else {
+        main = row('PolyOS is up to date', `Version ${upd.current}${upd.reason ? ` · ${upd.reason}` : ''}`,
+          btn('Check again', () => check(true)));
+      }
+      const notes = upd && upd.available && upd.notes && !finished
+        ? h('details.upd-notes', h('summary', 'What’s new'), h('p.prose', upd.notes.slice(0, 2000))) : null;
+      const system = upd && !upd.live ? row('Debian updates', running === 'system' ? progress
+        : 'Security fixes and newer versions of the apps that come with Debian', btn('Update everything', () => install('system'))) : null;
+      fill(updBox, group('Updates', main, notes, system));
+    }
+    function check(force) {
+      upd = upd && force ? { ...upd } : upd;
+      api.get(`/api/updates${force ? '?force=1' : ''}`).then((r) => { upd = r; errorText(updErr, ''); renderUpd(); },
+        (x) => { upd = upd || { current: version, latest: version, available: false }; errorText(updErr, x.message); renderUpd(); });
+    }
+    const { off: offJobs } = watchJobs((job) => {
+      if (job.kind !== 'update') return;
+      running = job.state === 'running' ? job.target : null;
+      progress = job.state === 'running' ? `${job.message || ''} ${Math.round((job.progress || 0) * 100)}%` : '';
+      if (job.state === 'done' && job.target === 'polyos') finished = true;
+      if (job.state === 'failed') errorText(updErr, job.error || 'The update didn’t install.');
+      if (job.state === 'done' && job.target === 'system') progress = '';
+      renderUpd();
+    });
+    renderUpd();
+    check(false);
+
     page.append(
       h('div.about-hero',
         h('img', { src: '/img/logo.svg', alt: '' }),
         h('div', h('h1', 'PolyOS'), h('p.muted', `Version ${version} · ${edition} edition`))),
+      updErr,
+      updBox,
       specs,
       group('Tools',
         row('Task Manager', 'See what’s running and end apps that stopped responding (Ctrl+Shift+Esc)',
@@ -977,7 +1040,7 @@ const pages = {
         row('Kernel', null, h('span.value', `${info.kernel} (${info.arch})`)),
         row('Uptime', null, h('span.value', uptime))));
     }, (e) => specs.replaceChildren(h('div.error-text', e.message)));
-    return null;
+    return { close: offJobs };
   },
 };
 

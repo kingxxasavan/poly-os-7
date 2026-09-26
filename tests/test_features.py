@@ -676,3 +676,61 @@ class ComputerModelTests(unittest.TestCase):
         self.assertEqual((old["profile"], old["background"]), ("balanced", "reduced"))
         small = hwcheck.assess(base | {"ram": 4 * 1024 ** 3})
         self.assertEqual(small["background"], "reduced")
+
+
+class OnlineUpdateTests(unittest.TestCase):
+    """Settings > About > Update now: the release's packages, checked before installing."""
+
+    def release(self, version, manifest=True):
+        assets = [{"name": "polyos-amd64.iso", "browser_download_url": "https://x/iso"},
+                  {"name": f"polyos-shell_{version}_all.deb", "browser_download_url": "https://x/shell.deb"}]
+        if manifest:
+            assets.append({"name": "polyos-update.json", "browser_download_url": "https://x/manifest"})
+        return {"tag_name": f"v{version}", "body": "notes", "assets": assets}
+
+    def fake_get(self, version, data=b"deb-bytes", manifest=True, name=None):
+        import hashlib
+
+        files = {
+            "https://api.github.com/repos/kingxxasavan/poly-os-7-debain-receration/releases/latest":
+                json.dumps(self.release(version, manifest)).encode(),
+            "https://x/manifest": json.dumps({"version": version, "packages": [
+                {"name": "polyos-shell", "file": name or f"polyos-shell_{version}_all.deb", "size": len(data),
+                 "sha256": hashlib.sha256(b"deb-bytes").hexdigest()}]}).encode(),
+            "https://x/shell.deb": data,
+        }
+        return lambda url, **_kw: files[url]
+
+    def test_versions(self):
+        from polyos import updates
+
+        self.assertTrue(updates.newer("0.10.0", "0.9.9"))
+        self.assertFalse(updates.newer("v0.7.0", "0.7.0"))
+        self.assertEqual(updates.version_tuple("junk"), (0, 0, 0))
+
+    def test_check_and_download(self):
+        from polyos import updates
+
+        latest = self.fake_get("99.0.0")
+        result = updates.check(get=latest)
+        self.assertTrue(result["available"])
+        self.assertEqual(result["packages"], ["polyos-shell"])
+        self.assertFalse(updates.check(get=self.fake_get(updates.__version__))["available"])
+        self.assertIn("ISO", updates.check(get=self.fake_get("99.0.0", manifest=False))["reason"])
+        with tempfile.TemporaryDirectory() as tmp:
+            version, files = updates.download(lambda _e: None, get=latest, cache=Path(tmp))
+            self.assertEqual((version, [f.name for f in files]), ("99.0.0", ["polyos-shell_99.0.0_all.deb"]))
+            with self.assertRaises(ValueError):  # a damaged download is refused
+                updates.download(lambda _e: None, get=self.fake_get("99.0.0", data=b"tampered"), cache=Path(tmp))
+            with self.assertRaises(ValueError):  # only PolyOS's own packages, of that version
+                updates.download(lambda _e: None, get=self.fake_get("99.0.0", name="evil_99.0.0_all.deb"), cache=Path(tmp))
+
+    def test_manifest(self):
+        from polyos import updates
+
+        with tempfile.TemporaryDirectory() as tmp:
+            deb = Path(tmp) / "polyos-shell_1.2.3_all.deb"
+            deb.write_bytes(b"x")
+            (Path(tmp) / "other.txt").write_text("y")
+            m = updates.build_manifest("1.2.3", list(Path(tmp).iterdir()))
+            self.assertEqual([p["file"] for p in m["packages"]], ["polyos-shell_1.2.3_all.deb"])
