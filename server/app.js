@@ -309,6 +309,14 @@ route('GET', '/api/releases/latest', null, async ({ url }) => {
 route('GET', '/api/releases', null, async () => ({ releases: await releases.history(12) }));
 route('GET', '/api/download/:what', null, async ({ params, res }) => {
   const file = { pc: 'polyos-amd64.iso', arm64: 'polyos-arm64.iso', checksums: 'SHA256SUMS' }[params.what];
+  if (!file && /^polyos-[a-z]+$/.test(params.what)) { // the update packages, e.g. /download/polyos-shell
+    const rel = await releases.latest('stable');
+    const name = Object.keys(rel.assets).find((n) => n.startsWith(`${params.what}_`) && n.endsWith('.deb'));
+    if (!name) fail('That package isn’t in the newest release.', 404);
+    res.statusCode = 302;
+    res.setHeader('Location', rel.assets[name].url);
+    return null;
+  }
   if (!file) fail('Not found.', 404);
   let location = releases.latestFileUrl(file); // works even when GitHub's API is busy
   try {
@@ -645,8 +653,10 @@ route('POST', '/api/v1/device/checkin', null, async ({ req, body }) => {
     ? Object.fromEntries(['autoDownload', 'autoInstall', 'askRestart'].map((k) => [k, Boolean(body.policy[k])]).concat([['time', str(body.policy.time, 5)]]))
     : d.policy;
   const remote = body.remoteManagement === undefined ? d.remote_management : Boolean(body.remoteManagement);
+  const telemetry = prefsOf({ prefs: d.user_prefs }).telemetry;
+  const info = telemetry === 'minimal' ? d.info : { ...d.info, ...cleanInfo(body.info) };
   await q(`UPDATE devices SET last_seen = now(), version = $2, arch = $3, channel = $4, info = $5, remote_management = $6, policy = $7, place = $8 WHERE id = $1`,
-    [d.id, str(body.version, 20) || d.version, str(body.arch, 20) || d.arch, channel, JSON.stringify({ ...d.info, ...cleanInfo(body.info) }),
+    [d.id, str(body.version, 20) || d.version, str(body.arch, 20) || d.arch, channel, JSON.stringify(info),
       remote, JSON.stringify(policy), place(req) || d.place]);
   // Waiting actions from the website; restart, lock and update only while Remote management is on.
   await q(`UPDATE commands SET status = 'expired', updated_at = now() WHERE device_id = $1 AND status = 'pending'
@@ -660,6 +670,7 @@ route('POST', '/api/v1/device/checkin', null, async ({ req, body }) => {
     commands,
     terms: { version: TERMS.version, accepted: d.terms_version === TERMS.version },
     sync: { revision: new Date(rev).toISOString(), prefs: prefsOf({ prefs: d.user_prefs }).sync },
+    telemetry,
   };
 });
 route('POST', '/api/v1/device/commands/:id', null, async ({ req, params, body }) => {

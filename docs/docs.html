@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documentation · PolyOS 7</title>
+  <meta name="description" content="How to install, use and update PolyOS 7, and how Poly Account works.">
+  <meta name="theme-color" content="#151515">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></symbol><symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/></symbol><symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.9-3.8 3.9-5.8 7.5-5.8s6.6 2 7.5 5.8"/></symbol></defs></svg>
+
+  <header class="nav" id="top">
+    <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="30" height="30"><span>PolyOS <b>7</b></span></a>
+    <nav aria-label="Site">
+      <a href="/download">Download</a>
+      <a href="/#features">Features</a>
+      <a href="/docs">Docs</a>
+      <a href="/changelog">Updates</a>
+      <a href="/security">Security</a>
+      <a href="/support">Support</a>
+    </nav>
+    <a class="btn small" href="/account"><svg class="ico"><use href="#i-user"/></svg>Poly Account</a>
+  </header>
+
+  <main class="page-main">
+    <article class="doc">
+      <p class="eyebrow">Documentation</p>
+      <h1>Using PolyOS 7</h1>
+      <p class="doc-intro">Everything from installing to updates. Stuck? See <a href="/support">Help &amp; Support</a>.</p>
+      
+      <nav class="doc-toc" aria-label="On this page"><ol><li><a href="#install">Install</a></li><li><a href="#first-start">First start</a></li><li><a href="#settings">Settings</a></li><li><a href="#updates">Updates</a></li><li><a href="#drivers">Drivers</a></li><li><a href="#poly-account">Poly Account</a></li><li><a href="#keyboard-shortcuts">Keyboard shortcuts</a></li><li><a href="#vara">Vara</a></li></ol></nav>
+    <section id="install"><h2>Install</h2><p>The <a href="/install">install guide</a> covers making the USB drive, starting from it, BitLocker, dual boot next to Windows (or on a D: drive you made), and what to do if something goes wrong.</p></section>
+    <section id="first-start"><h2>First start</h2><p>PolyOS checks your computer first: the exact model, processor, memory and graphics. Most computers get <b>Everything on</b>; older ones get <b>Smooth</b> or <b>Light</b>, which turn off blur and see-through glass. Then it offers to connect to the internet, install drivers, set up your edition’s apps and, if you like, connect a <a href="#poly-account">Poly Account</a>.</p></section>
+    <section id="settings"><h2>Settings</h2><ul><li><b>Display</b>: resolution, refresh rate, orientation, main display, brightness and graphics.</li><li><b>Sound</b>: output and input devices, microphone level, and the full mixer for per-app volume and surround.</li><li><b>Apps</b>: what starts when you sign in, and uninstall any app with a button.</li><li><b>Power &amp; Performance</b>: power modes, the hardware check, Light mode and background activity.</li><li><b>Updates</b>: automatic downloads, an install time, restart questions and the update channel.</li><li><b>Poly Account</b>: connect, sync, remote management, or stay local.</li></ul></section>
+    <section id="updates"><h2>Updates</h2><p>PolyOS updates itself from <b>Settings › Updates</b> (and <b>About › Update now</b>), with or without an account. Updates are signed: PolyOS checks every update’s signature and checksums before installing it. You choose whether updates download and install automatically, at what time, and whether PolyOS asks before restarting. Channels: <b>Stable</b> for most people, <b>Beta</b> and <b>Developer</b> for early versions.</p><p>Without internet, download the newest ISO from <a href="/download">the download page</a> and install over the old version.</p></section>
+    <section id="drivers"><h2>Drivers</h2><p><b>Driver Manager</b> finds NVIDIA and AMD graphics, Wi-Fi (including Broadcom), Bluetooth, touchscreens and pens, webcams and the built-in cameras of newer Intel laptops, and installs what Debian has for them.</p></section>
+    <section id="poly-account"><h2>Poly Account</h2><p>A Poly Account is optional. It adds device management, recovery, sync and account emails; PolyOS works fully without one.</p><ul><li><b>Connect a computer</b>: during setup, or Settings › Poly Account › Connect. Sign in there, or use the 6-digit code: open <a href="/link">the link page</a> on any device and enter it.</li><li><b>Each computer has its own key</b>, so removing one (Devices › Remove device) doesn’t affect the others. The computer never keeps your password.</li><li><b>Remote management</b> (restart, lock and install updates from the website) is off until you turn it on at that computer.</li><li><b>Recovery</b>: a verified email resets your password; so does the recovery key you saved when you made the account.</li><li><b>Poly Sync</b> keeps settings, theme, wallpapers and pinned apps the same on your computers. Files aren’t synced.</li></ul></section>
+    <section id="keyboard-shortcuts"><h2>Keyboard shortcuts</h2><table class="guide-table"><thead><tr><th>Keys</th><th>What it does</th></tr></thead><tbody><tr><td><kbd>Win</kbd></td><td>Home Menu</td></tr><tr><td><kbd>Win + S</kbd></td><td>All apps</td></tr><tr><td><kbd>Win + A</kbd></td><td>Quick settings</td></tr><tr><td><kbd>Win + W</kbd></td><td>Widgets</td></tr><tr><td><kbd>Win + V</kbd></td><td>Ask Vara</td></tr><tr><td><kbd>Win + R</kbd></td><td>Run</td></tr><tr><td><kbd>Win + I</kbd></td><td>Settings</td></tr><tr><td><kbd>Win + E</kbd></td><td>Files</td></tr><tr><td><kbd>Win + T</kbd></td><td>Terminal</td></tr><tr><td><kbd>Win + B</kbd></td><td>Browser</td></tr><tr><td><kbd>Win + L</kbd></td><td>Lock</td></tr><tr><td><kbd>Win + D</kbd></td><td>Show the desktop</td></tr><tr><td><kbd>Win + F</kbd></td><td>Full screen</td></tr><tr><td><kbd>Win + ↑</kbd></td><td>Maximize</td></tr><tr><td><kbd>Win + ← / →</kbd></td><td>Snap left or right</td></tr><tr><td><kbd>Ctrl + Shift + Esc</kbd></td><td>Task Manager</td></tr><tr><td><kbd>Alt + Tab</kbd></td><td>Switch windows</td></tr><tr><td><kbd>Print</kbd></td><td>Screenshot</td></tr></tbody></table></section>
+    <section id="vara"><h2>Vara</h2><p>Vara, the AI agent, writes and runs code, makes 3D models and works with ROS 2 robots and Arduino boards, asking before it changes anything. Choose its provider (Ollama Cloud, OpenAI, NVIDIA or Claude) in Settings › Vara.</p></section>
+    </article>
+  </main>
+
+  <footer class="footer site-foot">
+    <div class="foot-brand"><img src="/assets/logo.svg" alt="" width="22" height="22"><span><b>PolyOS 7</b> for Debian · by Cryptic Software</span></div>
+    <nav aria-label="More">
+      <a href="/download">Download</a><a href="/install">Install guide</a><a href="/docs">Documentation</a><a href="/changelog">Updates</a>
+      <a href="/support">Help &amp; Support</a><a href="/security">Security</a><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a>
+      <a href="/account">Poly Account</a>
+    </nav>
+    <p class="foot-note">PolyOS works without an online account. The PolyOS logo and artwork come from the Scratch project by PIXAPoLY Software (CC BY-SA 2.0).</p>
+  </footer>
+</body>
+</html>

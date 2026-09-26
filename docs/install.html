@@ -12,6 +12,7 @@
 <body class="guide-page">
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.9-3.8 3.9-5.8 7.5-5.8s6.6 2 7.5 5.8"/></symbol>
       <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></symbol>
       <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></symbol>
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
@@ -21,16 +22,16 @@
   </svg>
 
   <header class="nav" id="top">
-    <a class="brand" href="index.html"><img src="assets/logo.svg" alt="" width="30" height="30"><span>PolyOS <b>7</b></span></a>
-    <nav aria-label="Guide">
-      <a href="#before">Before you start</a>
-      <a href="#usb">USB drive</a>
-      <a href="#boot">Start from USB</a>
-      <a href="#install">Install</a>
-      <a href="#after">After installing</a>
-      <a href="#help">Problems</a>
+    <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="30" height="30"><span>PolyOS <b>7</b></span></a>
+    <nav aria-label="Site">
+      <a href="/download">Download</a>
+      <a href="/#features">Features</a>
+      <a href="/docs">Docs</a>
+      <a href="/changelog">Updates</a>
+      <a href="/security">Security</a>
+      <a href="/support">Support</a>
     </nav>
-    <a class="btn small" href="index.html#download"><svg class="ico"><use href="#i-download"/></svg>Download</a>
+    <a class="btn small" href="/account"><svg class="ico"><use href="#i-user"/></svg>Poly Account</a>
   </header>
 
   <main class="guide-main">
@@ -96,7 +97,7 @@
       <span class="guide-num">2</span>
       <div>
         <h2>Make the USB drive</h2>
-        <p>Download <b>PolyOS for PC (Intel/AMD)</b> from the <a href="index.html#download">download section</a> (ARM64 only for Apple Silicon
+        <p>Download <b>PolyOS for PC (Intel/AMD)</b> from the <a href="/download">download section</a> (ARM64 only for Apple Silicon
           virtual machines and ARM computers). Everything on the USB drive is erased.</p>
         <ul class="guide-list">
           <li><b>balenaEtcher</b> (Windows, Mac, Linux): <a href="https://etcher.balena.io/" target="_blank" rel="noopener">etcher.balena.io</a> ›
@@ -209,23 +210,25 @@
           <dd>Choose <b>Start PolyOS 7 (safe mode)</b> on the USB drive's boot menu, or <i>Advanced options for PolyOS</i> on an installed computer, then install
             your graphics driver in Driver Manager.</dd>
           <dt id="update-old">Updating PolyOS 0.7 or older (no Update button yet)</dt>
-          <dd>Download <code>polyos-shell_…_all.deb</code> and <code>polyos-desktop_…_all.deb</code> from the
-            <a href="https://github.com/kingxxasavan/poly-os-7-debain-receration/releases/latest" target="_blank" rel="noopener">newest release</a>,
+          <dd>Download the two update packages, <a href="/download/polyos-shell">polyos-shell</a> and <a href="/download/polyos-desktop">polyos-desktop</a>,
             then in a terminal in your Downloads folder: <code>sudo apt install ./polyos-*_all.deb</code>, and sign out and in again.
-            After that, Settings › About updates PolyOS for you.</dd>
+            After that, Settings › Updates keeps PolyOS up to date for you.</dd>
           <dt>Still stuck?</dt>
-          <dd><a href="https://github.com/kingxxasavan/poly-os-7-debain-receration/issues" target="_blank" rel="noopener">Open an issue on GitHub</a> with your
+          <dd><a href="/support">Contact us</a> with your
             computer's model and a photo of the screen. The installer keeps its log at <code>/var/log/polyos-installer.log</code>.</dd>
         </dl>
       </div>
     </section>
   </main>
 
-  <footer class="footer">
-    <span><img src="assets/logo.svg" alt="" width="20" height="20"> PolyOS 7 for Debian</span>
-    <a href="index.html">Home</a>
-    <a href="https://github.com/kingxxasavan/poly-os-7-debain-receration">Source on GitHub</a>
-    <a href="#top">Back to top</a>
+  <footer class="footer site-foot">
+    <div class="foot-brand"><img src="/assets/logo.svg" alt="" width="22" height="22"><span><b>PolyOS 7</b> for Debian · by Cryptic Software</span></div>
+    <nav aria-label="More">
+      <a href="/download">Download</a><a href="/install">Install guide</a><a href="/docs">Documentation</a><a href="/changelog">Updates</a>
+      <a href="/support">Help &amp; Support</a><a href="/security">Security</a><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a>
+      <a href="/account">Poly Account</a>
+    </nav>
+    <p class="foot-note">PolyOS works without an online account. The PolyOS logo and artwork come from the Scratch project by PIXAPoLY Software (CC BY-SA 2.0).</p>
   </footer>
 </body>
 </html>

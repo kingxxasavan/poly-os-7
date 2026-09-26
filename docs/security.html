@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Security · PolyOS 7</title>
+  <meta name="description" content="How PolyOS and Poly Account keep you safe, and how to report a problem.">
+  <meta name="theme-color" content="#151515">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></symbol><symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6v5.5c0 4.3-2.9 7.6-7 9-4.1-1.4-7-4.7-7-9V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></symbol><symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.9-3.8 3.9-5.8 7.5-5.8s6.6 2 7.5 5.8"/></symbol></defs></svg>
+
+  <header class="nav" id="top">
+    <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="30" height="30"><span>PolyOS <b>7</b></span></a>
+    <nav aria-label="Site">
+      <a href="/download">Download</a>
+      <a href="/#features">Features</a>
+      <a href="/docs">Docs</a>
+      <a href="/changelog">Updates</a>
+      <a href="/security">Security</a>
+      <a href="/support">Support</a>
+    </nav>
+    <a class="btn small" href="/account"><svg class="ico"><use href="#i-user"/></svg>Poly Account</a>
+  </header>
+
+  <main class="page-main">
+    <article class="doc">
+      <p class="eyebrow">Security Center</p>
+      <h1>Security at Poly</h1>
+      <p class="doc-intro">How PolyOS and Poly Account protect you, and how to tell us about a problem.</p>
+      
+      <nav class="doc-toc" aria-label="On this page"><ol><li><a href="#polyos">PolyOS</a></li><li><a href="#poly-account">Poly Account</a></li><li><a href="#report-a-vulnerability">Report a vulnerability</a></li><li><a href="#tips">Tips</a></li></ol></nav>
+    <section id="polyos"><h2>PolyOS</h2><ul><li><b>Firewall on</b>: other computers can’t connect in.</li><li><b>Debian security updates</b> install automatically.</li><li><b>Signed PolyOS updates</b>: each update is signed with Poly’s release key, and PolyOS refuses one whose signature or checksums don’t match.</li><li><b>One small administrator helper</b> does the few jobs that need administrator rights, and only those.</li><li><b>No remote access by default.</b> Remote management through Poly Account is off until you switch it on at the computer.</li></ul></section>
+    <section id="poly-account"><h2>Poly Account</h2><ul><li>Passwords and recovery keys are stored only as salted, slow hashes (scrypt). Poly can’t read them.</li><li>Each connected computer has its own key, stored hashed and revocable on its own. Computers never keep your password.</li><li>Sign-in cookies are HTTP-only and secure; changes are only accepted from Poly’s own pages.</li><li>Repeated wrong passwords are slowed down, and we email you about new devices, password changes and new recovery keys.</li><li>See your active sessions and security activity in <a href="/account#security">Poly Account › Security</a>, and sign out other sessions there.</li></ul></section>
+    <section id="report-a-vulnerability"><h2>Report a vulnerability</h2><p>Found a security problem in PolyOS, the website or Poly Account? Tell us privately through <a href="/support?topic=security">Help &amp; Support</a> (choose <i>Security problem</i>). Please give us a chance to fix it before sharing it publicly. We read every report, reply as soon as we can, and credit you if you like.</p><p>Please don’t access other people’s accounts or data, disrupt the service, or test against computers that aren’t yours.</p></section>
+    <section id="tips"><h2>Tips</h2><ul><li>Use a unique password and save your recovery key somewhere safe.</li><li>Verify your email so you get security alerts.</li><li>Remove computers you no longer use from Poly Account › Devices.</li></ul></section>
+    </article>
+  </main>
+
+  <footer class="footer site-foot">
+    <div class="foot-brand"><img src="/assets/logo.svg" alt="" width="22" height="22"><span><b>PolyOS 7</b> for Debian · by Cryptic Software</span></div>
+    <nav aria-label="More">
+      <a href="/download">Download</a><a href="/install">Install guide</a><a href="/docs">Documentation</a><a href="/changelog">Updates</a>
+      <a href="/support">Help &amp; Support</a><a href="/security">Security</a><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a>
+      <a href="/account">Poly Account</a>
+    </nav>
+    <p class="foot-note">PolyOS works without an online account. The PolyOS logo and artwork come from the Scratch project by PIXAPoLY Software (CC BY-SA 2.0).</p>
+  </footer>
+</body>
+</html>

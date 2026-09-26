@@ -16,6 +16,7 @@
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <defs>
+      <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.9-3.8 3.9-5.8 7.5-5.8s6.6 2 7.5 5.8"/></symbol>
       <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3.5 19.5 7.7v8.6L12 20.5l-7.5-4.2V7.7z"/><path d="M4.5 7.7 12 12l7.5-4.3M12 12v8.5"/></symbol>
       <symbol id="i-robot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 8V4.5M9.5 19v1.5M14.5 19v1.5M3 12.5v3M21 12.5v3"/><circle cx="12" cy="4" r="1"/><circle cx="9.5" cy="13" r="1.1" fill="currentColor"/><circle cx="14.5" cy="13" r="1.1" fill="currentColor"/></symbol>
       <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
@@ -45,16 +46,16 @@
   </svg>
 
   <header class="nav" id="top">
-    <a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="30" height="30"><span>PolyOS <b>7</b></span></a>
-    <nav aria-label="Sections">
-      <a href="#features">Features</a>
-      <a href="#gallery">Gallery</a>
-      <a href="#editions">Editions</a>
-      <a href="#whats-new">What's new</a>
-      <a href="#download">Download</a>
-      <a href="install.html">Install guide</a>
+    <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="30" height="30"><span>PolyOS <b>7</b></span></a>
+    <nav aria-label="Site">
+      <a href="/download">Download</a>
+      <a href="/#features">Features</a>
+      <a href="/docs">Docs</a>
+      <a href="/changelog">Updates</a>
+      <a href="/security">Security</a>
+      <a href="/support">Support</a>
     </nav>
-    <a class="btn small" href="https://github.com/kingxxasavan/poly-os-7-debain-receration"><svg class="ico"><use href="#i-github"/></svg>GitHub</a>
+    <a class="btn small" href="/account"><svg class="ico"><use href="#i-user"/></svg>Poly Account</a>
   </header>
 
   <main>
@@ -372,10 +373,14 @@
     </section>
   </main>
 
-  <footer class="footer">
-    <span><img src="assets/logo.svg" alt="" width="20" height="20"> PolyOS 7 for Debian</span>
-    <a href="https://github.com/kingxxasavan/poly-os-7-debain-receration">Source on GitHub</a>
-    <a href="#top">Back to top</a>
+  <footer class="footer site-foot">
+    <div class="foot-brand"><img src="/assets/logo.svg" alt="" width="22" height="22"><span><b>PolyOS 7</b> for Debian · by Cryptic Software</span></div>
+    <nav aria-label="More">
+      <a href="/download">Download</a><a href="/install">Install guide</a><a href="/docs">Documentation</a><a href="/changelog">Updates</a>
+      <a href="/support">Help &amp; Support</a><a href="/security">Security</a><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a>
+      <a href="/account">Poly Account</a>
+    </nav>
+    <p class="foot-note">PolyOS works without an online account. The PolyOS logo and artwork come from the Scratch project by PIXAPoLY Software (CC BY-SA 2.0).</p>
   </footer>
 
   <dialog class="guide" aria-labelledby="guide-title">

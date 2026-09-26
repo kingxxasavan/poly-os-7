@@ -125,4 +125,6 @@ def build_manifest(version: str, debs: list[Path]) -> dict:
             continue
         items.append({"name": m.group(1), "file": deb.name, "size": deb.stat().st_size,
                       "sha256": hashlib.sha256(deb.read_bytes()).hexdigest()})
-    return {"version": version, "packages": items}
+    import datetime
+    return {"version": version, "published": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "packages": items}

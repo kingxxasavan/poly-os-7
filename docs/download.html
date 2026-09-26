@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Download PolyOS 7</title>
+  <meta name="description" content="Download the PolyOS 7 live USB and installer for PCs and ARM64.">
+  <meta name="theme-color" content="#151515">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/site.css">
+  <script src="/assets/site.js" defer></script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></symbol><symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c.9-3.8 3.9-5.8 7.5-5.8s6.6 2 7.5 5.8"/></symbol></defs></svg>
+
+  <header class="nav" id="top">
+    <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="30" height="30"><span>PolyOS <b>7</b></span></a>
+    <nav aria-label="Site">
+      <a href="/download">Download</a>
+      <a href="/#features">Features</a>
+      <a href="/docs">Docs</a>
+      <a href="/changelog">Updates</a>
+      <a href="/security">Security</a>
+      <a href="/support">Support</a>
+    </nav>
+    <a class="btn small" href="/account"><svg class="ico"><use href="#i-user"/></svg>Poly Account</a>
+  </header>
+
+  <main class="page-main">
+    <section class="section" id="download-page">
+      <div class="section-head">
+        <p class="eyebrow">Download</p>
+        <h1 class="page-title">Get PolyOS 7</h1>
+        <p>Free. Try it from a USB drive first, then install it on a whole drive or next to Windows. No account needed.</p>
+      </div>
+      <div class="download" id="download">
+        <img class="dl-logo" src="/assets/logo-white.svg" alt="" width="84" height="84">
+        <div class="dl-main">
+          <h3>PolyOS 7 <span class="dl-version" data-release-version></span></h3>
+          <p class="dl-meta" data-release-meta>Live USB and installer · for PCs and ARM64 · Debian 13</p>
+          <div class="dl-buttons" data-release-buttons>
+            <a class="btn primary big" href="/download/pc" data-arch="amd64"><svg class="ico"><use href="#i-download"/></svg>Download for PC (Intel/AMD)</a>
+            <a class="btn big" href="/download/arm64" data-arch="arm64"><svg class="ico"><use href="#i-download"/></svg>Download for ARM64</a>
+          </div>
+          <p class="dl-which"><b>Which one?</b> Almost every Windows PC and laptop: <b>PC (Intel/AMD)</b>.
+            Apple Silicon Macs (in UTM, Parallels or VMware Fusion) and ARM64 computers with UEFI: <b>ARM64</b>.</p>
+          <p class="dl-note" data-release-note>Always the newest release.</p>
+          <p class="dl-links"><a href="/download/checksums" data-release-sums>SHA256 checksums</a> · <a href="/install">Install guide</a> · <a href="/changelog">What's new</a></p>
+        </div>
+        <ul class="dl-needs" aria-label="What you need">
+          <li><b>A 64-bit computer</b><span>Intel/AMD PC (UEFI or BIOS), or ARM64 with UEFI</span></li>
+          <li><b>4 GB of RAM</b><span>2 GB works in light mode; 8 GB for gaming</span></li>
+          <li><b>25 GB of disk</b><span>A whole drive, a partition, or space next to Windows</span></li>
+          <li><b>USB drive</b><span>8 GB or larger</span></li>
+        </ul>
+      </div>
+      <ol class="steps">
+        <li><b>Download the ISO</b><span>About 2 GB. The buttons always get the newest release.</span></li>
+        <li><b>Write it to a USB drive</b><span>With balenaEtcher, or Rufus in DD mode.</span></li>
+        <li><b>Start from the USB</b><span>Pick it in your computer's boot menu (F12, F9, F11 or Esc).</span></li>
+        <li><b>Install PolyOS 7</b><span>On a drive or partition, or Dual boot next to Windows.</span></li>
+      </ol>
+      <p class="note">Step by step, with BitLocker, boot keys for every brand and fixes: <a href="/install"><b>the install guide</b></a>.
+        Already using PolyOS? New versions install from Settings › About; no new USB drive needed.</p>
+    </section>
+  </main>
+
+  <footer class="footer site-foot">
+    <div class="foot-brand"><img src="/assets/logo.svg" alt="" width="22" height="22"><span><b>PolyOS 7</b> for Debian · by Cryptic Software</span></div>
+    <nav aria-label="More">
+      <a href="/download">Download</a><a href="/install">Install guide</a><a href="/docs">Documentation</a><a href="/changelog">Updates</a>
+      <a href="/support">Help &amp; Support</a><a href="/security">Security</a><a href="/privacy">Privacy Policy</a><a href="/terms">Terms of Service</a>
+      <a href="/account">Poly Account</a>
+    </nav>
+    <p class="foot-note">PolyOS works without an online account. The PolyOS logo and artwork come from the Scratch project by PIXAPoLY Software (CC BY-SA 2.0).</p>
+  </footer>
+</body>
+</html>

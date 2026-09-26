@@ -38,7 +38,13 @@ function summarize(release) {
 
 // stable: the newest full release; beta and developer: the newest release of any kind.
 export async function latest(channel = 'stable') {
-  if (channel === 'stable') return summarize(await github('/releases/latest'));
+  if (channel === 'stable') {
+    try {
+      return summarize(await github('/releases/latest'));
+    } catch {
+      return stableFromManifest(); // GitHub's API is limited per address; the release's own files aren't
+    }
+  }
   const list = await github('/releases?per_page=10');
   const release = list.find((r) => !r.draft);
   if (!release) throw Object.assign(new Error('No releases yet.'), { status: 404 });
@@ -46,7 +52,13 @@ export async function latest(channel = 'stable') {
 }
 
 export async function history(count = 10) {
-  const list = await github(`/releases?per_page=${Math.min(30, count)}`);
+  let list;
+  try {
+    list = await github(`/releases?per_page=${Math.min(30, count)}`);
+  } catch {
+    const { assets, ...rel } = await stableFromManifest();
+    return [{ ...rel, files: Object.keys(assets) }];
+  }
   return list.filter((r) => !r.draft).map(summarize).map(({ assets, ...r }) => ({ ...r, files: Object.keys(assets) }));
 }
 
@@ -83,13 +95,7 @@ async function stableFromManifest() {
 // What /api/v1/updates/check answers: only what the updater needs, nothing about the asker.
 export async function check({ channel = 'stable', version = '0.0.0' } = {}) {
   const wanted = CHANNELS.includes(channel) ? channel : 'stable';
-  let rel;
-  try {
-    rel = await latest(wanted);
-  } catch (err) {
-    if (wanted !== 'stable') throw err;
-    rel = await stableFromManifest();
-  }
+  const rel = await latest(wanted);
   const manifest = rel.assets['polyos-update.json'];
   const available = newer(rel.version, version);
   return {
