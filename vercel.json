@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "echo 'PolyOS website: static files in docs/, the Poly Account API in api/'",
+  "buildCommand": "node server/stamp-assets.js",
   "outputDirectory": "docs",
   "cleanUrls": true,
   "headers": [
@@ -35,11 +35,20 @@
       ]
     },
     {
-      "source": "/(screenshots|assets)/(.*)",
+      "source": "/screenshots/(.*)",
       "headers": [
         {
           "key": "Cache-Control",
           "value": "public, max-age=86400, stale-while-revalidate=604800"
+        }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
         }
       ]
     }

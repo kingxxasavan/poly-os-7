@@ -60,8 +60,25 @@ const when = (iso) => {
 const date = (iso) => (iso ? new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'long', day: 'numeric' }) : '');
 const gb = (bytes) => (bytes ? `${Math.round(bytes / 1e9)} GB` : '');
 
-function field(label, input, hint) {
-  return h('label.af-field', h('span', label), input, hint ? h('small', hint) : null);
+function field(label, input, hint, aside) {
+  // aside: a link next to the label, like "Forgot password?"
+  const head = aside ? h('span.af-label-row', h('span', label), aside) : h('span', label);
+  return h('label.af-field', head, input, hint ? h('small', hint) : null);
+}
+// A password box with a show/hide button, like most sign-in pages.
+function passwordInput(name, attrs = {}) {
+  const box = input('password', name, attrs);
+  const eye = h('button.af-eye', { type: 'button', 'aria-label': 'Show password', title: 'Show password' }, icon('eye'));
+  eye.addEventListener('click', (e) => {
+    e.preventDefault();
+    const show = box.type === 'password';
+    box.type = show ? 'text' : 'password';
+    eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    eye.title = eye.getAttribute('aria-label');
+    eye.classList.toggle('on', show);
+    box.focus();
+  });
+  return h('span.af-pass', box, eye);
 }
 function input(type, name, attrs = {}) {
   return h('input.af-input', { type, name, ...attrs });
@@ -89,9 +106,13 @@ const go = (hash) => { if (location.hash !== `#${hash}`) location.hash = hash; e
 
 // ---- signed out: sign in, create, forgot, recover ----------------------------------------------
 function authCard(title, sub, ...kids) {
-  return h('section.auth-card', h('img.auth-logo', { src: 'assets/logo-white.svg', alt: '', width: 48, height: 48 }),
-    h('h1', title), sub ? h('p.auth-sub', sub) : null, ...kids);
+  return h('section.auth-card',
+    h('header.auth-head', h('span.auth-logo', h('img', { src: '/assets/logo-white.svg', alt: '', width: 30, height: 30 })),
+      h('h1', title), sub ? h('p.auth-sub', sub) : null),
+    ...kids);
 }
+const orLine = () => h('div.auth-or', h('span', 'or'));
+const authFoot = (...kids) => h('p.auth-foot', ...kids);
 
 function signIn(note) {
   const err = errorBox();
@@ -106,12 +127,14 @@ function signIn(note) {
       } catch (x) { err.show(x.message); }
     })();
   },
-  field('Email', input('email', 'email', { autocomplete: 'email', required: true, autofocus: true })),
-  field('Password', input('password', 'password', { autocomplete: 'current-password', required: true })),
+  field('Email', input('email', 'email', { autocomplete: 'email', required: true, autofocus: true, placeholder: 'you@example.com' })),
+  field('Password', passwordInput('password', { autocomplete: 'current-password', required: true, placeholder: 'Your password' }), null,
+    h('a.af-aside', { href: '#forgot' }, 'Forgot password?')),
   err, btn);
-  return authCard('Sign in to Poly Account', note || 'Manage your PolyOS computers, recovery and sync.', f,
-    h('p.auth-links', h('a', { href: '#create' }, 'Create a Poly Account'), ' · ', h('a', { href: '#forgot' }, 'Forgot password?'),
-      ' · ', h('a', { href: '#recover' }, 'Use a recovery key')),
+  return authCard('Sign in', note || 'to your Poly Account', f,
+    orLine(),
+    h('a.btn.wide', { href: '#recover' }, icon('key'), 'Sign in with a recovery key'),
+    authFoot('New to Poly? ', h('a', { href: '#create' }, 'Create an account')),
     h('p.auth-note', 'PolyOS never needs an account. It works fully offline and updates without one.'));
 }
 
@@ -137,16 +160,20 @@ async function createAccount() {
       } catch (x) { err.show(x.message); }
     })();
   },
-  field('Name', input('text', 'name', { autocomplete: 'name', required: true, maxlength: 80, autofocus: true })),
-  field('Email', input('email', 'email', { autocomplete: 'email', required: true })),
-  field('Password', input('password', 'password', { autocomplete: 'new-password', required: true, minlength: 10 }), 'At least 10 characters.'),
-  field('Confirm password', input('password', 'confirm', { autocomplete: 'new-password', required: true })),
-  field('Country', country),
-  h('label.af-check', input('checkbox', 'terms'), h('span', 'I agree to the ', h('a', { href: 'terms', target: '_blank' }, 'Terms of Service'))),
-  h('label.af-check', input('checkbox', 'privacy'), h('span', 'I acknowledge the ', h('a', { href: 'privacy', target: '_blank' }, 'Privacy Policy'))),
+  field('Name', input('text', 'name', { autocomplete: 'name', required: true, maxlength: 80, autofocus: true, placeholder: 'Your name' })),
+  field('Email', input('email', 'email', { autocomplete: 'email', required: true, placeholder: 'you@example.com' })),
+  h('div.af-pair',
+    h('div.af-two',
+      field('Password', passwordInput('password', { autocomplete: 'new-password', required: true, minlength: 10 })),
+      field('Confirm password', passwordInput('confirm', { autocomplete: 'new-password', required: true }))),
+    h('small.af-hint', 'Use at least 10 characters. A few words together work well.')),
+  field('Country or region', country),
+  h('div.af-checks',
+    h('label.af-check', input('checkbox', 'terms'), h('span', 'I agree to the ', h('a', { href: '/terms', target: '_blank' }, 'Terms of Service'))),
+    h('label.af-check', input('checkbox', 'privacy'), h('span', 'I’ve read the ', h('a', { href: '/privacy', target: '_blank' }, 'Privacy Policy')))),
   err, btn);
-  return authCard('Create your Poly Account', 'Just your name, email, password and country. Nothing else.', f,
-    h('p.auth-links', 'Already have one? ', h('a', { href: '#signin' }, 'Sign in')));
+  return authCard('Create your account', 'Only your name, email, password and country. Nothing else.', f,
+    authFoot('Already have an account? ', h('a', { href: '#signin' }, 'Sign in')));
 }
 
 function showRecoveryKey(key, next, extra) {
@@ -181,9 +208,11 @@ function forgot() {
         done.hidden = false;
       } catch (x) { err.show(x.message); }
     })();
-  }, field('Email', input('email', 'email', { autocomplete: 'email', required: true, autofocus: true })), err, done, btn);
-  return authCard('Reset your password', 'We’ll email you a link to choose a new one.', f,
-    h('p.auth-links', h('a', { href: '#recover' }, 'Use a recovery key instead'), ' · ', h('a', { href: '#signin' }, 'Back to sign in')));
+  }, field('Email', input('email', 'email', { autocomplete: 'email', required: true, autofocus: true, placeholder: 'you@example.com' })), err, done, btn);
+  return authCard('Forgot your password?', 'Enter your email and we’ll send you a link to choose a new one.', f,
+    orLine(),
+    h('a.btn.wide', { href: '#recover' }, icon('key'), 'Use your recovery key instead'),
+    authFoot(h('a', { href: '#signin' }, '← Back to sign in')));
 }
 
 function recover() {
@@ -200,13 +229,16 @@ function recover() {
       } catch (x) { err.show(x.message); }
     })();
   },
-  field('Email', input('email', 'email', { autocomplete: 'email', required: true, autofocus: true })),
-  field('Recovery key', input('text', 'key', { autocomplete: 'off', spellcheck: 'false', placeholder: 'XXXX-XXXX-XXXX-XXXX-XXXX-XXXX', required: true })),
-  field('New password', input('password', 'password', { autocomplete: 'new-password', required: true }), 'At least 10 characters.'),
-  field('Confirm new password', input('password', 'confirm', { autocomplete: 'new-password', required: true })),
+  field('Email', input('email', 'email', { autocomplete: 'email', required: true, autofocus: true, placeholder: 'you@example.com' })),
+  field('Recovery key', input('text', 'key', { autocomplete: 'off', spellcheck: 'false', placeholder: 'XXXX-XXXX-XXXX-XXXX-XXXX-XXXX', required: true, class: 'mono' })),
+  h('div.af-pair',
+    h('div.af-two',
+      field('New password', passwordInput('password', { autocomplete: 'new-password', required: true })),
+      field('Confirm', passwordInput('confirm', { autocomplete: 'new-password', required: true }))),
+    h('small.af-hint', 'At least 10 characters.')),
   err, btn);
-  return authCard('Use your recovery key', 'The key you saved when you made your account.', f,
-    h('p.auth-links', h('a', { href: '#signin' }, 'Back to sign in')));
+  return authCard('Use your recovery key', 'The key you saved when you created your account, and a new password.', f,
+    authFoot(h('a', { href: '#signin' }, '← Back to sign in')));
 }
 
 function resetWithToken(tokenValue) {
@@ -222,8 +254,8 @@ function resetWithToken(tokenValue) {
       } catch (x) { err.show(x.message); }
     })();
   },
-  field('New password', input('password', 'password', { autocomplete: 'new-password', required: true, autofocus: true }), 'At least 10 characters.'),
-  field('Confirm new password', input('password', 'confirm', { autocomplete: 'new-password', required: true })), err, btn);
+  field('New password', passwordInput('password', { autocomplete: 'new-password', required: true, autofocus: true }), 'At least 10 characters.'),
+  field('Confirm new password', passwordInput('confirm', { autocomplete: 'new-password', required: true })), err, btn);
   return authCard('Choose a new password', 'Every browser signed in to your account will be signed out.', f);
 }
 
@@ -596,7 +628,8 @@ async function route() {
     view = authCard('Something went wrong', x.message, h('button.btn.primary.wide', { onclick: () => location.reload() }, 'Try again'));
   }
   app.replaceChildren(view);
-  document.title = `${me ? (SECTIONS.find((s) => s[0] === (key || START))?.[1] || 'Poly Account') : 'Sign in'} · Poly Account`;
+  document.title = `${me ? (SECTIONS.find((s) => s[0] === (key || START))?.[1] || 'Poly Account')
+    : ({ create: 'Create account', forgot: 'Forgot password', recover: 'Recovery key' }[key] || 'Sign in')} · Poly Account`;
   window.scrollTo(0, 0);
 }
 
