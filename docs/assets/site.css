@@ -287,3 +287,55 @@ code { padding: 2px 7px; border-radius: 7px; background: var(--card-2); font: 0.
 .guide-steps b { display: block; margin-bottom: 2px; color: var(--text); font: 600 15.5px var(--display); }
 kbd { padding: 1px 6px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--card-2); font: 12.5px ui-monospace, monospace; color: var(--text); }
 .guide-foot { margin: 16px 0 0; color: var(--text-3); font-size: 13.5px; }
+
+/* ---- install guide (install.html) ------------------------------------------------------- */
+.guide-main { max-width: 900px; margin: 0 auto; padding: 32px 24px 64px; }
+.guide-hero { padding: 40px 0 28px; }
+.guide-hero h1 { font-size: clamp(34px, 5vw, 52px); font-weight: 700; margin-bottom: 14px; }
+.guide-hero > p { color: var(--text-2); font-size: 17px; max-width: 680px; }
+.guide-toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; padding: 0; list-style: none; counter-reset: toc; }
+.guide-toc li { counter-increment: toc; }
+.guide-toc a { display: inline-flex; gap: 8px; padding: 8px 14px; border-radius: 999px; background: var(--card); border: 1px solid var(--line);
+  color: var(--text); text-decoration: none; font-size: 14px; }
+.guide-toc a::before { content: counter(toc); color: var(--accent-text); font-weight: 700; }
+.guide-toc a:hover { border-color: var(--line-2); background: var(--card-2); }
+.guide-step { display: grid; grid-template-columns: 48px 1fr; gap: 18px; padding: 34px 0; border-top: 1px solid var(--line); }
+.guide-num { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; font: 700 20px var(--display);
+  background: linear-gradient(135deg, var(--accent), var(--violet)); color: #fff; }
+.guide-step h2 { font-size: clamp(24px, 3vw, 30px); font-weight: 700; margin: 6px 0 14px; }
+.guide-step p, .guide-step li, .guide-step dd { color: var(--text-2); }
+.guide-step b { color: var(--text); }
+.guide-list { padding-left: 20px; display: grid; gap: 10px; }
+.callout { margin: 18px 0; padding: 18px 22px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); }
+.callout h3 { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+.callout h3 .ico { color: var(--accent-text); font-size: 20px; }
+.callout.warn { border-color: rgba(224, 161, 58, 0.45); background: color-mix(in srgb, #e0a13a 8%, var(--card)); }
+.callout.warn h3 .ico { color: #f0b85a; }
+.callout ol, .callout ul { padding-left: 20px; display: grid; gap: 6px; margin: 10px 0 0; }
+.callout p { margin: 0; }
+.guide-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14.5px; border-radius: 16px; overflow: hidden; }
+.guide-table th, .guide-table td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.guide-table th { background: var(--card-2); font: 600 13px var(--display); color: var(--text); }
+.guide-table td { background: var(--card); color: var(--text-2); }
+.guide-table td:first-child { color: var(--text); font-weight: 600; }
+kbd { display: inline-block; min-width: 1.6em; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line-2); border-bottom-width: 2px;
+  background: var(--card-2); color: var(--text); font: 600 12.5px var(--font); text-align: center; }
+.guide-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
+.guide-choices article { padding: 18px 20px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); }
+.guide-choices h3 { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+.guide-choices p { margin: 0; font-size: 14.5px; }
+.guide-faq dt { font: 600 16px var(--display); color: var(--text); margin-top: 18px; }
+.guide-faq dd { margin: 6px 0 0; }
+@media (max-width: 640px) {
+  .guide-main { padding: 16px 16px 48px; }
+  .guide-step { grid-template-columns: 1fr; gap: 10px; }
+  .guide-table { display: block; overflow-x: auto; }
+}
+
+/* ---- what's new (index.html) ------------------------------------------------------------ */
+.news { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+.news article { padding: 22px; border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); }
+.news h3 { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+.news p { margin: 0; color: var(--text-2); font-size: 14.5px; }
+.news-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 18px; }
+.news-tag { padding: 4px 12px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent-text); font: 600 13px var(--display); }

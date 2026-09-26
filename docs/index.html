@@ -50,8 +50,9 @@
       <a href="#features">Features</a>
       <a href="#gallery">Gallery</a>
       <a href="#editions">Editions</a>
+      <a href="#whats-new">What's new</a>
       <a href="#download">Download</a>
-      <a href="#timeline">Timeline</a>
+      <a href="install.html">Install guide</a>
     </nav>
     <a class="btn small" href="https://github.com/kingxxasavan/poly-os-7-debain-receration"><svg class="ico"><use href="#i-github"/></svg>GitHub</a>
   </header>
@@ -268,6 +269,25 @@
       </div>
     </section>
 
+    <!-- ---- what's new --------------------------------------------------------------- -->
+    <section class="section" id="whats-new">
+      <div class="section-head">
+        <p class="eyebrow">What's new</p>
+        <h2>PolyOS 0.8</h2>
+        <p>From 0.8 on, new versions install from Settings › About › <b>Update now</b>, no new USB drive needed.
+          On 0.7 or older? Install 0.8 from the USB drive once, or <a href="install.html#update-old">update by hand</a>.</p>
+      </div>
+      <div class="news">
+        <article><h3>Updates from Settings</h3><p>New PolyOS versions and Debian's updates install from Settings › About, with a notice when one is out.</p></article>
+        <article><h3>Dual boot, your way</h3><p>Pick your own partition (like a D: drive) or let PolyOS make room. If BitLocker is on, the installer says exactly how to turn it off.</p></article>
+        <article><h3>Touchscreens, pens and cameras</h3><p>Driver Manager sets up touchscreens with an on-screen keyboard, pens, webcams and the built-in cameras of newer Intel laptops.</p></article>
+        <article><h3>Made for your computer</h3><p>The first-start check reads your computer's exact model and age, picks Everything on, Smooth or Light, and can hold back background work on older laptops.</p></article>
+        <article><h3>A themed boot menu</h3><p>Choosing between PolyOS and Windows now happens on the PolyOS crystal background, not a black screen.</p></article>
+        <article><h3>Try first, install later</h3><p>Trying PolyOS from the USB drive keeps the desktop clear, with an Install PolyOS 7 app to come back to the installer.</p></article>
+      </div>
+      <div class="news-head" style="margin-top:28px"><span class="news-tag">0.7</span><p class="muted" style="margin:0;color:var(--text-2)">Display and Sound controls, the Apps page with one-click uninstall, true full screen, the first-start hardware check, and Claude and NVIDIA for Vara.</p></div>
+    </section>
+
     <!-- ---- install ------------------------------------------------------------------- -->
     <section class="section" id="install">
       <div class="section-head">
@@ -302,8 +322,10 @@
         <li><b>Download the ISO</b><span>The buttons above always have the newest PolyOS release, for PCs and for ARM64 (about 2 GB).</span></li>
         <li><b>Write it to a USB drive</b><span>Use balenaEtcher or Rufus (DD mode). Or try it first in a virtual machine (VirtualBox, or UTM on a Mac) with 4 GB of RAM.</span></li>
         <li><b>Start from the USB</b><span>Pick the USB drive in your computer's boot menu. PolyOS starts live, so nothing changes until you install.</span></li>
-        <li><b>Install PolyOS 7</b><span>Choose Install, Dual boot or Custom, pick your edition, and restart when it's done.</span></li>
+        <li><b>Install PolyOS 7</b><span>Choose a drive or partition, or Dual boot next to Windows, pick your edition, and restart when it's done.</span></li>
       </ol>
+      <p class="note">Step by step, with boot menu keys for every brand, BitLocker and fixes for common problems:
+        <a href="install.html"><b>the install guide</b></a>.</p>
       <p class="note">Just want to look around? Anyone with Python can preview the whole interface in a browser:
         <code>python main.py dev</code></p>
     </section>
@@ -331,6 +353,10 @@
           <p>Download buttons right on this site, with an install guide, and a second ISO for ARM64 computers and Apple Silicon Macs.</p></li>
         <li><time>Sep 25, 2026</time><h3>Vara becomes an agent</h3>
           <p>Vara now builds things: code, OpenSCAD and Blender models, ROS 2 and Arduino, with skills, memory and your approval for every change. Plus real app icons everywhere, a PolyOS boot menu, and ARM64 USB drives that start on UEFI computers.</p></li>
+        <li><time>Sep 26, 2026</time><h3>PolyOS 0.7: Settings grow up</h3>
+          <p>Display and Sound controls, the Apps page, true full screen, the first-start hardware check with a light mode, a Windows Setup style drive list, and Claude and NVIDIA for Vara.</p></li>
+        <li><time>Sep 26, 2026</time><h3>PolyOS 0.8: updates without a USB drive</h3>
+          <p>Online updates from Settings, BitLocker help and your own partition for dual boot, touchscreen and camera drivers, a model-aware hardware check, and a themed boot menu.</p></li>
       </ol>
     </section>
 
