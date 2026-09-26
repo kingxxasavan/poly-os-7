@@ -62,9 +62,34 @@ export function newer(a, b) {
   return false;
 }
 
+// Where GitHub itself sends "the newest release's file" (no API call, so no API rate limit).
+export function latestFileUrl(name) {
+  return `https://github.com/${releasesRepo()}/releases/latest/download/${name}`;
+}
+
+// Without the API (GitHub limits it per address, and Vercel's addresses are shared): the stable
+// release's own manifest says its version and packages.
+async function stableFromManifest() {
+  const res = await fetch(latestFileUrl('polyos-update.json'), { headers: { 'User-Agent': 'PolyOS-website' } });
+  if (!res.ok) throw Object.assign(new Error('Release information isn’t available right now.'), { status: 502 });
+  const manifest = await res.json();
+  const assets = { 'polyos-update.json': { url: latestFileUrl('polyos-update.json'), size: 0 },
+    'polyos-update.json.sig': { url: latestFileUrl('polyos-update.json.sig'), size: 0 } };
+  for (const p of manifest.packages || []) assets[p.file] = { url: latestFileUrl(p.file), size: p.size || 0 };
+  return { version: String(manifest.version || ''), name: `PolyOS v${manifest.version}`, notes: manifest.notes || '',
+    published: manifest.published || null, prerelease: false, assets };
+}
+
 // What /api/v1/updates/check answers: only what the updater needs, nothing about the asker.
 export async function check({ channel = 'stable', version = '0.0.0' } = {}) {
-  const rel = await latest(CHANNELS.includes(channel) ? channel : 'stable');
+  const wanted = CHANNELS.includes(channel) ? channel : 'stable';
+  let rel;
+  try {
+    rel = await latest(wanted);
+  } catch (err) {
+    if (wanted !== 'stable') throw err;
+    rel = await stableFromManifest();
+  }
   const manifest = rel.assets['polyos-update.json'];
   const available = newer(rel.version, version);
   return {

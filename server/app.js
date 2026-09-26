@@ -310,11 +310,14 @@ route('GET', '/api/releases', null, async () => ({ releases: await releases.hist
 route('GET', '/api/download/:what', null, async ({ params, res }) => {
   const file = { pc: 'polyos-amd64.iso', arm64: 'polyos-arm64.iso', checksums: 'SHA256SUMS' }[params.what];
   if (!file) fail('Not found.', 404);
-  const rel = await releases.latest('stable');
-  const asset = rel.assets[file] || rel.assets[`${file}.part0`];
-  if (!asset) fail('That download isn’t in the newest release.', 404);
+  let location = releases.latestFileUrl(file); // works even when GitHub's API is busy
+  try {
+    const rel = await releases.latest('stable');
+    const asset = rel.assets[file] || rel.assets[`${file}.part0`];
+    if (asset) location = asset.url;
+  } catch { /* the direct link above */ }
   res.statusCode = 302;
-  res.setHeader('Location', asset.url);
+  res.setHeader('Location', location);
   res.setHeader('Cache-Control', 'public, max-age=300');
   return null;
 });

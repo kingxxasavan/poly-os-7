@@ -220,3 +220,25 @@ test('rate limits sign-in attempts', async () => {
   for (let i = 0; i < 11; i += 1) last = await client({ ip: '198.51.100.7' })('POST', '/api/auth/login', { email, password: 'wrong password!!' });
   assert.equal(last.status, 429);
 });
+
+test('downloads and stable updates still work when GitHub’s API is busy', async () => {
+  const saved = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (String(url).startsWith('https://api.github.com')) return new Response('rate limited', { status: 403 });
+    if (String(url).endsWith('/releases/latest/download/polyos-update.json')) {
+      return new Response(JSON.stringify({ version: '9.9.0', packages: [{ name: 'polyos-shell', file: 'polyos-shell_9.9.0_all.deb', size: 5 }] }));
+    }
+    return new Response('', { status: 404 });
+  };
+  try {
+    // a separate copy of the module, so the earlier tests' cached answers don't count
+    const fresh = await import(`../releases.js?fresh=${Date.now()}`);
+    const r = await fresh.check({ channel: 'stable', version: '0.8.0' });
+    assert.equal(r.version, '9.9.0');
+    assert.equal(r.update_available, true);
+    assert.equal(fresh.latestFileUrl('polyos-amd64.iso'), `https://github.com/${fresh.releasesRepo()}/releases/latest/download/polyos-amd64.iso`);
+    await assert.rejects(fresh.check({ channel: 'beta' })); // other channels need the API
+  } finally {
+    globalThis.fetch = saved;
+  }
+});
