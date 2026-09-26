@@ -15,7 +15,7 @@ into a real desktop that installs and boots on a PC, on top of Debian.
 | **Desktop and dock** | Crystal wallpaper, app shortcuts, the capsule dock, a right-click menu; the taskbar can float, stretch edge to edge, align left or hide |
 | **Home Menu and launcher** | Calendar, Ask Vara, Run CMD, sliders, pinned and recent apps; a full-screen app grid with search |
 | **Widgets** | Weather, calendar, system, news, to-do, notes, photos, world clocks, media |
-| **Apps** | Files, Task Manager, Driver Manager, PolyMarket (49 apps from Debian and Flathub, with real icons), Camera |
+| **Apps** | Files, Task Manager, Driver Manager, PolyMarket (51 apps from Debian and Flathub, with real icons), Camera |
 | **Vara, the AI agent** | Writes and runs code, makes OpenSCAD and Blender models, works with ROS 2 and Arduino; skills, memory, and your approval before any change |
 | **Settings** | Appearance, Taskbar & Desktop, Wi-Fi, Sound, Display, Power & Performance, Account, Privacy & Security, Gaming, Developer, Vara, About |
 | **Installer** | The PolyOS 7 setup: “Where do you want to install PolyOS?” like Windows Setup (every drive and partition, Delete and New), dual boot next to Windows, or Advanced setup; a “remove the USB drive” message at the end; a PolyOS boot menu on the USB drive (PCs and ARM64) |
