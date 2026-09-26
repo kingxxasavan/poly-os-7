@@ -107,6 +107,10 @@ SCRIPTS = {
             "    # the update service: hourly, following Settings > Updates\n"
             "    if [ -d /run/systemd/system ]; then systemctl daemon-reload >/dev/null 2>&1 || true; fi\n"
             "    systemctl enable polyos-update.timer >/dev/null 2>&1 || true\n"
+            "    # (an installed, running PolyOS, not the ISO build) the USB drive's boot menu looks for this\n"
+            "    if [ -d /run/systemd/system ] && [ ! -e /run/live/medium ] && [ ! -e /boot/polyos-installed ]; then\n"
+            "        echo PolyOS > /boot/polyos-installed || true\n"
+            "    fi\n"
             "    if [ -d /run/systemd/system ]; then systemctl start polyos-update.timer >/dev/null 2>&1 || true; fi\n"
             "fi\n"
         ),

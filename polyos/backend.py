@@ -597,10 +597,15 @@ class Backend:
                                on_done=lambda _job: self.bus.publish("updates"))
 
     def update_notice(self, seen: dict) -> dict | None:
-        """The calm notification: once per new version ("ready"), and once when it's installed ("restart")."""
+        """The calm notification: once per new version ("ready"), once when it's installed ("restart"), and
+        once PolyOS is running the new version ("updated")."""
         st = self.updates_status()
         if st["live"]:
             return None
+        # this PolyOS is the version the update service installed (automatically or not): say so, once
+        if st["installed"] == __version__ and seen.get("updated") != __version__:
+            seen["updated"] = __version__
+            return {"kind": "updated", "version": __version__, "notes": st["notes"] if st["latest"] == __version__ else ""}
         if st["restartNeeded"] and seen.get("restart") != st["installed"]:
             seen["restart"] = st["installed"]
             return {"kind": "restart", "version": st["installed"], "ask": st["policy"]["askRestart"]}

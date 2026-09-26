@@ -898,6 +898,25 @@ class UpdateNoticeTests(unittest.TestCase):
             self.assertIsNone(be.update_notice(seen))
             self.assertTrue(be.updates_status()["restartNeeded"])
 
+    def test_updated_once_running_the_new_version(self):
+        """After an update (automatic or not) and the restart: "PolyOS was updated", once."""
+        from polyos import __version__
+        from polyos.core import EventBus, Settings
+        from polyos.mock import MockBackend
+
+        with tempfile.TemporaryDirectory() as tmp:
+            be = MockBackend(Settings(Path(tmp) / "s.json"), EventBus(), home=Path(tmp) / "home")
+            _policy, st = be._update_files()
+            seen = {}
+            st.update(installed=__version__, latest=__version__, available=False, notes="- **Set up once.** Everything first.")
+            n = be.update_notice(seen)
+            self.assertEqual((n["kind"], n["version"]), ("updated", __version__))
+            self.assertIn("Set up once", n["notes"])
+            self.assertIsNone(be.update_notice(seen))
+            fresh = {}  # installed from the ISO: nothing was updated, nothing to say
+            st.clear()
+            self.assertIsNone(be.update_notice(fresh))
+
 
 class PolyAccountClientTests(unittest.TestCase):
     """Poly Account on the computer, against a stand-in for the website."""

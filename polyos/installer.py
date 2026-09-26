@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import drivers, firststart, hwcheck, recovery, security
+from . import __version__, drivers, firststart, hwcheck, recovery, security
 from .arch import EFI, debian_arch
 
 KiB, MiB, GiB = 1024, 1024 ** 2, 1024 ** 3
@@ -1202,6 +1202,8 @@ class Installer:
         if self.windows_alongside:  # Windows keeps the hardware clock in local time
             write("etc/adjtime", "0.0 0 0.0\n0\nLOCAL\n")
         write("etc/default/locale", "LANG=en_US.UTF-8\n")
+        # the USB drive's boot menu looks for this to offer "Start PolyOS 7 on this computer"
+        write("boot/polyos-installed", f"PolyOS {__version__}\n")
         if not self.dry:
             gen = TARGET / "etc/locale.gen"
             text = gen.read_text() if gen.exists() else ""

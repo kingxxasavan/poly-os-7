@@ -874,6 +874,11 @@ class DesktopShell(Backend):
         return ""
 
     def _show_update_notice(self, n: dict) -> None:
+        if n["kind"] == "updated":
+            summary = self._notes_summary(n.get("notes")) or "See what’s new in Settings › Updates."
+            threading.Thread(target=lambda: self._notify(f"PolyOS was updated to {n['version']}", summary, [("new", "What’s new")]) == "new"
+                             and self.open_app("settings", "updates"), daemon=True).start()
+            return
         if n["kind"] == "restart":
             if not n["ask"]:
                 self._restart_when_idle = True
@@ -882,8 +887,7 @@ class DesktopShell(Backend):
                             [("restart", "Restart PolyOS"), ("later", "Later")]) == "restart":
                 self.restart_shell()
             return
-        first = next((line.strip(" -*•#") for line in (n.get("notes") or "").replace("**", "").replace("`", "").splitlines() if len(line.strip(" -*•#|")) > 12), "")
-        summary = (first[:117] + "…") if len(first) > 120 else first or "Security improvements and fixes."
+        summary = self._notes_summary(n.get("notes")) or "Security improvements and fixes."
         if n["autoInstall"] or n["tonight"]:
             self._notify(f"PolyOS {n['version']} is ready", f"{summary} It installs at {n['time']}.", [])
             return
@@ -893,6 +897,13 @@ class DesktopShell(Backend):
             self.updates_action("tonight")
         elif choice == "schedule":
             self.open_app("settings", "updates")
+
+    @staticmethod
+    def _notes_summary(notes: str | None) -> str:
+        """The first real line of the release notes, short enough for a notification."""
+        first = next((line.strip(" -*•#") for line in (notes or "").replace("**", "").replace("`", "").splitlines()
+                      if len(line.strip(" -*•#|")) > 12), "")
+        return (first[:117] + "…") if len(first) > 120 else first
 
     def power(self, action: str):
         self.popup_closed()
@@ -998,9 +1009,11 @@ class DesktopShell(Backend):
             log.warning("no system bus: %s", exc.message)
             return
         login1 = "org.freedesktop.login1"
+        self._system_bus = bus
+        self._sleep_fd = None
+        self._take_sleep_delay()
         bus.signal_subscribe(login1, login1 + ".Manager", "PrepareForSleep", "/org/freedesktop/login1", None,
-                             Gio.DBusSignalFlags.NONE,
-                             lambda *args: self.lock() if args[5].unpack()[0] and self.settings.get("lockOnSleep") else None)
+                             Gio.DBusSignalFlags.NONE, lambda *args: self._on_prepare_for_sleep(args[5].unpack()[0]))
         try:
             session_id = os.environ.get("XDG_SESSION_ID")
             if session_id:
@@ -1016,7 +1029,52 @@ class DesktopShell(Backend):
                                  lambda *args: self.lock())
         except GLib.Error as exc:
             log.info("logind session lock signal unavailable: %s", exc.message)
-        self._system_bus = bus
+
+    # Closing the lid: without a delay the computer can fall asleep while the lock screen is still
+    # loading, and wake up to a black window. logind waits (5 s at most) while we hold a "delay"
+    # inhibitor, so it's released once the lock screen has had time to draw.
+    def _take_sleep_delay(self) -> None:
+        if self._system_bus is None or self._sleep_fd is not None:
+            return
+        try:
+            result, fds = self._system_bus.call_with_unix_fd_list_sync(
+                "org.freedesktop.login1", "/org/freedesktop/login1", "org.freedesktop.login1.Manager", "Inhibit",
+                GLib.Variant("(ssss)", ("sleep", "PolyOS", "Showing the lock screen before sleeping", "delay")),
+                GLib.VariantType("(h)"), Gio.DBusCallFlags.NONE, 3000, None, None)
+            self._sleep_fd = fds.get(result.unpack()[0])
+        except GLib.Error as exc:
+            log.info("no sleep delay from logind: %s", exc.message)
+
+    def _release_sleep_delay(self):
+        if self._sleep_fd is not None:
+            try:
+                os.close(self._sleep_fd)
+            except OSError:
+                pass
+            self._sleep_fd = None
+        return False
+
+    def _on_prepare_for_sleep(self, going: bool) -> None:
+        if going:
+            if self.settings.get("lockOnSleep"):
+                self.lock()
+                GLib.timeout_add(1500, self._release_sleep_delay)  # the lock screen is local and quick to draw
+            else:
+                self._release_sleep_delay()
+            return
+        self._take_sleep_delay()  # awake: ready for next time
+        # Some graphics drivers lose the compositor's picture while asleep (a black screen until
+        # something moves): picom resets on SIGUSR1, and every PolyOS window draws itself again.
+        subprocess.run(["pkill", "-USR1", "-x", "-u", str(os.getuid()), "picom"], check=False, capture_output=True)
+        GLib.timeout_add(800, self._redraw_after_sleep)
+
+    def _redraw_after_sleep(self):
+        lock = self.lock_window
+        if lock is not None and lock.get_visible() and lock.view.is_loading():
+            lock.view.reload()  # it was still loading when the computer fell asleep
+        for win in Gtk.Window.list_toplevels():
+            win.queue_draw()
+        return False
 
     def sysinfo(self) -> dict:
         return system.sysinfo()

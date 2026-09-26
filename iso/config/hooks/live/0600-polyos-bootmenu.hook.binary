@@ -2,7 +2,9 @@
 # The USB stick's boot menu, PolyOS style: the PolyOS 7 background and colors instead of Debian's
 # helmet, "Start PolyOS 7" entries with a purple bar on the one selected, and a 30-second countdown
 # that any key stops. After choosing, the menu gives way to "Starting PolyOS…" on the same picture
-# instead of a black box. Runs in the ISO's folder just before the ISO is made.
+# instead of a black box. With PolyOS already installed on the computer, the first entry starts that
+# one after 5 seconds, so a USB drive left plugged in doesn't lead back to the installer. Runs in
+# the ISO's folder just before the ISO is made.
 set -e
 
 theme=boot/grub/live-theme
@@ -33,6 +35,20 @@ set timeout=30
 # background shows through, so choosing an entry leaves the PolyOS picture on screen
 if [ -e /boot/grub/live-theme/boot.png ]; then
     background_image /boot/grub/live-theme/boot.png
+fi
+
+# PolyOS is already installed on this computer (the installer leaves /boot/polyos-installed): the
+# USB drive was left in, so start the installed PolyOS unless someone picks the USB entries.
+insmod part_gpt
+insmod part_msdos
+insmod ext2
+if search --no-floppy --file --set=polyos_installed /boot/polyos-installed; then
+    menuentry "Start PolyOS 7 on this computer" --id polyos-installed {
+        search --no-floppy --file --set=root /boot/polyos-installed
+        configfile /boot/grub/grub.cfg
+    }
+    set default=polyos-installed
+    set timeout=5
 fi
 EOF
 fi
