@@ -1,0 +1,61 @@
+# PolyOS boot menu on installed computers (shown when PolyOS shares the computer with Windows
+# or another system). The same crystal background and purple selection bar as the USB drive.
+# The installer makes polyos-16.pf2 here from Poppins (or DejaVu) with grub-mkfont; update-grub loads it.
+title-text: ""
+desktop-image: "background.png"
+desktop-color: "#1b1730"
+terminal-left: "0"
+terminal-top: "0"
+terminal-width: "100%"
+terminal-height: "100%"
+terminal-border: "0"
+
++ label {
+    top = 46%
+    left = 0
+    width = 100%
+    align = "center"
+    text = "Choose what to start"
+    color = "#e9e6f5"
+    font = "Poppins Regular 16"
+}
+
++ boot_menu {
+    left = 27%
+    top = 49%
+    width = 46%
+    height = 20%
+    item_font = "Poppins Regular 16"
+    selected_item_font = "Poppins Regular 16"
+    item_color = "#cfcbe0"
+    selected_item_color = "#ffffff"
+    item_height = 24
+    item_padding = 6
+    item_spacing = 3
+    icon_width = 0
+    icon_height = 0
+    item_icon_space = 0
+    selected_item_pixmap_style = "select_*.png"
+    scrollbar = false
+}
+
++ label {
+    id = "__timeout__"
+    top = 74%
+    left = 0
+    width = 100%
+    align = "center"
+    text = "Starting the highlighted system in %d seconds"
+    color = "#b8b3cc"
+    font = "Poppins Regular 16"
+}
+
++ label {
+    top = 94%
+    left = 0
+    width = 100%
+    align = "center"
+    text = "Arrow keys to choose, Enter to start"
+    color = "#8c87a3"
+    font = "Poppins Regular 16"
+}

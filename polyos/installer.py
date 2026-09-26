@@ -52,6 +52,7 @@ EXTENDED_MBR_TYPES = {"5", "f", "85", "0x5", "0xf", "0x85"}
 SQUASHFS = Path("/run/live/medium/live/filesystem.squashfs")
 LIVE_MEDIUM = Path("/run/live/medium")
 TARGET = Path("/mnt/polyos-target")
+GRUB_THEME = "/usr/share/grub/themes/polyos"  # the boot menu's look (data/grub, packaged in polyos-shell)
 OFFLINE_DEBS = "/usr/share/polyos/installer/debs"  # efi/ and bios/: GRUB packages fetched at ISO build
 LOG_PATH = Path("/var/log/polyos-installer.log")
 LIVE_PACKAGES = ["live-boot", "live-boot-initramfs-tools", "live-config", "live-config-systemd", "live-tools",
@@ -1312,7 +1313,9 @@ class Installer:
                     'GRUB_DISTRIBUTOR="PolyOS"\n'
                     'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\n'
                     'GRUB_CMDLINE_LINUX=""\n'
-                    f"GRUB_DISABLE_OS_PROBER={'false' if dual else 'true'}\n")
+                    f"GRUB_DISABLE_OS_PROBER={'false' if dual else 'true'}\n"
+                    + (f'GRUB_THEME="{GRUB_THEME}/theme.txt"\nGRUB_GFXMODE=auto\nGRUB_TERMINAL_OUTPUT=gfxterm\n'
+                       if self.dry or (TARGET / GRUB_THEME.lstrip("/") / "theme.txt").exists() else ""))
         debs = []
         if not self.dry:
             kind = "efi" if self.uefi else "bios"
@@ -1336,11 +1339,24 @@ class Installer:
             raise InstallError("This computer didn't start in UEFI mode. ARM computers need UEFI firmware to run PolyOS.")
         else:
             self.chroot(["grub-install", "--target=i386-pc", "--recheck", self.disk], what="Installing the boot loader", timeout=600)
+        self.grub_fonts()
         self.step(0.92, "Finishing the boot menu…")
         self.chroot(["update-initramfs", "-u", "-k", "all"], what="Building the startup image", timeout=900)
         self.chroot(["update-grub"], what="Creating the boot menu", timeout=900)
         if not self.dry:
             shutil.rmtree(TARGET / OFFLINE_DEBS.lstrip("/"), ignore_errors=True)
+
+    def grub_fonts(self) -> None:
+        """The boot menu's font: GRUB reads its own .pf2 format, made here from Poppins (DejaVu if it's missing)."""
+        theme = TARGET / GRUB_THEME.lstrip("/")
+        if not self.dry and not (theme / "theme.txt").exists():
+            return
+        for ttf in ("/usr/share/fonts/truetype/polyos/Poppins-Medium.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
+            if self.dry or (TARGET / ttf.lstrip("/")).exists():
+                # -n sets the name theme.txt asks for, whichever font it came from
+                self.chroot(["grub-mkfont", "-s", "16", "-n", "Poppins Regular 16", "-o", f"{GRUB_THEME}/polyos-16.pf2", ttf],
+                            check=False)
+                break
 
     def _by_id(self, disk: str) -> str:
         folder = Path("/dev/disk/by-id")

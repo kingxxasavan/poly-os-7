@@ -204,6 +204,10 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         (ROOT / "ui/img/files.svg", "usr/share/icons/hicolor/scalable/apps/polyos-files.svg", 0o644),
         (ROOT / "ui/img/logo.svg", "usr/share/icons/hicolor/scalable/apps/polyos-setup.svg", 0o644),
         (ROOT / "ui/img/cloud-gaming.svg", "usr/share/icons/hicolor/scalable/apps/polyos-cloud-gaming.svg", 0o644),
+        # the boot menu on installed computers (installer.GRUB_THEME)
+        (data / "grub/theme.txt", "usr/share/grub/themes/polyos/theme.txt", 0o644),
+        (data / "boot/splash.png", "usr/share/grub/themes/polyos/background.png", 0o644),
+        *[(p, f"usr/share/grub/themes/polyos/{p.name}", 0o644) for p in sorted((data / "boot").glob("select_*.png"))],
         *[(ROOT / f"ui/img/{n}.svg", f"usr/share/icons/hicolor/scalable/apps/polyos-{n}.svg", 0o644)
           for n in ("taskmgr", "drivers", "store", "camera", "install")],
         # Poppins (SIL OFL 1.1) for window titles and the login screen, not just the web UI

@@ -376,3 +376,24 @@ class BootMediaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InstalledBootMenuTests(unittest.TestCase):
+    """The installed computer's GRUB theme: GRUB drops a theme it can't parse and shows its plain
+    menu, so keep to what it reads (whole-number percentages, files that exist)."""
+
+    def test_theme(self):
+        import re
+
+        root = paths.ROOT / "data"
+        text = (root / "grub/theme.txt").read_text()
+        self.assertFalse(re.search(r"\d\.\d+%", text), "GRUB can't read decimal percentages")
+        self.assertIn('desktop-image: "background.png"', text)
+        self.assertTrue((root / "boot/splash.png").is_file())
+        self.assertTrue(list((root / "boot").glob("select_*.png")))
+        self.assertEqual(text.count("{"), text.count("}"))
+
+    def test_installer_uses_it(self):
+        from polyos import installer
+
+        self.assertEqual(installer.GRUB_THEME, "/usr/share/grub/themes/polyos")
