@@ -1,0 +1,12 @@
+[Unit]
+Description=PolyOS: finish setting up (the drivers and edition apps chosen while installing)
+Documentation=file:///usr/lib/polyos/polyos/firststart.py
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/var/lib/polyos/first-start.json
+ConditionPathExists=!/run/live/medium
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/polyos/polyos-admin first-start
+Nice=5

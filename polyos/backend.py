@@ -264,8 +264,12 @@ class Backend:
     def install_start(self, plan: dict) -> dict:
         if not self.env()["live"]:
             raise ApiError("PolyOS is already installed on this computer.", 409)
+        from . import polyaccount
         from .installer import InstallError, validate_plan
 
+        # connected to Poly Account during setup: the installed PolyOS stays connected
+        state = polyaccount.load(self._pa_home())
+        plan = {**plan, "polyAccount": state if state.get("credential") else None}
         try:
             clean = validate_plan(plan)
         except InstallError as exc:
@@ -605,6 +609,33 @@ class Backend:
             return {"kind": "ready", "version": st["latest"], "notes": st["notes"], "tonight": st["tonight"],
                     "autoInstall": st["policy"]["autoInstall"], "time": st["policy"]["time"]}
         return None
+
+    def first_start_notice(self, seen: dict) -> dict | None:
+        """After installing: what's finishing in the background (drivers, edition apps), then when it's done."""
+        from . import firststart
+        plan = firststart.load(firststart.PLAN_PATH)
+        st = firststart.load(firststart.STATUS_PATH)
+        names = {"gaming": "Gaming apps", "developer": "Developer tools"}
+        if firststart.pending(plan) and not seen.get("firstStart"):
+            seen["firstStart"] = True
+            parts = [x for x in (names.get(plan.get("pack")), "recommended drivers" if plan.get("drivers") else None) if x]
+            return {"kind": "setting-up", "title": "Finishing setting up PolyOS",
+                    "body": f"Your {' and '.join(parts)} are installing in the background (once you’re online). "
+                            "You can use PolyOS in the meantime."}
+        if st.get("state") in ("done", "failed") and seen.get("firstStartDone") != st.get("updated"):
+            seen["firstStartDone"] = st.get("updated")
+            if st["state"] == "failed":
+                return {"kind": "setting-up", "title": "Some things didn’t install",
+                        "body": "Install them from Settings › Apps and Settings › Drivers when you’re online."}
+            done = [x for x in (names.get(st.get("packDone")), "drivers" if st.get("drivers") == "done" else None) if x]
+            return {"kind": "setting-up", "title": "PolyOS is all set up",
+                    "body": f"Your {' and '.join(done) or 'apps'} are installed."
+                            + (" Restart when it suits you to start using the new drivers." if st.get("drivers") == "done" else "")}
+        return None
+
+    def first_start_pending(self) -> bool:
+        from . import firststart
+        return firststart.PLAN_PATH.exists()
 
     # ---- Poly Account (optional; polyos/polyaccount.py) -----------------------------------------
     def _pa_home(self) -> Path:

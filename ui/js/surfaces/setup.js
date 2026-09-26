@@ -6,7 +6,7 @@
 
 import { withAdmin, watchJobs } from '../admin.js';
 import { api, launch, on, saveSettings, withToken } from '../api.js';
-import { VARA_PROVIDERS, packPanel, providerFor, wifiPanel } from '../components.js';
+import { packPanel, wifiPanel } from '../components.js';
 import { fill, formatBytes, h, hexToHue, hueToHex, icon, networkLabel, throttle } from '../ui.js';
 
 const GB = 1000 ** 3;
@@ -20,18 +20,12 @@ const TERMS =
   'Scratch Foundation; PolyOS is not affiliated with or sponsored by the Scratch Foundation, Debian or any app maker. ' +
   'Installing an operating system changes your disk: back up anything important first. THIS SOFTWARE COMES WITH ' +
   'ABSOLUTELY NO WARRANTY, TO THE EXTENT PERMITTED BY APPLICABLE LAW.';
-const TOUR = [
-  ['Home Menu', 'Click the pinwheel in the dock or tap the Windows key. Tap it again to close.'],
-  ['Right-click', 'Right-click (or tap with two fingers) the desktop to personalize PolyOS or open Task Manager.'],
-  ['PolyMarket', 'Get Chrome, Discord, Spotify, Steam and more from PolyOS’s store of trusted apps.'],
-  ['Shortcuts', 'Win+S all apps · Win+E Files · Win+X quick menu · Ctrl+Shift+Esc Task Manager · Win+L lock.'],
-];
 const FALLBACK_ZONES = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'America/Phoenix',
   'America/Anchorage', 'Pacific/Honolulu', 'America/Toronto', 'America/Mexico_City', 'America/Sao_Paulo', 'Europe/London',
   'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid', 'Africa/Lagos', 'Africa/Johannesburg', 'Asia/Dubai', 'Asia/Kolkata',
   'Asia/Shanghai', 'Asia/Tokyo', 'Asia/Seoul', 'Australia/Sydney', 'UTC'];
 
-// PolyOS editions, chosen while installing. Each one's apps are added at first sign-in (online).
+// PolyOS editions, chosen while installing. Each one's apps download after installing, once online.
 export const EDITIONS = [
   ['regular', 'Regular', 'Everything most people need: the PolyOS desktop, Firefox, Files and PolyMarket.', 'star'],
   ['developer', 'Developer', 'Change PolyOS itself, and get coding tools: Git, Python and its libraries, Node.js, VS Code, Docker and Blender.', 'code'],
@@ -69,14 +63,6 @@ function timeZones() {
 function guessZone() {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return tz && tz !== 'UTC' && tz !== 'Etc/UTC' ? tz : 'America/New_York';
-}
-
-// 25 Crockford base32 characters (125 bits), the format polyos/recovery.py expects.
-function recoveryKey() {
-  const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-  const bytes = crypto.getRandomValues(new Uint8Array(25));
-  const raw = [...bytes].map((b) => alphabet[b % 32]).join('');
-  return raw.match(/.{5}/g).join('-');
 }
 
 function usernameFrom(name) {
@@ -160,8 +146,11 @@ export function mount(root, store) {
   }
 
   // ---- steps ---------------------------------------------------------------------------
-  const installSteps = [start, check, terms, edition, account, appearance, target, installing];
-  const welcomeSteps = [check, connect, polyAccount, drivers, editionApps, vara, tour, done];
+  // Everything is asked on the USB drive, before installing, so the installed PolyOS starts straight
+  // to the desktop: drivers and edition apps install by themselves after the restart (firststart.py).
+  const installSteps = [start, check, terms, edition, account, appearance, connect, polyAccount, target, installing];
+  // Only for a PolyOS installed some other way (the advanced installer): the same questions, once.
+  const welcomeSteps = [check, connect, polyAccount, drivers, editionApps, done];
   const steps = live ? installSteps : welcomeSteps;
   let step = 0;
 
@@ -224,7 +213,7 @@ export function mount(root, store) {
       ...head('How will you use PolyOS?', 'Pick an edition. You can add the others later in Settings.'),
       h('div.su-editions', { role: 'radiogroup', 'aria-label': 'Edition' }, cards),
       plan.edition === 'regular' ? null : h('p.su-note', icon('info'),
-        'Its apps are downloaded the first time you sign in, so connect to the internet then.'),
+        'Its apps download by themselves after installing, once you’re online.'),
       nav(next()),
     ];
   }
@@ -697,9 +686,9 @@ export function mount(root, store) {
   }
 
   async function startInstall() {
-    plan.user.recoveryKey = plan.user.recoveryKey || recoveryKey();
     const payload = { mode: plan.mode, disk: plan.disk, hostname: plan.hostname, timezone: plan.timezone,
       user: plan.user, appearance: plan.appearance, edition: plan.edition,
+      profile: profile || hardware?.profile || null, background: hardware?.background || null, drivers: recommended || [],
       ...(plan.mode === 'alongside' ? { size: plan.size } : {}),
       ...(plan.mode === 'custom' ? customLayout() : {}),
       ...(plan.mode === 'pick' ? pickPayload() : {}) };
@@ -716,23 +705,24 @@ export function mount(root, store) {
   function installing() {
     const job = installJob || { state: 'running', progress: 0, message: 'Getting ready for installation…' };
     if (job.state === 'done') {
-      const saved = h('input', { type: 'checkbox' });
-      const restart = h('button.su-next.primary', { disabled: !!plan.user.recoveryKey,
-        onclick: () => api.post('/api/install/restart', {}).catch((err) => { restart.textContent = err.message; }) }, 'Restart now');
-      saved.addEventListener('change', () => { restart.disabled = !saved.checked; });
-      const removeUsb = h('div.su-remove', { role: 'status' }, icon('usb'),
-        h('span', h('b', 'Please remove the USB drive now.'),
-          h('small', 'PolyOS has been installed on your computer. Then click Restart now to start using it.')));
+      const restart = h('button.su-next.primary', {
+        onclick: () => {
+          restart.disabled = true;
+          restart.textContent = 'Restarting…';
+          api.post('/api/install/restart', {}).catch((err) => { restart.disabled = false; restart.textContent = err.message; });
+        },
+      }, 'Restart now');
+      const later = plan.edition !== 'regular' || (recommended && recommended.length);
+      const usb = h('div.su-remove', { role: 'status' }, icon('usb'),
+        h('span', h('b', 'Leave the USB drive in and click Restart now.'),
+          h('small', 'Remove it once the screen goes dark. Your computer starts PolyOS from its own drive, not the USB.')));
       return [
         h('div.su-center',
           h('img.su-done-logo', { src: '/img/logo-white.svg', alt: '' }),
-          h('h1', 'PolyOS 7 has been installed.'),
-          plan.user.recoveryKey ? [
-            h('p.su-sub', 'This is your recovery key. If you ever forget your password, it lets you set a new one from the sign-in screen. Write it down or take a photo of it. You won’t see it again.'),
-            h('div.su-key', plan.user.recoveryKey),
-            h('label.su-check', saved, h('span', 'I’ve saved my recovery key.')),
-          ] : null,
-          removeUsb,
+          h('h1', 'PolyOS 7 is installed.'),
+          h('p.su-sub', `Everything is set up${plan.user.fullName ? `, ${plan.user.fullName.split(' ')[0]}` : ''}. After the restart, sign in and you’re on your desktop.`
+            + (later ? ' Your apps and drivers finish installing in the background once you’re online.' : '')),
+          usb,
           restart),
       ];
     }
@@ -782,13 +772,14 @@ export function mount(root, store) {
     } else {
       body = h('div.su-status', icon('wifiOff'), h('span', 'No network adapter was found. The Driver Manager (next) can help.'));
     }
-    return [...head('Get connected', 'Connect to the internet for drivers, apps and updates.'), body,
+    return [...head('Get connected', live ? 'Optional. Wi-Fi you join here keeps working after installing, so drivers and apps can download.'
+      : 'Connect to the internet for drivers, apps and updates.'), body,
       nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Skip'), next())];
   }
 
   // Poly Account: optional. Connect to Poly services (sign in, create an account, or a code), or
   // use PolyOS locally; either way nothing else changes, and Settings › Poly Account can switch later.
-  let pa = { view: 'choose', status: null, key: null, countries: null };
+  let pa = { view: 'choose', status: null, countries: null };
   function polyAccount() {
     const field = (label, input, hint) => h('label.su-field', h('span', label), input, hint ? h('small', hint) : null);
     const err = h('div.su-error', { hidden: true });
@@ -804,6 +795,12 @@ export function mount(root, store) {
       return [...head('Connect to Poly?'), h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'One moment…')];
     }
     const refresh = (s) => { pa.status = s; if (s.connected) pa.view = 'connected'; go(step); };
+    const offline = !store.state.system.network.kind || store.state.system.network.kind === 'none';
+    if (pa.view === 'choose' && offline) {
+      return [...head('Connect to Poly services?', 'Optional. PolyOS works just the same without an account.'),
+        h('div.su-status', icon('wifiOff'), h('span', 'You’re offline, so PolyOS will be set up to use locally. You can connect a Poly Account any time in Settings › Poly Account.')),
+        nav(h('span'), next('Next', () => go(step + 1), { primary: true }))];
+    }
     if (pa.view === 'choose') {
       return [...head('Connect to Poly services?', 'Optional. PolyOS works just the same without an account.'),
         h('div.su-options',
@@ -860,7 +857,8 @@ export function mount(root, store) {
         api.get('/api/polyaccount/countries').then((r) => { pa.countries = r.countries; go(step); }, (x) => { pa.countries = ['Other']; fail(x); go(step); });
         return [...head('Create your Poly Account'), h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'One moment…')];
       }
-      const name = h('input.su-input', { value: store.state.user.fullName || '', placeholder: 'Your name', autocomplete: 'name', maxlength: 80 });
+      const name = h('input.su-input', { value: (live ? plan.user.fullName : store.state.user.fullName) || '', placeholder: 'Your name',
+        autocomplete: 'name', maxlength: 80 });
       const email = h('input.su-input', { type: 'email', placeholder: 'you@example.com', autocomplete: 'email' });
       const password = h('input.su-input', { type: 'password', placeholder: '10 characters or more', autocomplete: 'new-password' });
       const confirmPw = h('input.su-input', { type: 'password', placeholder: 'Type it again', autocomplete: 'new-password' });
@@ -876,7 +874,6 @@ export function mount(root, store) {
         btn.disabled = true;
         try {
           const r = await api.post('/api/polyaccount/register', { name: name.value, email: email.value, password: password.value, country: country.value, acceptTerms: true });
-          pa.key = r.recoveryKey;
           refresh(r);
         } catch (x) { fail(x); btn.disabled = false; }
       });
@@ -888,15 +885,9 @@ export function mount(root, store) {
     }
     // connected
     const a = pa.status.account || {};
-    if (pa.key) {
-      const saved = h('input', { type: 'checkbox' });
-      const cont = next('Continue', () => { pa.key = null; go(step + 1); }, { primary: true, disabled: true });
-      saved.addEventListener('change', () => { cont.disabled = !saved.checked; });
-      return [...head('Save your recovery key', 'If you forget your password, this key and your email get you back in. Poly can’t show it again.'),
-        h('div.su-code.small', pa.key), h('label.su-check', saved, h('span', 'I saved my recovery key somewhere safe')), nav(cont)];
-    }
     return [...head(`Connected, ${(a.name || '').split(' ')[0] || 'welcome'}`, `This computer is part of ${a.email || 'your Poly Account'}.`),
-      h('ul.su-bullets', h('li', `Manage it at ${site()}/account.`), h('li', 'Poly Sync keeps your settings the same on your computers.'),
+      h('ul.su-bullets', live ? h('li', 'It stays connected after PolyOS is installed.') : null,
+        h('li', `Manage it at ${site()}/account.`), h('li', 'Poly Sync keeps your settings the same on your computers.'),
         h('li', 'Remote management stays off until you turn it on in Settings › Poly Account.')),
       nav(next('Next', () => go(step + 1), { primary: true }))];
   }
@@ -904,6 +895,8 @@ export function mount(root, store) {
   // The hardware check: is this PC a good fit, and if it's on the slower side, a lighter PolyOS for it.
   let hardware = null;
   let profile = null; // what the person picked; null = what the check recommends
+  let recommended = null; // driver packages this PC needs: installed after the restart, once online
+  let needsDrivers = []; // ...and what they're for, in words
   function check() {
     const box = h('div.su-drivers.su-hw', h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'Checking your processor, memory and graphics…'));
     const verdict = h('div');
@@ -924,8 +917,20 @@ export function mount(root, store) {
         h('span', h('b', hardware.summary), h('br'), h('small', chosen === 'full' && hardware.profile !== 'full'
           ? 'Everything on: blur, glass and animations. It may feel slower on this computer.' : hardware.profileText))), choices);
     }
+    const driverNote = h('div');
+    const showDrivers = () => fill(driverNote, recommended && recommended.length ? h('p.su-note', icon('info'),
+      `Recommended drivers for this PC${needsDrivers.length ? ` (${needsDrivers.join(', ')})` : ''}. `
+      + `${live ? 'They install by themselves after installing, once you’re online.' : 'The next steps install them.'}`) : null);
     const load = hardware ? Promise.resolve(hardware) : Promise.all([api.get('/api/hardware'), sleep(900)]).then(([r]) => r);
     load.then((r) => { hardware = r; render(); }, (err) => fill(box, h('div.su-error', err.message)));
+    if (recommended) showDrivers();
+    else {
+      api.get('/api/drivers').then((res) => {
+        recommended = [...new Set(res.devices.flatMap((d) => d.missing))];
+        needsDrivers = [...new Set(res.devices.filter((d) => d.missing.length).map((d) => d.title))].slice(0, 4);
+        showDrivers();
+      }, () => { recommended = []; });
+    }
     // Carry on: set PolyOS up for this PC (on the USB too, so trying it out is smooth as well).
     const apply = () => {
       const chosen = profile || hardware?.profile;
@@ -933,7 +938,7 @@ export function mount(root, store) {
       (chosen && !same ? api.post('/api/hardware', { profile: chosen }) : Promise.resolve()).catch(() => {}).finally(() => go(step + 1));
     };
     return [...head('Checking your computer', live ? 'PolyOS looks at this PC to make sure it runs well here.'
-      : 'PolyOS sets itself up for this PC’s processor, memory and graphics.'), box, verdict, nav(next('Next', apply))];
+      : 'PolyOS sets itself up for this PC’s processor, memory and graphics.'), box, verdict, driverNote, nav(next('Next', apply))];
   }
 
   function drivers() {
@@ -1008,7 +1013,6 @@ export function mount(root, store) {
     ];
   }
   let extra = null;
-  let varaProvider = VARA_PROVIDERS[0];
   let packJob = null; // the edition's apps, installing in the background while setup carries on
 
   // "Install and continue": start installing what's ticked, then go on (nothing ticked just goes on)
@@ -1028,59 +1032,23 @@ export function mount(root, store) {
     return button;
   }
 
-  function vara() {
-    const key = h('input.su-input', { type: 'password', placeholder: 'Paste your API key', autocomplete: 'off', 'aria-label': 'API key' });
-    const status = h('p.su-note', { hidden: true });
-    const save = async () => {
-      if (!key.value.trim()) return go(step + 1);
-      status.hidden = false;
-      status.textContent = 'Checking the key…';
-      try {
-        await api.post('/api/vara/config', { apiKey: key.value.trim(), endpoint: varaProvider.endpoint, model: varaProvider.model,
-          provider: providerFor(varaProvider.endpoint) });
-        const res = await api.post('/api/vara/test', {});
-        status.textContent = `Vara is ready: “${res.reply}”`;
-        setTimeout(() => go(step + 1), 900);
-      } catch (err) {
-        status.textContent = err.message;
-      }
-    };
-    const label = h('span');
-    const hint = h('small');
-    const pick = (p) => {
-      varaProvider = p;
-      label.textContent = `${p.label} API key`;
-      hint.textContent = `${p.keyHint} Other providers are in Settings > Vara.`;
-      chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.textContent === p.label));
-    };
-    const chips = h('div.su-chips', VARA_PROVIDERS.map((p) => h('button.su-chip', { onclick: () => pick(p) }, p.label)));
-    pick(varaProvider);
-    return [
-      h('div.su-vara-head', h('img', { src: '/img/vara.png', alt: '' }), h('div', ...head('Meet Vara', 'Vara is the PolyOS agent: it opens apps and changes settings, and builds code, 3D models and robot projects with you.'))),
-      chips,
-      h('label.su-field.wide', label, key, hint),
-      status,
-      nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Later'), next('Next', save)),
-    ];
+  let appsEl = null; // the "You're all set" apps line, updated in place as they download
+  function paintApps() {
+    if (!appsEl || !packJob) return;
+    const running = packJob.state === 'running';
+    fill(appsEl, h('span', running ? `Your apps are downloading in the background: ${Math.round((packJob.progress || 0) * 100)}%`
+      : packJob.state === 'done' ? 'Your apps are installed and on your desktop.' : packJob.error || 'Some apps didn’t install. Try again in Settings.'),
+    running ? h('div.su-progress', h('span', { style: { width: `${Math.max(3, Math.round((packJob.progress || 0) * 100))}%` } })) : null);
   }
-
-  function tour() {
-    return [...head('A quick tour', 'A few things to know about PolyOS.'),
-      h('div.su-tour', TOUR.map(([t, text]) => h('div.su-tip', h('b', t), h('p', text)))), nav(next())];
-  }
-
   function done() {
-    const apps = packJob ? h('div.su-apps', { role: 'status' },
-      h('span', packJob.state === 'running' ? packJob.message || 'Installing your apps…'
-        : packJob.state === 'done' ? 'Your apps are installed and on your desktop.' : packJob.error || 'Some apps didn’t install. Try again in Settings.'),
-      packJob.state === 'running' ? h('div.su-progress', h('span', { style: { width: `${Math.max(3, Math.round((packJob.progress || 0) * 100))}%` } })) : null,
-      packJob.state === 'running' ? h('small', 'They keep installing after you start using PolyOS.') : null) : null;
+    appsEl = packJob ? h('div.su-apps', { role: 'status' }) : null;
+    paintApps();
     return [
       h('div.su-center',
         h('img.su-done-logo', { src: '/img/logo-white.svg', alt: '' }),
         h('h1', 'You’re all set.'),
         h('p.su-sub', 'Enjoy PolyOS 7. Everything you chose here is in Settings.'),
-        apps,
+        appsEl,
         h('button.su-next.primary', { onclick: finish }, 'Start using PolyOS')),
     ];
   }
@@ -1099,13 +1067,13 @@ export function mount(root, store) {
   watchJobs((job) => {
     if (job.kind === 'pack' && packJob) {
       packJob = job;
-      if (steps[step] === done) go(step);
+      if (steps[step] === done) paintApps();
       return;
     }
     if (job.kind !== 'install') return;
     installJob = job;
     if (steps[step] !== installing) return;
-    if (job.state === 'running' && progressEls) paintProgress(job);
+    if (job.state === 'running') paintProgress(job);
     else go(step);
   });
   store.subscribe((_s, changed) => {

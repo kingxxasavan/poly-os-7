@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from polyos import admin, drivers, power, procs, recovery, store, theme, widgets
 from polyos.core import ApiError
@@ -984,3 +985,68 @@ class PolyAccountClientTests(unittest.TestCase):
             self.pa.forget(home)
             self.assertIsNone(self.pa.merge("pd_old", {"lastCheckin": 1}, home))
             self.assertFalse(self.pa.state_path(home).exists())
+
+
+class FirstStartTests(unittest.TestCase):
+    """After installing: drivers and edition apps install by themselves once online (firststart.py)."""
+
+    def setUp(self):
+        import tempfile
+        from polyos import firststart
+        self.fs = firststart
+        self.tmp = Path(tempfile.mkdtemp())
+        self.plan = self.tmp / "first-start.json"
+        self.status = self.tmp / "status.json"
+        self.plan.write_text(json.dumps({"drivers": ["firmware-iwlwifi"], "pack": "gaming"}))
+
+    def run_once(self, online=True, drivers_ok=True, pack_ok=True):
+        calls = []
+
+        def drivers(names):
+            calls.append(("drivers", names))
+            if not drivers_ok:
+                raise RuntimeError("no mirror")
+
+        def pack(name):
+            calls.append(("pack", name))
+            if not pack_ok:
+                raise RuntimeError("flathub down")
+        st = self.fs.run(lambda _e: None, drivers, pack, lambda: online, self.plan, self.status, clock=lambda: 5.0)
+        return st, calls
+
+    def test_offline_waits(self):
+        st, calls = self.run_once(online=False)
+        self.assertEqual(st["state"], "waiting")
+        self.assertEqual(calls, [])
+        self.assertTrue(self.plan.exists())
+
+    def test_online_installs_everything_once(self):
+        st, calls = self.run_once()
+        self.assertEqual(calls, [("drivers", ["firmware-iwlwifi"]), ("pack", "gaming")])
+        self.assertEqual(st["state"], "done")
+        self.assertFalse(self.plan.exists())
+        self.assertEqual(self.run_once()[1], [])  # nothing left to do
+
+    def test_failures_retry_then_give_up(self):
+        st, _ = self.run_once(pack_ok=False)
+        self.assertEqual(st["state"], "waiting")
+        self.assertEqual(json.loads(self.plan.read_text()), {"drivers": [], "pack": "gaming"})  # drivers are done
+        for _ in range(4):
+            st, calls = self.run_once(pack_ok=False)
+        self.assertEqual(calls, [("pack", "gaming")])
+        self.assertEqual(st["state"], "failed")
+        self.assertFalse(self.plan.exists())
+
+    def test_notices(self):
+        from polyos.backend import Backend
+        be = Backend.__new__(Backend)
+        seen = {}
+        with mock.patch.object(self.fs, "PLAN_PATH", self.plan), mock.patch.object(self.fs, "STATUS_PATH", self.status):
+            first = be.first_start_notice(seen)
+            self.assertIn("Gaming apps and recommended drivers", first["body"])
+            self.assertIsNone(be.first_start_notice(seen))
+            self.run_once()
+            done = be.first_start_notice(seen)
+            self.assertEqual(done["title"], "PolyOS is all set up")
+            self.assertIn("Restart", done["body"])
+            self.assertIsNone(be.first_start_notice(seen))

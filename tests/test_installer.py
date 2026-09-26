@@ -185,7 +185,10 @@ class PlanValidationTests(unittest.TestCase):
         self.assertEqual(installer.validate_plan(self.plan())["edition"], "regular")
         gaming = installer.validate_plan(self.plan(edition="gaming"))
         self.assertTrue(gaming["extraSettings"]["gameMode"])
-        self.assertFalse(gaming["extraSettings"]["editionSetup"])  # its apps are offered at first sign-in
+        # setup asked everything on the USB drive: the apps install by themselves after the restart
+        self.assertTrue(gaming["extraSettings"]["editionSetup"])
+        self.assertEqual(gaming["firstStart"]["pack"], "gaming")
+        self.assertIsNone(installer.validate_plan(self.plan())["firstStart"]["pack"])
         dev = installer.validate_plan(self.plan(edition="developer"))
         self.assertTrue(dev["extraSettings"]["developerMode"])
         with self.assertRaises(InstallError):
@@ -194,6 +197,20 @@ class PlanValidationTests(unittest.TestCase):
         smuggled = installer.validate_plan(self.plan(extraSettings={"developerMode": True, "setupDone": True}))
         self.assertEqual(smuggled["extraSettings"]["developerMode"], False)
         self.assertNotIn("setupDone", smuggled["extraSettings"])
+
+    def test_everything_from_setup(self):
+        """The hardware check's choice, its drivers and a Poly Account connection travel with the plan."""
+        clean = installer.validate_plan(self.plan(profile="light", background="reduced",
+                                                  drivers=["firmware-iwlwifi", "nvidia-driver", "rm -rf /", "firmware-iwlwifi"],
+                                                  polyAccount={"credential": "pd_abcdefghijklmnop", "account": {"email": "a@b.c"},
+                                                               "sync": True, "evil": "x"}))
+        self.assertEqual(clean["extraSettings"]["performanceProfile"], "light")
+        self.assertEqual(clean["extraSettings"]["backgroundLimit"], "reduced")
+        self.assertEqual(clean["firstStart"]["drivers"], ["firmware-iwlwifi", "nvidia-driver"])
+        self.assertEqual(clean["polyAccount"], {"credential": "pd_abcdefghijklmnop", "account": {"email": "a@b.c"}, "sync": True})
+        odd = installer.validate_plan(self.plan(profile="turbo", polyAccount={"credential": "no spaces allowed"}))
+        self.assertNotIn("performanceProfile", odd["extraSettings"])
+        self.assertIsNone(odd["polyAccount"])
 
     def test_blank_password_allowed(self):
         clean = installer.validate_plan(self.plan(user={"fullName": "", "username": "andrew", "password": ""}))
@@ -217,6 +234,25 @@ class DryRunTests(unittest.TestCase):
         positions = [next(i for i, c in enumerate(commands) if key in c) for key in order]
         self.assertEqual(positions, sorted(positions), joined)
         self.assertNotIn("pw", " ".join(c for c in commands if "chpasswd" in c))  # the password goes via stdin
+        self.assertNotIn("polyos-first-start", joined)  # Regular with no drivers: nothing to finish later
+
+    def test_first_start_and_boot_next(self):
+        """Gaming: the apps install after the restart; the firmware starts PolyOS next, not the USB drive."""
+        events = []
+        plan = installer.validate_plan({"mode": "erase", "disk": "/dev/sda", "hostname": "t-polyos", "timezone": "UTC",
+                                        "user": {"fullName": "T", "username": "tester", "password": "pw"}, "edition": "gaming",
+                                        "appearance": {"theme": "dark", "accent": "#678fd9"}})
+        efi = "BootCurrent: 0003\nBoot0001* Windows Boot Manager\tHD(1)\nBoot0004* PolyOS\tHD(1,GPT)\n"
+        with mock.patch.object(installer, "live_disk", return_value="/dev/sdb"), \
+                mock.patch("pathlib.Path.is_dir", return_value=True), \
+                mock.patch.object(installer, "_have", return_value=True), \
+                mock.patch.object(installer.Runner, "run", autospec=True,
+                                  side_effect=lambda self, args, **kw: (self.emit({"log": "$ " + " ".join(args)}),
+                                                                       efi if args == ["efibootmgr"] else "")[1]):
+            installer.Installer(plan, events.append, dry_run=True).run()
+        joined = "\n".join(e["log"] for e in events if "log" in e)
+        self.assertIn("systemctl enable polyos-first-start.timer", joined)
+        self.assertIn("efibootmgr -q -n 0004", joined)
 
 
 if __name__ == "__main__":

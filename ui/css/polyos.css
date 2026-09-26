@@ -1119,12 +1119,6 @@ select.su-input option { background: #202024; color: #fff; }
 .su-driver-text small { color: var(--su-text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .su-badge { padding: 3px 10px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 30%, transparent); font-size: 12px; font-weight: 600; }
 .su-ok { color: var(--success); font-size: 20px; display: inline-grid; }
-.su-vara-head { display: flex; align-items: flex-start; gap: 18px; }
-.su-vara-head img { width: 64px; height: 54px; object-fit: contain; margin-top: 4px; }
-.su-tour { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; max-width: 580px; }
-.su-tip { padding: 16px 18px; border-radius: 18px; background: var(--su-raised); }
-.su-tip b { font-family: var(--display); font-size: 16px; font-weight: 600; }
-.su-tip p { margin: 6px 0 0; color: var(--su-text-2); font-size: 13px; line-height: 1.5; }
 .su-pills { position: absolute; left: 28px; bottom: 26px; z-index: 2; display: flex; gap: 10px; transition: opacity 0.5s; }
 .su-pills span { width: 58px; height: 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.28); transition: background 0.3s; }
 .su-pills span.done { background: rgba(255, 255, 255, 0.62); }
@@ -1133,7 +1127,7 @@ select.su-input option { background: #202024; color: #fff; }
   .su-seven { display: none; }
   .su-card { padding-right: clamp(24px, 4.6vw, 60px); }
   .su-center { margin-right: 0; }
-  .su-form, .su-tour { grid-template-columns: 1fr; }
+  .su-form { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .in-mark.fall, .in-mark.fall .in-logo { animation-duration: 0.01s; }

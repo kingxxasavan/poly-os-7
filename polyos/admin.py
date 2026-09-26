@@ -6,6 +6,7 @@
     polyos-admin drivers PACKAGE...        driver packages (names must match drivers.DRIVER_PACKAGE_RE)
     polyos-admin account FILE              for the sudo user: {"password"} and/or {"recoveryKey"} (file deleted)
     polyos-admin reboot                    restart right away (after installing, from the live USB)
+    polyos-admin first-start               after installing: the drivers and edition apps setup chose (a timer runs it)
     polyos-admin app remove DESKTOP_ID     Settings > Apps: uninstall the Debian package or Flatpak behind an app
     polyos-admin disk delete DISK NUMBER   the installer's drive screen: delete a partition (live USB only)
     polyos-admin disk new DISK START BYTES     ... or make one in unallocated space (START in sectors)
@@ -373,12 +374,51 @@ def update_policy(raw: str) -> None:
 
 
 def reboot() -> None:
-    """Restart now, without waiting on services (the install is already synced to disk)."""
+    """Restart now, without waiting on the live system's services (the install is synced and unmounted).
+
+    A normal shutdown of the live system reads from the USB drive, so it can hang if the drive is
+    pulled out. --force twice restarts straight away; the kernel's own restart is the fallback.
+    """
     if not installer.LIVE_MEDIUM.exists():
         raise AdminError("This only works from the PolyOS USB drive.")
-    subprocess.run(["sync"], check=False)
-    subprocess.Popen(["systemctl", "reboot", "--force"], start_new_session=True)
+    os.sync()
     emit({"progress": 1.0, "message": "Restarting…"})
+    try:
+        subprocess.run(["systemctl", "reboot", "--force", "--force"], check=False, capture_output=True, timeout=20)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    try:  # still here: restart through the kernel directly (everything is already written)
+        Path("/proc/sysrq-trigger").write_text("b")
+    except OSError:
+        pass
+
+
+def first_start() -> None:
+    """After installing: the recommended drivers and the edition's apps, once online (firststart.py)."""
+    import socket
+
+    from . import firststart
+
+    def online() -> bool:
+        for host in ("deb.debian.org", "dl.flathub.org"):
+            try:
+                socket.create_connection((host, 443), timeout=8).close()
+                return True
+            except OSError:
+                continue
+        return False
+
+    def install_pack(name: str) -> None:
+        data = store.load()
+        apps = store.validate(data)
+        pack = store.pack(data, name)
+        if pack is None:
+            return
+        ids = [aid for aid, default in pack["apps"] if default and aid in apps and store.available(apps[aid])]
+        if ids:
+            pack_install(name, ids)
+
+    firststart.run(emit, drivers_install, install_pack, online)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -410,6 +450,8 @@ def main(argv: list[str] | None = None) -> int:
             account(Path(rest[0]))
         elif cmd == "reboot":
             reboot()
+        elif cmd == "first-start":
+            first_start()
         elif cmd == "app" and len(rest) == 2 and rest[0] == "remove":
             app_remove(rest[1])
         elif cmd == "disk" and rest[:1] in (["delete"], ["new"]):

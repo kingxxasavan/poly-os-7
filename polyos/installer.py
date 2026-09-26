@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import recovery, security
+from . import drivers, firststart, hwcheck, recovery, security
 from .arch import EFI, debian_arch
 
 KiB, MiB, GiB = 1024, 1024 ** 2, 1024 ** 3
@@ -459,13 +459,21 @@ def validate_plan(plan: dict, existing_users: set[str] | None = None) -> dict:
     edition = plan.get("edition") or "regular"
     if edition not in EDITIONS:
         raise InstallError("Choose Regular, Developer or Gaming.")
+    # How PolyOS runs here, from the hardware check on the USB drive (its settings follow from it)
+    profile = plan.get("profile") if plan.get("profile") in hwcheck.PROFILE_SETTINGS else None
+    background = plan.get("background") if plan.get("background") in ("normal", "reduced") else None
+    look = {**(hwcheck.PROFILE_SETTINGS[profile] if profile else {}), **({"backgroundLimit": background} if background else {})}
     clean = {"mode": mode, "disk": disk, "hostname": hostname, "timezone": tz,
              "user": {"username": username, "fullName": full, "password": password, "recoveryKey": str(key)},
              "appearance": {"theme": theme, "accent": accent.lower()}, "edition": edition,
-             # the edition's first-sign-in setup (apps, tools) runs once you're online
-             "extraSettings": {"edition": edition, "developerMode": edition == "developer",
+             # Setup asked everything before installing, so the new system starts straight to the
+             # desktop; the edition's apps and the drivers install by themselves once online.
+             "extraSettings": {**look, "edition": edition, "developerMode": edition == "developer",
                                "showAllApps": edition == "developer", "gameMode": edition == "gaming",
-                               "editionSetup": edition == "regular"}}
+                               "editionSetup": True},
+             "firstStart": firststart.clean_plan(plan.get("drivers") or [], edition if edition != "regular" else None,
+                                                 drivers.DRIVER_PACKAGE_RE),
+             "polyAccount": poly_account_state(plan.get("polyAccount"))}
     if layout:
         clean.update(layout)
     if mode == "space":
@@ -479,6 +487,20 @@ def validate_plan(plan: dict, existing_users: set[str] | None = None) -> dict:
             raise InstallError(f"Give PolyOS at least {MIN_ROOT // GiB} GB.")
         clean["size"] = size
     return clean
+
+
+def poly_account_state(state) -> dict | None:
+    """The Poly Account connection made during setup on the USB drive, for the new account's home."""
+    if not isinstance(state, dict) or not isinstance(state.get("credential"), str):
+        return None
+    cred = state["credential"]
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{8,300}", cred):
+        return None
+    keep = {k: state[k] for k in ("account", "device", "syncPrefs", "terms") if isinstance(state.get(k), dict)}
+    keep.update({k: state[k] for k in ("sync", "remoteManagement") if isinstance(state.get(k), bool)})
+    if state.get("telemetry") in ("minimal", "standard", "diagnostic"):
+        keep["telemetry"] = state["telemetry"]
+    return {"credential": cred, **keep}
 
 
 def firewall_conf(text: str) -> str:
@@ -1275,16 +1297,25 @@ class Installer:
             recovery.save_record(name, recovery.make_record(user["recoveryKey"]), root=TARGET)
         # PolyOS settings from the setup screens, plus the wallpapers in Pictures
         appearance = self.plan["appearance"]
-        settings = {"theme": appearance["theme"], "accent": appearance["accent"], "setupDone": False,
+        settings = {"theme": appearance["theme"], "accent": appearance["accent"], "setupDone": True,
                     **self.plan.get("extraSettings", {})}
         home = f"home/{name}"
         existing = TARGET / home / ".config/polyos/settings.json"
-        if not self.dry and existing.is_file():  # a kept /home: keep its PolyOS settings, run the welcome again
+        if not self.dry and existing.is_file():  # a kept /home: keep its PolyOS settings
             try:
                 settings = {**json.loads(existing.read_text("utf-8")), **settings, "theme": settings["theme"]}
             except (OSError, ValueError):
                 pass
         self._write(f"{home}/.config/polyos/settings.json", json.dumps(settings, indent=2) + "\n")
+        if self.plan.get("polyAccount"):  # connected during setup: this computer stays connected
+            self._write(f"{home}/.config/polyos/poly-account.json", json.dumps(self.plan["polyAccount"], indent=2) + "\n")
+            if not self.dry:
+                os.chmod(TARGET / home / ".config/polyos/poly-account.json", 0o600)
+        first = self.plan.get("firstStart") or {}
+        if firststart.pending(first):  # drivers and apps that need the internet: after the restart, by themselves
+            if not self.dry:
+                firststart.write_plan(first, TARGET)
+            self.chroot(["systemctl", "enable", "polyos-first-start.timer"], check=False)
         if not self.dry:
             walls = Path("/usr/share/polyos/wallpapers")
             pics = TARGET / home / "Pictures" / "Wallpapers"
@@ -1388,10 +1419,14 @@ class Installer:
         loader = f"\\EFI\\debian\\{shim}" if (self.dry or (TARGET / f"boot/efi/EFI/debian/{shim}").exists()) \
             else f"\\EFI\\debian\\{grub}"
         self.r.run(["efibootmgr", "-q", "-c", "-d", esp_disk, "-p", str(number), "-L", "PolyOS", "-l", loader], check=False)
-        if self.dry or "PolyOS" in efi_entries(self.r.run(["efibootmgr"], check=False)).values():
+        now = efi_entries(self.r.run(["efibootmgr"], check=False))
+        ours = next((num for num, label in now.items() if label == "PolyOS"), None)
+        if self.dry or ours:
             for num, label in entries.items():
                 if label.lower() == "debian":
                     self.r.run(["efibootmgr", "-q", "-b", num, "-B"], check=False)
+        if ours:  # start the installed PolyOS next time, even if the USB drive is still plugged in
+            self.r.run(["efibootmgr", "-q", "-n", ours], check=False)
 
     def cleanup(self) -> None:
         if not self.dry:

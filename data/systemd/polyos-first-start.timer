@@ -1,0 +1,10 @@
+[Unit]
+Description=Finish setting up PolyOS once the computer is online
+ConditionPathExists=/var/lib/polyos/first-start.json
+
+[Timer]
+OnBootSec=45s
+OnUnitInactiveSec=5min
+
+[Install]
+WantedBy=timers.target

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import random
 import shutil
@@ -637,10 +638,15 @@ DP-1 disconnected (normal left inverted right x axis y axis)
     def install_start(self, plan):
         if not self.live:
             raise ApiError("PolyOS is already installed on this computer.", 409)
+        from . import polyaccount
+        state = polyaccount.load(self._pa_home())
+        plan = {**plan, "polyAccount": state if state.get("credential") else None}
         try:
             clean = installer.validate_plan(plan)
         except installer.InstallError as exc:
             raise ApiError(str(exc)) from None
+        print("install plan:", json.dumps({"settings": clean["extraSettings"], "firstStart": clean["firstStart"],
+                                           "polyAccount": bool(clean["polyAccount"])}), flush=True)
         steps = ["Preparing the disk…", "Formatting…", "Copying PolyOS to the disk… 20%", "Copying PolyOS to the disk… 55%",
                  "Copying PolyOS to the disk… 90%", "Setting up your computer…", "Creating your account…",
                  "Installing the boot loader…", "Finishing the boot menu…", "Cleaning up…"]

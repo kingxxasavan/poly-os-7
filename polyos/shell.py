@@ -37,7 +37,6 @@ except ValueError:
 from gi.repository import Gdk, GdkPixbuf, GdkX11, Gio, GLib, Gtk, WebKit2, Wnck  # noqa: E402
 
 from . import __version__, gaming, paths, power, system, theme  # noqa: E402
-from .fsbar import FullscreenBar  # noqa: E402
 from .backend import (CAMERA_APP, DISPLAY_NAMES, INSTALL_APP, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT,  # noqa: E402
                       Backend, dock_geometry, panel_margin)
 from .core import IMAGE_TYPES, ApiError, EventBus, Settings, bundled_icon, icon_names, letter_icon  # noqa: E402
@@ -125,7 +124,6 @@ class DesktopShell(Backend):
         except Exception:  # noqa: BLE001 - a screen setting must never stop the desktop starting
             log.exception("couldn't apply the saved display settings")
         self._load_apps()
-        self._fsbar = FullscreenBar(self._x_time)
         self._app_monitor = Gio.AppInfoMonitor.get()
         self._app_monitor.connect("changed", lambda *_: self._schedule_apps_reload())
         self._init_wnck()
@@ -287,11 +285,11 @@ class DesktopShell(Backend):
 
     def _sync_fullscreen(self) -> None:
         """Full-screen apps (the title bar's full-screen button, Win+F, videos, games, F11 in a
-        browser) show only the app: no title bar, no taskbar. The top edge brings a bar to leave."""
+        browser) show only the app: no title bar, no taskbar, nothing popping up over it.
+        Win+F (or the app's own F11/Esc) leaves full screen."""
         active = self.wscreen.get_active_window()
         full = bool(active is not None and active.is_fullscreen()
                     and active.get_class_group_name() != "PolyOS")
-        self._fsbar.track(active if full else None)
         if full == self._fullscreen_app:
             return
         self._fullscreen_app = full
@@ -846,13 +844,17 @@ class DesktopShell(Backend):
         def loop():
             while True:
                 try:
-                    notice = self.update_notice(seen)
-                    if notice:
-                        path.write_text(json.dumps(seen), "utf-8")
-                        self._show_update_notice(notice)
+                    for notice in (self.first_start_notice(seen), self.update_notice(seen)):
+                        if notice:
+                            path.write_text(json.dumps(seen), "utf-8")
+                            if notice["kind"] == "setting-up":
+                                threading.Thread(target=self._notify, args=(notice["title"], notice["body"], []), daemon=True).start()
+                            else:
+                                self._show_update_notice(notice)
                 except Exception:  # noqa: BLE001 - never let a notice take the shell down
                     log.exception("update notice failed")
-                time.sleep(600)
+                # right after installing, check often so "all set up" shows soon after it's done
+                time.sleep(60 if self.first_start_pending() else 600)
         threading.Thread(target=loop, name="polyos-updates", daemon=True).start()
         return False
 

@@ -167,7 +167,7 @@ page("download", "Download PolyOS 7", "Download the PolyOS 7 live USB and instal
 # ---- Documentation ---------------------------------------------------------------------------
 SHORTCUTS = [("Win", "Home Menu"), ("Win + S", "All apps"), ("Win + A", "Quick settings"), ("Win + W", "Widgets"), ("Win + V", "Ask Vara"),
              ("Win + R", "Run"), ("Win + I", "Settings"), ("Win + E", "Files"), ("Win + T", "Terminal"), ("Win + B", "Browser"),
-             ("Win + L", "Lock"), ("Win + D", "Show the desktop"), ("Win + F", "Full screen"), ("Win + ↑", "Maximize"),
+             ("Win + L", "Lock"), ("Win + D", "Show the desktop"), ("Win + F", "Full screen on and off"), ("Win + ↑", "Maximize"),
              ("Win + ← / →", "Snap left or right"), ("Ctrl + Shift + Esc", "Task Manager"), ("Alt + Tab", "Switch windows"), ("Print", "Screenshot")]
 shortcut_rows = "".join(f"<tr><td><kbd>{escape(k)}</kbd></td><td>{escape(v)}</td></tr>" for k, v in SHORTCUTS)
 page("docs", "Documentation · PolyOS 7", "How to install, use and update PolyOS 7, and how Poly Account works.", prose(
@@ -175,10 +175,12 @@ page("docs", "Documentation · PolyOS 7", "How to install, use and update PolyOS
     'Everything from installing to updates. Stuck? See <a href="/support">Help &amp; Support</a>.', [
         ("Install", '<p>The <a href="/install">install guide</a> covers making the USB drive, starting from it, BitLocker, '
                     'dual boot next to Windows (or on a D: drive you made), and what to do if something goes wrong.</p>'),
-        ("First start", '<p>PolyOS checks your computer first: the exact model, processor, memory and graphics. Most computers get '
-                        '<b>Everything on</b>; older ones get <b>Smooth</b> or <b>Light</b>, which turn off blur and see-through glass. '
-                        'Then it offers to connect to the internet, install drivers, set up your edition’s apps and, if you like, connect a '
-                        '<a href="#poly-account">Poly Account</a>.</p>'),
+        ("First start", '<p>Setup happens once, on the USB drive, before PolyOS installs. It checks your computer first: the exact '
+                        'model, processor, memory and graphics. Most computers get <b>Everything on</b>; older ones get <b>Smooth</b> or '
+                        '<b>Light</b>, which turn off blur and see-through glass. Then your edition, account, look, Wi-Fi and, if you like, a '
+                        '<a href="#poly-account">Poly Account</a>. After the restart you go straight to your desktop; the recommended '
+                        'drivers and your edition’s apps install in the background once you’re online, and a notification says when '
+                        'they’re done.</p>'),
         ("Settings", '<ul><li><b>Display</b>: resolution, refresh rate, orientation, main display, brightness and graphics.</li>'
                      '<li><b>Sound</b>: output and input devices, microphone level, and the full mixer for per-app volume and surround.</li>'
                      '<li><b>Apps</b>: what starts when you sign in, and uninstall any app with a button.</li>'
@@ -197,7 +199,7 @@ page("docs", "Documentation · PolyOS 7", "How to install, use and update PolyOS
                          'open <a href="/link">the link page</a> on any device and enter it.</li>'
                          '<li><b>Each computer has its own key</b>, so removing one (Devices › Remove device) doesn’t affect the others. The computer never keeps your password.</li>'
                          '<li><b>Remote management</b> (restart, lock and install updates from the website) is off until you turn it on at that computer.</li>'
-                         '<li><b>Recovery</b>: a verified email resets your password; so does the recovery key you saved when you made the account.</li>'
+                         '<li><b>Recovery</b>: a verified email resets your password; so does a recovery key from <a href="/account#recovery">Poly Account › Recovery</a>.</li>'
                          '<li><b>Poly Sync</b> keeps settings, theme, wallpapers and pinned apps the same on your computers. Files aren’t synced.</li></ul>'),
         ("Keyboard shortcuts", f'<table class="guide-table"><thead><tr><th>Keys</th><th>What it does</th></tr></thead><tbody>{shortcut_rows}</tbody></table>'),
         ("Vara", '<p>Vara, the AI agent, writes and runs code, makes 3D models and works with ROS 2 robots and Arduino boards, asking before it changes anything. '

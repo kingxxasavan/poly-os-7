@@ -195,6 +195,7 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         # the update service (polyos/autoupdate.py): an hourly timer, and check/tonight/now on request
         (data / "polkit/50-polyos-update.rules", "usr/share/polkit-1/rules.d/50-polyos-update.rules", 0o644),
         *[(p, f"usr/lib/systemd/system/{p.name}", 0o644) for p in sorted((data / "systemd").glob("polyos-update*"))],
+        *[(p, f"usr/lib/systemd/system/{p.name}", 0o644) for p in sorted((data / "systemd").glob("polyos-first-start*"))],
         *_tree(data / "store", "usr/share/polyos/store"),
         *_tree(data / "vara", "usr/share/polyos/vara"),
         (data / "xgreeters/polyos-greeter.desktop", "usr/share/xgreeters/polyos-greeter.desktop", 0o644),
