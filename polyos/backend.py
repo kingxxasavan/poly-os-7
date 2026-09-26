@@ -344,8 +344,11 @@ class Backend:
         bad = [p for p in packages if p not in self._driver_packages or not drivers.DRIVER_PACKAGE_RE.match(p)]
         if bad or not packages:
             raise ApiError("Scan for drivers again, then pick from the list.")
-        return self.jobs.start("drivers", "Installing drivers", ["drivers", *packages],
-                               on_done=lambda job: self.bus.publish("drivers"))
+        def done(job):
+            if job.get("state") == "done" and "onboard" in packages:
+                self.update_settings({"desktopOpen": "single"})  # a touchscreen: icons open with one tap
+            self.bus.publish("drivers")
+        return self.jobs.start("drivers", "Installing drivers", ["drivers", *packages], on_done=done)
 
     # ---- PolyMarket ------------------------------------------------------------------------
     def _store_app(self, app_id: str) -> dict:
@@ -559,7 +562,9 @@ class Backend:
     def hardware_profile(self, profile: str) -> dict:
         """Set PolyOS up for this computer: "full", "balanced" or the "light" optimized version."""
         from . import hwcheck
-        self.update_settings(dict(hwcheck.PROFILE_SETTINGS[profile]))
+        patch = dict(hwcheck.PROFILE_SETTINGS[profile])
+        patch.setdefault("backgroundLimit", self.hardware_check()["background"])
+        self.update_settings(patch)
         return self.hardware_check()
 
     def graphics_info(self) -> list[dict]:

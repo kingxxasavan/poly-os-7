@@ -480,6 +480,7 @@ const pages = {
     // The hardware check from setup: how well this PC fits, and the full / smooth / light version of PolyOS.
     const pcBox = h('div');
     const PROFILE_NAMES = [['full', 'Everything on'], ['balanced', 'Smooth'], ['light', 'Light']];
+    const bgToggle = toggle(false, (v) => save({ backgroundLimit: v ? 'reduced' : 'normal' }, err), 'Limit background activity');
     const profileSeg = seg('How PolyOS runs', PROFILE_NAMES, (v) => api.post('/api/hardware', { profile: v }).then(showPc, (e) => errorText(err, e.message)));
     function showPc(r) {
       const worst = r.items.find((it) => it.status === 'low') || r.items.find((it) => it.status === 'ok');
@@ -487,8 +488,12 @@ const pages = {
         ...r.items.map((it) => row(`${it.label}: ${it.value}`, it.note)),
         row(r.summary, r.profile === 'full' ? 'Recommended: Everything on' : `Recommended: ${PROFILE_NAMES.find((p) => p[0] === r.profile)[1]}${worst ? ` (${worst.label.toLowerCase()})` : ''}`,
           h('button.btn', { onclick: () => api.get('/api/hardware').then(showPc, (e) => errorText(err, e.message)) }, icon('refresh'), 'Check again')),
-        row('How PolyOS runs', 'Light turns off blur, shadows and see-through glass, and shortens animations. Blur changes apply at next sign-in.', profileSeg)));
+        row('How PolyOS runs', 'Light turns off blur, shadows and see-through glass, and shortens animations. Blur changes apply at next sign-in.', profileSeg),
+        row('Limit background activity', r.background === 'reduced'
+          ? 'Recommended for this computer. Vara’s commands run at low priority and check in sooner, status checks and widgets refresh less often.'
+          : 'Vara’s commands run at low priority and check in sooner, status checks and widgets refresh less often. Saves battery.', bgToggle)));
       profileSeg.set(r.current);
+      bgToggle.set(s().backgroundLimit === 'reduced');
     }
     api.get('/api/hardware').then(showPc, (e) => errorText(err, e.message));
     page.append(

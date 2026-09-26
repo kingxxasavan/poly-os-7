@@ -5,8 +5,8 @@ import { watchJobs, withAdmin } from '../admin.js';
 import { api, power } from '../api.js';
 import { fill, h, icon } from '../ui.js';
 
-const KIND_ICON = { graphics: 'monitor', wifi: 'wifi', bluetooth: 'bluetooth', audio: 'volume', network: 'ethernet', firmware: 'chip' };
-const KIND_LABEL = { graphics: 'Graphics', wifi: 'Wi-Fi', bluetooth: 'Bluetooth', audio: 'Sound', network: 'Network', firmware: 'Firmware' };
+const KIND_ICON = { graphics: 'monitor', wifi: 'wifi', bluetooth: 'bluetooth', audio: 'volume', network: 'ethernet', firmware: 'chip', touch: 'brush', camera: 'camera' };
+const KIND_LABEL = { graphics: 'Graphics', wifi: 'Wi-Fi', bluetooth: 'Bluetooth', audio: 'Sound', network: 'Network', firmware: 'Firmware', touch: 'Touch and pen', camera: 'Camera' };
 
 export function mount(root) {
   root.className = 'drivers';

@@ -792,7 +792,7 @@ export function mount(root, store) {
   function check() {
     const box = h('div.su-drivers.su-hw', h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'Checking your processor, memory and graphics…'));
     const verdict = h('div');
-    const PART_ICONS = { cpu: 'chip', ram: 'memory', gpu: 'monitor' };
+    const PART_ICONS = { model: 'laptop', cpu: 'chip', ram: 'memory', gpu: 'monitor' };
     const badge = (status) => (status === 'good' ? h('span.su-ok', icon('check'))
       : h('span.su-badge', { class: status === 'low' ? 'warn' : '' }, status === 'low' ? 'Light mode' : 'OK'));
     function render() {

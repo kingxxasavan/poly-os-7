@@ -106,7 +106,7 @@ class DesktopShell(Backend):
         self._camera = power.has_camera()
         self._live = Path("/run/live/medium").exists()  # trying PolyOS from the USB
         self._game_active = False  # Game Mode: a full-screen game is in front
-        self._poll_interval = 2.0
+        self._poll_interval = self._base_poll()
 
     # ==== startup ==========================================================================
     def start(self, base_url: str) -> None:
@@ -306,13 +306,17 @@ class DesktopShell(Backend):
     BACKGROUND_TASKS = ("tumblerd", "tracker-miner-fs-3", "tracker-extract-3", "baloo_file", "gvfsd-metadata",
                         "xfce4-notifyd", "blueman-applet", "nm-applet", "evolution-data-server")
 
+    def _base_poll(self) -> float:
+        """Seconds between status checks: longer when background activity is limited."""
+        return 5.0 if self.settings.get("backgroundLimit") == "reduced" else 2.0
+
     def _set_game_mode(self, active: bool) -> None:
         """A full-screen game: performance power mode, no idle lock or sleep, and PolyOS's own
         background work (status polling, thumbnails, indexing) steps back until it closes."""
         if active == self._game_active:
             return
         self._game_active = active
-        self._poll_interval = 10.0 if active else 2.0
+        self._poll_interval = 10.0 if active else self._base_poll()
         self.bus.publish("gamemode", active=active)
         log.info("game mode %s", "on" if active else "off")
 
@@ -1087,6 +1091,8 @@ class DesktopShell(Backend):
             theme.switch_openbox(paths.runtime_dir() / "openbox-rc.xml", settings["theme"])
         if "showAllApps" in patch:
             self.bus.publish("apps", apps=self._apps)
+        if "backgroundLimit" in patch and not self._game_active:
+            self._poll_interval = self._base_poll()
         return settings
 
     def finish_setup(self):

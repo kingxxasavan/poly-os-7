@@ -43,6 +43,7 @@ LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 HISTORY_LIMIT = 80  # items shown in the chat
 TRANSCRIPT_CHARS = 90_000  # roughly how much conversation goes back to the model
 MAX_STEPS = 25  # model calls per request before Vara stops and asks to continue
+GENTLE_STEPS = 12  # the same with background activity limited
 APPROVAL_TIMEOUT = 30 * 60
 
 CHAT_PROMPT = (
@@ -459,10 +460,15 @@ class Vara:
         workspace = self.workspace(cfg)
         if not workspace.exists() and inside(Path(os.path.realpath(workspace)), self.home):
             workspace.mkdir(parents=True, exist_ok=True)  # ~/Projects, the default place for new work
+        # Limited background activity (Settings > Power & Performance, or the hardware check on a
+        # small or older PC): Vara's programs run at low priority and it checks in sooner.
+        settings = getattr(backend, "settings", None)
+        gentle = bool(settings and settings.get("backgroundLimit") == "reduced")
         ctx = ToolContext(home=self.home, workspace=workspace if workspace.is_dir() else self.home,
-                          backend=backend, skills=self.skills, memory=self.memory, cancel=self._cancel)
+                          backend=backend, skills=self.skills, memory=self.memory, cancel=self._cancel, gentle=gentle)
         tools = [t for t in TOOLS.values() if t.available()]
-        for _step in range(MAX_STEPS):
+        steps = GENTLE_STEPS if gentle else MAX_STEPS
+        for _step in range(steps):
             if self._cancel.is_set():
                 self._add({"role": "assistant", "content": "Stopped."})
                 return
@@ -495,7 +501,7 @@ class Vara:
                 result = "Stopped by the person." if self._cancel.is_set() else self._call(ctx, call)
                 with self._lock:
                     self.messages.append({"role": "tool", "tool_call_id": call.get("id") or "", "content": result})
-        self._add({"role": "assistant", "content": f"I've taken {MAX_STEPS} steps on this. Say “continue” and "
+        self._add({"role": "assistant", "content": f"I've taken {steps} steps on this. Say “continue” and "
                                                     "I'll keep going, or tell me what to change."})
 
     def _plain_transcript(self) -> list[dict]:

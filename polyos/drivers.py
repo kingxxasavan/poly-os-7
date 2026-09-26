@@ -19,8 +19,17 @@ DRIVER_PACKAGE_RE = re.compile(
     r"linux-headers-(amd64|arm64)|broadcom-sta-dkms|mesa-vulkan-drivers|mesa-va-drivers|mesa-vdpau-drivers|libgl1-mesa-dri|"
     r"intel-media-va-driver-non-free|intel-media-va-driver|i965-va-driver|va-driver-all|vdpau-driver-all|"
     r"xserver-xorg-video-(amdgpu|ati|intel|nouveau)|intel-microcode|amd64-microcode|bluez-firmware|"
-    r"nvidia-vaapi-driver|nvidia-settings|vulkan-tools|mesa-utils)$"
+    r"nvidia-vaapi-driver|nvidia-settings|vulkan-tools|mesa-utils|"
+    # touchscreens, pens and 2-in-1s; webcams and Intel IPU6 laptop cameras
+    r"onboard|matchbox-keyboard|iio-sensor-proxy|xserver-xorg-input-wacom|xserver-xorg-input-libinput|"
+    r"v4l-utils|gstreamer1.0-plugins-good|libcamera-ipa|libcamera-tools|gstreamer1.0-libcamera|pipewire-libcamera)$"
 )
+
+# Intel IPU6 image processors: the MIPI cameras in many 2021+ Intel laptops (Dell XPS, Lenovo
+# ThinkPad X1, HP Spectre...). Not USB webcams, so they need firmware and libcamera.
+IPU6_IDS = {"9a19", "9a39", "4e19", "465d", "462e", "a75d", "7d19"}
+
+INPUT_PROP_DIRECT = 1 << 1  # a touchscreen or pen tablet: touches land where you point
 
 # Broadcom Wi-Fi chips that only work with the proprietary "wl" driver (broadcom-sta-dkms).
 BROADCOM_WL_IDS = {"4311", "4312", "4313", "4315", "4328", "4329", "432a", "432b", "432c", "432d", "4331",
@@ -166,6 +175,94 @@ def recommend(devices: list[dict], nvidia_pkg: str | None = None, isenkram: list
     return out
 
 
+def parse_input_devices(text: str) -> list[dict]:
+    """Touch devices from /proc/bus/input/devices: {name, pen} for each touchscreen or pen digitizer."""
+    out = []
+    for block in text.split("\n\n"):
+        name = re.search(r'^N: Name="(.*)"$', block, re.M)
+        prop = re.search(r"^B: PROP=([0-9a-fA-F]+)$", block, re.M)
+        if not name or not prop:
+            continue
+        try:
+            direct = int(prop.group(1), 16) & INPUT_PROP_DIRECT
+        except ValueError:
+            continue
+        if direct:
+            label = name.group(1)
+            out.append({"name": label, "pen": bool(re.search(r"pen|stylus|wacom", label, re.I))})
+    return out
+
+
+def extra_devices(touch: list[dict], webcam: bool, pci: list[dict], sensors: list[str]) -> list[dict]:
+    """Touchscreens, pens, webcams and Intel IPU6 cameras, beyond what lspci's classes cover."""
+    out = []
+    screens = [t for t in touch if not t["pen"]]
+    pens = [t for t in touch if t["pen"]]
+    if screens:
+        packages = ["xserver-xorg-input-libinput", "onboard"]
+        note = "Touch works right away. This adds the Onboard on-screen keyboard for typing without a keyboard"
+        if "accel" in sensors:
+            packages.append("iio-sensor-proxy")
+            note += ", and the tilt sensor 2-in-1s use to turn the screen"
+        out.append({"id": "touchscreen", "kind": "touch", "title": screens[0]["name"] or "Touchscreen", "vendor": "",
+                    "driver": "libinput", "working": True, "packages": packages, "restart": False,
+                    "note": note + ". Desktop icons then open with one tap.", "touch": True})
+    if pens:
+        out.append({"id": "pen", "kind": "touch", "title": pens[0]["name"], "vendor": "", "driver": "libinput",
+                     "working": True, "packages": ["xserver-xorg-input-wacom"], "restart": False,
+                     "note": "Pressure and buttons for the pen."})
+    ipu = [d for d in pci if d.get("vendorId") == "8086" and d.get("deviceId") in IPU6_IDS]
+    if ipu:
+        out.append({"id": ipu[0].get("slot", "ipu6"), "kind": "camera", "title": "Intel IPU6 camera", "vendor": "Intel",
+                    "driver": ipu[0].get("driver"), "working": bool(webcam),
+                    "packages": ["firmware-misc-nonfree", "libcamera-ipa", "libcamera-tools", "gstreamer1.0-libcamera",
+                                 "pipewire-libcamera"],
+                    "restart": True,
+                    "note": ("The built-in camera on many newer Intel laptops. This installs its firmware and libcamera; "
+                             "restart afterwards. Linux support for these cameras is still new, so some models "
+                             "don't show a picture yet.")})
+    if webcam:
+        out.append({"id": "webcam", "kind": "camera", "title": "Webcam", "vendor": "", "driver": "uvcvideo",
+                    "working": True, "packages": ["v4l-utils", "gstreamer1.0-plugins-good"], "restart": False,
+                    "note": "Works with the Camera app and video calls."})
+    return out
+
+
+def _read(path: str) -> str:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def iio_sensors(root: str = "/sys/bus/iio/devices") -> list[str]:
+    """Kinds of motion sensors (accel, gyro, als...) the kernel found."""
+    import os
+    found = []
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return []
+    for entry in names:
+        name = _read(f"{root}/{entry}/name").strip().lower()
+        for kind in ("accel", "gyro", "als", "magn"):
+            if kind in name and kind not in found:
+                found.append(kind)
+    return found
+
+
+def parse_apt_policy(text: str) -> set[str]:
+    """Packages `apt-cache policy` can install (they have a candidate version)."""
+    out, current = set(), None
+    for line in text.splitlines():
+        if line and not line.startswith(" ") and line.endswith(":"):
+            current = line[:-1]
+        elif current and line.strip().startswith("Candidate:") and "(none)" not in line:
+            out.add(current)
+    return out
+
+
 def _run(args: list[str], timeout: float = 20) -> str:
     try:
         proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
@@ -196,7 +293,15 @@ def scan() -> dict:
     nvidia = parse_nvidia_detect(_run(["nvidia-detect"], 30)) if shutil.which("nvidia-detect") and \
         any(d.get("vendorId") == "10de" and kind_of(d) == "graphics" for d in devices) else None
     isenkram = _run(["isenkram-lookup"], 60).split() if shutil.which("isenkram-lookup") else []
+    from .power import has_camera
     items = recommend(devices, nvidia, isenkram)
+    items += extra_devices(parse_input_devices(_read("/proc/bus/input/devices")), has_camera(), devices, iio_sensors())
+    wanted = sorted({p for it in items for p in it["packages"]})
+    if shutil.which("apt-cache") and wanted:  # only what this Debian can actually install
+        known = parse_apt_policy(_run(["apt-cache", "policy", *wanted], 30))
+        if known:
+            for it in items:
+                it["packages"] = [p for p in it["packages"] if p in known]
     have = installed_packages(sorted({p for it in items for p in it["packages"]}))
     for it in items:
         it["missing"] = [p for p in it["packages"] if p not in have]

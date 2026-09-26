@@ -607,3 +607,72 @@ class HardwareCheckTests(unittest.TestCase):
             settings = Settings(Path(tmp) / "s.json")
             for name in hwcheck.PROFILES:
                 self.assertEqual(settings.update(dict(hwcheck.PROFILE_SETTINGS[name]))["performanceProfile"], name)
+
+
+class SpecialDriverTests(unittest.TestCase):
+    """Touchscreens, pens and cameras in Driver Manager."""
+
+    INPUT = """I: Bus=0018 Vendor=04f3 Product=2c82 Version=0100
+N: Name="ELAN9008:00 04F3:2C82"
+B: PROP=2
+B: EV=1b
+
+I: Bus=0018 Vendor=04f3 Product=2c82 Version=0100
+N: Name="ELAN9008:00 04F3:2C82 Stylus"
+B: PROP=2
+
+I: Bus=0018 Vendor=06cb Product=cd8b Version=0100
+N: Name="SYNA2BA6:00 06CB:CD8B Touchpad"
+B: PROP=5
+
+I: Bus=0011 Vendor=0001 Product=0001 Version=ab83
+N: Name="AT Translated Set 2 keyboard"
+B: PROP=0
+"""
+
+    def test_touch_and_cameras(self):
+        touch = drivers.parse_input_devices(self.INPUT)
+        self.assertEqual(touch, [{"name": "ELAN9008:00 04F3:2C82", "pen": False},
+                                 {"name": "ELAN9008:00 04F3:2C82 Stylus", "pen": True}])  # not the touchpad
+        ipu = [{"slot": "00:05.0", "classId": "0480", "vendorId": "8086", "deviceId": "a75d", "driver": "intel-ipu6"}]
+        items = {it["id"]: it for it in drivers.extra_devices(touch, True, ipu, ["accel"])}
+        self.assertEqual(set(items), {"touchscreen", "pen", "00:05.0", "webcam"})
+        self.assertIn("iio-sensor-proxy", items["touchscreen"]["packages"])
+        self.assertIn("pipewire-libcamera", items["00:05.0"]["packages"])
+        for it in items.values():
+            self.assertTrue(all(drivers.DRIVER_PACKAGE_RE.match(p) for p in it["packages"]), it)
+        self.assertEqual(drivers.extra_devices([], False, [], []), [])
+
+    def test_apt_policy(self):
+        text = "onboard:\n  Installed: (none)\n  Candidate: 1.4.1-5\n  Version table:\nmissing-pkg:\n  Installed: (none)\n  Candidate: (none)\n"
+        self.assertEqual(drivers.parse_apt_policy(text), {"onboard"})
+
+
+class ComputerModelTests(unittest.TestCase):
+    """The exact model and age from the firmware, and what they change."""
+
+    def test_models(self):
+        from polyos import hwcheck
+
+        lenovo = hwcheck.describe_model({"sys_vendor": "LENOVO", "product_name": "82LN", "product_version": "IdeaPad 5 15ALC05",
+                                         "bios_date": "03/14/2022", "chassis_type": "10"}, 2026)
+        self.assertEqual((lenovo["maker"], lenovo["model"], lenovo["year"], lenovo["age"], lenovo["laptop"]),
+                         ("Lenovo", "IdeaPad 5 15ALC05 (82LN)", 2022, 4, True))
+        board = hwcheck.describe_model({"sys_vendor": "System manufacturer", "product_name": "System Product Name",
+                                        "board_vendor": "ASUSTeK COMPUTER INC.", "board_name": "ROG STRIX B550-F GAMING",
+                                        "chassis_type": "3"}, 2026)
+        self.assertEqual((board["maker"], board["model"], board["laptop"], board["year"]), ("ASUS", "ROG STRIX B550-F GAMING", False, None))
+        dell = hwcheck.describe_model({"sys_vendor": "Dell Inc.", "product_name": "Dell XPS 13 9310", "chassis_type": "31"}, 2026)
+        self.assertEqual((dell["model"], dell["convertible"]), ("XPS 13 9310", True))
+
+    def test_age_and_background(self):
+        from polyos import hwcheck
+
+        base = {"cpu": "i7", "cores": 8, "ram": 16 * 1024 ** 3, "renderer": "Mesa", "arch": "x86_64",
+                "graphics": [{"name": "Intel", "driver": "i915"}]}
+        new = hwcheck.assess(base | {"computer": {"maker": "Lenovo", "model": "IdeaPad", "year": 2023, "age": 3, "laptop": True}})
+        self.assertEqual((new["profile"], new["background"], new["items"][0]["id"]), ("full", "normal", "model"))
+        old = hwcheck.assess(base | {"computer": {"maker": "Dell", "model": "XPS", "year": 2016, "age": 10, "laptop": True}})
+        self.assertEqual((old["profile"], old["background"]), ("balanced", "reduced"))
+        small = hwcheck.assess(base | {"ram": 4 * 1024 ** 3})
+        self.assertEqual(small["background"], "reduced")

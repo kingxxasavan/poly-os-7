@@ -30,7 +30,7 @@ PROFILE_SETTINGS = {
     "full": {"performanceProfile": "full", "effects": True, "lockNews": True},
     "balanced": {"performanceProfile": "balanced", "effects": False},
     "light": {"performanceProfile": "light", "effects": False, "glass": 100, "lockNews": False,
-              "widgets": ["weather", "calendar", "system", "todo"]},
+              "widgets": ["weather", "calendar", "system", "todo"], "backgroundLimit": "reduced"},
 }
 PROFILE_TEXT = {
     "full": "Everything on: blur, glass and animations.",
@@ -38,6 +38,53 @@ PROFILE_TEXT = {
     "light": "A lighter PolyOS: no blur, shadows or see-through glass, quicker animations and fewer "
              "widgets and background extras, so more of this computer goes to your apps.",
 }
+
+
+# ---- the exact computer model, from its firmware (DMI/SMBIOS) -------------------------------
+# The firmware already says which model this is (no serial number needed; it stays private).
+JUNK = re.compile(r"^(to be filled.*|system (product )?name|system manufacturer|manufacturer|system version|default string|not applicable|none|n/?a|"
+                  r"0123456789|x\.x|\s*|o\.e\.m\.?|oem|type1productconfigid|sku|invalid|unknown)$", re.I)
+LAPTOP_CHASSIS = {8, 9, 10, 14, 30, 31, 32}  # portable, laptop, notebook, sub-notebook, tablet, convertible, detachable
+CONVERTIBLE_CHASSIS = {30, 31, 32}
+
+
+def _clean(value: str) -> str:
+    value = re.sub(r"\s+", " ", value or "").strip()
+    return "" if JUNK.match(value) else value
+
+
+def read_dmi(root: str = "/sys/class/dmi/id") -> dict:
+    return {key: _read(f"{root}/{key}").strip() for key in
+            ("sys_vendor", "product_name", "product_version", "product_family", "board_vendor", "board_name",
+             "bios_date", "bios_version", "chassis_type")}
+
+
+def describe_model(dmi: dict, today_year: int | None = None) -> dict:
+    """{maker, model, year, age, laptop, convertible} from the firmware's fields."""
+    import datetime
+    maker = _clean(dmi.get("sys_vendor", "")) or _clean(dmi.get("board_vendor", ""))
+    name, version, family = (_clean(dmi.get(k, "")) for k in ("product_name", "product_version", "product_family"))
+    if maker.upper().startswith("LENOVO") and version:  # Lenovo keeps the model in "version", the type number in "name"
+        model = f"{version} ({name})" if name and name not in version else version
+    else:
+        model = name or family or _clean(dmi.get("board_name", ""))
+    maker = {"LENOVO": "Lenovo", "HP": "HP", "Hewlett-Packard": "HP", "Dell Inc.": "Dell", "ASUSTeK COMPUTER INC.": "ASUS",
+             "Acer": "Acer", "Micro-Star International Co., Ltd.": "MSI", "Microsoft Corporation": "Microsoft",
+             "Apple Inc.": "Apple", "Framework": "Framework", "QEMU": "QEMU", "innotek GmbH": "VirtualBox"}.get(maker, maker)
+    if model.lower().startswith(maker.lower() + " "):
+        model = model[len(maker) + 1:]
+    year = None
+    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{4})", dmi.get("bios_date", ""))
+    if m:
+        year = int(m.group(3))
+    now = today_year or datetime.date.today().year
+    try:
+        chassis = int(dmi.get("chassis_type", "") or 0)
+    except ValueError:
+        chassis = 0
+    virtual = maker in ("QEMU", "VirtualBox") or "vmware" in maker.lower() or "virtual" in model.lower()
+    return {"maker": maker, "model": model, "year": year, "age": max(0, now - year) if year else None,
+            "laptop": chassis in LAPTOP_CHASSIS, "convertible": chassis in CONVERTIBLE_CHASSIS, "virtual": virtual}
 
 
 def parse_cpuinfo(text: str) -> str:
@@ -68,10 +115,10 @@ def _read(path: str) -> str:
 
 
 def gather(graphics: list[dict], renderer: str = "") -> dict:
-    """The facts, from /proc and what the backend found about graphics."""
+    """The facts, from /proc, the firmware and what the backend found about graphics."""
     return {"cpu": parse_cpuinfo(_read("/proc/cpuinfo")), "cores": os.cpu_count() or 1,
             "ram": parse_meminfo(_read("/proc/meminfo")), "graphics": graphics, "renderer": renderer,
-            "arch": os.uname().machine}
+            "arch": os.uname().machine, "computer": describe_model(read_dmi())}
 
 
 def _gib(n: int) -> str:
@@ -109,12 +156,27 @@ def assess(facts: dict) -> dict:
         {"id": "gpu", "label": "Graphics", "value": re.sub(r"\s*\[[0-9a-f]{4}:[0-9a-f]{4}\]", "", gpu_name, flags=re.I),
          "status": gpu_status, "note": gpu_note},
     ]
+    computer = facts.get("computer") or {}
+    age = computer.get("age")
+    if computer.get("model") or computer.get("maker"):
+        what = " ".join(x for x in (computer.get("maker"), computer.get("model")) if x)
+        kind = "2-in-1" if computer.get("convertible") else "laptop" if computer.get("laptop") else \
+            "virtual machine" if computer.get("virtual") else "desktop"
+        when = f", firmware from {computer['year']}" if computer.get("year") else ""
+        old = age is not None and age >= 8
+        items.insert(0, {"id": "model", "label": "Computer", "value": what, "status": "ok" if old else "good",
+                         "note": f"A {kind}{when}." + (" An older computer: PolyOS takes it a little easier." if old else "")})
     if cpu_status == "low" or ram_status == "low":
         profile = "light"
     elif software or cpu_status == "ok" and ram_status == "ok":
         profile = "balanced"
     else:
         profile = "full"
+    if profile == "full" and age is not None and age >= 8:
+        profile = "balanced"  # eight or more years old: skip the heaviest effects
+    # Background work (Vara's commands, status checks, widget refreshes) held back on small or older
+    # laptops and on anything in the light mode, so batteries last and apps stay quick.
+    reduced = profile == "light" or ram < FULL_RAM or bool(computer.get("laptop") and age is not None and age >= 6)
     supported = ram == 0 or ram >= MIN_RAM
     if profile == "full":
         summary = "This computer is a great fit for PolyOS."
@@ -125,4 +187,5 @@ def assess(facts: dict) -> dict:
     if not supported:
         summary = "This computer has less memory than PolyOS needs (2 GB). It will start, but expect it to be slow."
     return {"items": items, "profile": profile, "supported": supported, "summary": summary,
-            "profileText": PROFILE_TEXT[profile], "arch": facts.get("arch", "")}
+            "profileText": PROFILE_TEXT[profile], "arch": facts.get("arch", ""), "computer": computer,
+            "background": "reduced" if reduced else "normal"}

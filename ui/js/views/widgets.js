@@ -43,7 +43,9 @@ export default function widgets(root, store) {
 
   let data = null; // widgets.json
   const timers = [];
-  const every = (ms, fn) => { fn(); timers.push(setInterval(fn, ms)); };
+  // Limited background activity (Settings > Power & Performance): widgets refresh half as often.
+  const slow = () => (store.state.settings.backgroundLimit === 'reduced' ? 2 : 1);
+  const every = (ms, fn) => { fn(); timers.push(setInterval(fn, ms * slow())); };
   const save = (patch) => api.post('/api/widgets/data', patch).then((d) => { data = d; return d; });
   const shown = () => store.state.settings.widgets;
 

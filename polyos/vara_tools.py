@@ -64,6 +64,7 @@ class ToolContext:
     skills: object = None
     memory: object = None
     cancel: threading.Event = field(default_factory=threading.Event)
+    gentle: bool = False  # background activity limited: programs run at low CPU priority
 
 
 @dataclass
@@ -140,6 +141,10 @@ def clip(text: str, limit: int = OUTPUT_LIMIT) -> str:
 
 # ---- running programs -------------------------------------------------------------------------
 
+def _low_priority() -> None:
+    os.nice(10)
+
+
 def execute(ctx: ToolContext, argv: list[str], cwd: Path, timeout: float, stdin: str | None = None) -> str:
     """Run a program; its output and exit code as text. Stops with the chat's Stop button."""
     env = dict(os.environ, TERM="dumb", NO_COLOR="1", GIT_TERMINAL_PROMPT="0", PAGER="cat", GIT_PAGER="cat")
@@ -149,7 +154,7 @@ def execute(ctx: ToolContext, argv: list[str], cwd: Path, timeout: float, stdin:
     try:
         proc = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
-                                start_new_session=True)
+                                start_new_session=True, preexec_fn=_low_priority if ctx.gentle else None)
     except FileNotFoundError:
         raise ToolError(f"{argv[0]} isn't installed.") from None
     except OSError as exc:

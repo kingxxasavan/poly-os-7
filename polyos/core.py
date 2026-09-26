@@ -83,6 +83,7 @@ DEFAULTS: dict = {
     "developerMode": False,  # ~/.config/polyos/ui overrides the interface; Settings > Developer
     "devInspector": False,  # right-click > Inspect Element on PolyOS screens (after reloading the interface)
     "performanceProfile": "full",  # "full" | "balanced" | "light": set by the hardware check (hwcheck.py)
+    "backgroundLimit": "normal",  # "reduced": Vara's commands at low priority, fewer status checks and widget refreshes
     "gameMode": True,  # full-screen games get the performance mode; PolyOS pauses its background work
 }
 POWER_MODES = ("saver", "balanced", "performance", "maximum")
@@ -216,6 +217,7 @@ VALIDATORS = {
     "keepRecent": _bool,
     "edition": _choice("regular", "developer", "gaming"),
     "performanceProfile": _choice("full", "balanced", "light"),
+    "backgroundLimit": _choice("normal", "reduced"),
     "editionSetup": _bool,
     "developerMode": _bool,
     "devInspector": _bool,

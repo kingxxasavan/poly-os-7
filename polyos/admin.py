@@ -292,8 +292,17 @@ def drivers_install(packages: list[str]) -> None:
     if bad or not packages:
         raise AdminError(f"Not a driver package: {', '.join(bad) or '(none)'}")
     apt_update()
+    # A package this Debian doesn't have (names change between releases) is skipped, not fatal.
+    policy = subprocess.run(["apt-cache", "policy", *packages], capture_output=True, text=True, timeout=120).stdout
+    available = drivers.parse_apt_policy(policy)
+    skipped = [p for p in packages if p not in available]
+    packages = [p for p in packages if p in available]
+    if skipped:
+        emit({"log": f"not available in this Debian, skipped: {' '.join(skipped)}"})
+    if not packages:
+        raise AdminError("None of these drivers are available from Debian right now. Check your internet connection.")
     apt(["install", *packages], start=0.1)
-    if any(p.startswith(("nvidia", "broadcom-sta", "linux-headers-")) for p in packages):
+    if any(p.startswith(("nvidia", "broadcom-sta", "linux-headers-", "libcamera", "firmware-misc")) for p in packages):
         emit({"restart": True, "message": "Restart to start using the new driver."})
     emit({"progress": 1.0, "message": "Drivers installed."})
 

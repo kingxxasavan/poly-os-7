@@ -350,14 +350,21 @@ DP-1 disconnected (normal left inverted right x axis y axis)
     def _hardware_facts(self, facts):
         """A made-up computer; POLYOS_MOCK_HW=light (or balanced) previews the other results."""
         kind = os.environ.get("POLYOS_MOCK_HW", "full")
+        from .hwcheck import describe_model
         if kind == "light":
             return {**facts, "cpu": "Intel Celeron N4020 CPU @ 1.10GHz", "cores": 2, "ram": 2 * 1024 ** 3 - 180 * 1024 ** 2,
-                    "graphics": [{"name": "Intel Corporation UHD Graphics 600", "driver": "i915"}], "renderer": ""}
+                    "graphics": [{"name": "Intel Corporation UHD Graphics 600", "driver": "i915"}], "renderer": "",
+                    "computer": describe_model({"sys_vendor": "HP", "product_name": "HP Stream Laptop 14-cb1xx",
+                                                "bios_date": "11/02/2019", "chassis_type": "10"})}
         if kind == "balanced":
             return {**facts, "cpu": "AMD Ryzen 5 5600X 6-Core Processor", "cores": 4, "ram": 4 * 1024 ** 3,
-                    "graphics": [], "renderer": "llvmpipe (LLVM 15.0.6, 256 bits)"}
-        return {**facts, "cpu": "Intel Core i7-1165G7 @ 2.80GHz", "cores": 8, "ram": 16 * 1024 ** 3 - 400 * 1024 ** 2,
-                "graphics": self.graphics_info(), "renderer": "Mesa Intel Xe Graphics (TGL GT2)"}
+                    "graphics": [], "renderer": "llvmpipe (LLVM 15.0.6, 256 bits)",
+                    "computer": describe_model({"sys_vendor": "QEMU", "product_name": "Standard PC (Q35 + ICH9, 2009)",
+                                                "bios_date": "04/01/2014", "chassis_type": "1"})}
+        return {**facts, "cpu": "AMD Ryzen 7 5700U with Radeon Graphics", "cores": 16, "ram": 16 * 1024 ** 3 - 400 * 1024 ** 2,
+                "graphics": self.graphics_info(), "renderer": "AMD Radeon Graphics (renoir, LLVM 15.0.6)",
+                "computer": describe_model({"sys_vendor": "LENOVO", "product_name": "82LN", "product_version": "IdeaPad 5 15ALC05",
+                                            "bios_date": "03/14/2022", "chassis_type": "10"})}
 
     def graphics_info(self):
         return [{"name": "Intel Corporation Iris Xe Graphics [8086:9a49]", "driver": "i915"},
@@ -644,7 +651,7 @@ DP-1 disconnected (normal left inverted right x axis y axis)
     # ---- Driver Manager ------------------------------------------------------------------
     def drivers_scan(self):
         time.sleep(0.6)
-        from .drivers import recommend
+        from .drivers import extra_devices, recommend
 
         devices = [
             {"slot": "00:02.0", "className": "VGA compatible controller", "classId": "0300", "vendor": "Intel Corporation",
@@ -657,6 +664,9 @@ DP-1 disconnected (normal left inverted right x axis y axis)
              "vendorId": "8086", "device": "Sunrise Point-LP HD Audio", "deviceId": "9d71", "driver": "snd_hda_intel"},
         ]
         items = recommend(devices, "nvidia-driver", ["firmware-misc-nonfree"])
+        # a 2-in-1 with a touchscreen, a pen and a webcam
+        items += extra_devices([{"name": "ELAN9008:00 04F3:2C82", "pen": False}, {"name": "ELAN9008:00 04F3:2C82 Stylus", "pen": True}],
+                               True, devices, ["accel"])
         for it in items:
             it["missing"] = [p for p in it["packages"] if p not in self._driver_state]
         self._driver_packages = {p for d in items for p in d["packages"]}
