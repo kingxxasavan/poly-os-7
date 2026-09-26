@@ -32,7 +32,7 @@ from pathlib import Path
 
 from . import __version__
 
-SERVER = "https://poly-os-7-debain-receration.vercel.app"  # the website: downloads, updates, Poly Account
+SERVER = "https://poly-os-7.vercel.app"  # the website: downloads, updates, Poly Account
 RELEASES_REPO = "kingxxasavan/poly-os-7-debain-receration"  # public release files (fallback when the website is down)
 MANIFEST = "polyos-update.json"
 SIGNATURE = "polyos-update.json.sig"

@@ -90,7 +90,7 @@ All screenshots are full size in [`screenshots/`](screenshots/) (1440×900) with
 2. **Add New… → Project**, then **Import** `kingxxasavan/poly-os-7-debain-receration`.
 3. Leave the settings as they are (Framework Preset: *Other*; `vercel.json` fills in the rest)
    and click **Deploy**.
-4. You get an address like `https://poly-os-7-debain-receration.vercel.app`. Every push to `main` updates the site,
+4. You get an address like `https://poly-os-7.vercel.app`. Every push to `main` updates the site,
    and other branches get their own preview links. Add your own domain under **Settings → Domains**.
 
 From a terminal instead: `npm i -g vercel`, then `vercel --prod` in the project folder.
