@@ -11,7 +11,7 @@
 #
 # Settings for this repository (Settings > Secrets and variables > Actions):
 #   secret POLYOS_UPDATE_KEY  Poly's release key; signs polyos-update.json so PolyOS installs the
-#                             release as an online update (without it, only the ISOs are usable)
+#                             release as an online update (required: without it nothing is published)
 #   variable RELEASES_REPO    e.g. kingxxasavan/polyos-releases: a public repository that holds the
 #                             releases, so this one can be private (the website reads the same name)
 #   secret RELEASES_TOKEN     a token that can create releases in RELEASES_REPO
@@ -149,10 +149,14 @@ jobs:
         env:
           POLYOS_UPDATE_KEY: ${{ secrets.POLYOS_UPDATE_KEY }}
         run: |
+          # PolyOS 1.0 and later install only signed updates, so an unsigned release would strand
+          # every installed computer: stop here instead of publishing one.
           if [ -z "$POLYOS_UPDATE_KEY" ]; then
-            echo "::warning::POLYOS_UPDATE_KEY isn't set, so this release isn't signed and PolyOS won't install it as an online update."
+            echo "::error::The POLYOS_UPDATE_KEY secret isn't set (Settings > Secrets and variables > Actions), so this release can't be signed and installed computers wouldn't install it. Add the secret, then use Re-run failed jobs on this run."
+            exit 1
           fi
           python3 main.py deb --out dist --manifest
+          test -s dist/polyos-update.json.sig
 
       - name: Checksums (and parts, if an ISO is over GitHub's 2 GB per-file limit)
         run: |
