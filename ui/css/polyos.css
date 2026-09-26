@@ -1685,3 +1685,17 @@ html[data-surface="camera"] { background: #000; }
   background: color-mix(in srgb, var(--accent) 16%, var(--raised)); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
 .keep-bar > span { flex: 1; font-weight: 600; text-align: left; }
 .keep-bar[hidden] { display: none; }
+
+/* Setup: the hardware check */
+.su-hw { max-height: none; overflow: visible; }
+.su-badge.warn { background: color-mix(in srgb, #e0a13a 34%, transparent); }
+.su-hw + div { display: grid; gap: 12px; margin-top: 14px; max-width: 560px; }
+.su-hw + div .su-status { max-width: none; line-height: 1.45; }
+.su-hw + div .su-status small { color: var(--su-text-2); font-size: 13px; }
+.su-status.warn .ico { color: #e0a13a; }
+
+/* Light mode (the hardware check, on slower computers): no blur or see-through layers, quick motion */
+html.lite *, html.lite *::before, html.lite *::after {
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  transition-duration: 0.08s !important; animation-duration: 0.12s !important;
+}

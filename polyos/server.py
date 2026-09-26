@@ -134,6 +134,7 @@ GET_API = {
     "/api/apps/manage": lambda be, q: be.apps_manage(),
     "/api/sound/devices": lambda be, q: be.sound_devices(),
     "/api/displays": lambda be, q: be.displays_list(),
+    "/api/hardware": lambda be, q: be.hardware_check(),
     "/api/security": lambda be, q: be.security_status(),
     "/api/widgets/data": lambda be, q: be.widgets.data(),
     "/api/widgets/weather": lambda be, q: be.widgets.weather(),
@@ -176,7 +177,7 @@ def _names(body: dict, key: str) -> list[str]:
 POST_API = {
     "/api/launch": lambda be, b: be.launch(_str(b, "id")),
     "/api/window": lambda be, b: be.window_action(
-        _int(b, "xid"), _choice(b, "action", ("activate", "minimize", "close", "toggle", "kill"))),
+        _int(b, "xid"), _choice(b, "action", ("activate", "minimize", "close", "toggle", "kill", "fullscreen"))),
     "/api/volume": lambda be, b: be.set_volume(
         level=_opt_int(b, "level"), delta=_opt_int(b, "delta"),
         muted=_opt_bool(b, "muted"), toggle_mute=bool(_opt_bool(b, "toggleMute"))),
@@ -238,6 +239,7 @@ POST_API = {
     "/api/apps/startup": lambda be, b: be.startup_set(_str(b, "id", 130), bool(_opt_bool(b, "enabled"))),
     "/api/apps/startup/add": lambda be, b: be.startup_add(_str(b, "id", 130)),
     "/api/apps/startup/remove": lambda be, b: be.startup_remove(_str(b, "id", 130)),
+    "/api/hardware": lambda be, b: be.hardware_profile(_choice(b, "profile", ("full", "balanced", "light"))),
     "/api/sound/device": lambda be, b: be.sound_set_device(_choice(b, "kind", ("output", "input")), _str(b, "name", 300)),
     "/api/sound/input": lambda be, b: be.sound_set_input(_opt_int(b, "level"), _opt_bool(b, "muted")),
     "/api/sound/mixer": lambda be, b: be.sound_mixer(_choice(b, "tab", MIXER_TABS)),

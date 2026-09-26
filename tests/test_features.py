@@ -565,3 +565,45 @@ VGA-1 connected (normal left inverted right x axis y axis)
             self.assertEqual(d["defaultOutput"], "bluez_output.AC_12_2F.1")
             with self.assertRaises(ApiError):
                 backend.sound_set_device("input", "nope")
+
+
+class HardwareCheckTests(unittest.TestCase):
+    """The first-start hardware check and its full / balanced / light profiles."""
+
+    def facts(self, **kw):
+        base = {"cpu": "Intel Core i5", "cores": 8, "ram": 16 * 1024 ** 3, "renderer": "Mesa Intel Xe",
+                "graphics": [{"name": "Intel Iris Xe [8086:9a49]", "driver": "i915"}], "arch": "x86_64"}
+        return base | kw
+
+    def test_parsers(self):
+        from polyos import hwcheck
+
+        self.assertEqual(hwcheck.parse_cpuinfo("processor\t: 0\nmodel name\t: Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz\n"),
+                         "Intel Core i5-8250U CPU @ 1.60GHz")
+        self.assertEqual(hwcheck.parse_cpuinfo("processor : 0\nBogoMIPS : 108\nModel : Raspberry Pi 4 Model B Rev 1.4\n"),
+                         "Raspberry Pi 4 Model B Rev 1.4")
+        self.assertEqual(hwcheck.parse_meminfo("MemTotal:        8041604 kB\nMemFree: 1 kB\n"), 8041604 * 1024)
+        self.assertEqual(hwcheck.parse_renderer("direct rendering: Yes\nOpenGL renderer string: llvmpipe (LLVM 15.0.6, 256 bits)\n"),
+                         "llvmpipe (LLVM 15.0.6, 256 bits)")
+
+    def test_profiles(self):
+        from polyos import hwcheck
+
+        full = hwcheck.assess(self.facts())
+        self.assertEqual((full["profile"], full["supported"]), ("full", True))
+        self.assertEqual(full["items"][2]["value"], "Intel Iris Xe")  # PCI ids left out
+        self.assertEqual(hwcheck.assess(self.facts(renderer="llvmpipe (LLVM 15)", graphics=[]))["profile"], "balanced")
+        self.assertEqual(hwcheck.assess(self.facts(cores=2, ram=4 * 1024 ** 3))["profile"], "balanced")
+        light = hwcheck.assess(self.facts(cores=2, ram=2 * 1024 ** 3))
+        self.assertEqual(light["profile"], "light")
+        self.assertEqual([i["status"] for i in light["items"]], ["ok", "low", "good"])
+        self.assertFalse(hwcheck.assess(self.facts(ram=1024 ** 3))["supported"])
+
+    def test_profile_settings_are_valid(self):
+        from polyos import hwcheck
+        from polyos.core import Settings
+
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = Settings(Path(tmp) / "s.json")
+            for name in hwcheck.PROFILES:
+                self.assertEqual(settings.update(dict(hwcheck.PROFILE_SETTINGS[name]))["performanceProfile"], name)

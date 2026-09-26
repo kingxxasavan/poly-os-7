@@ -160,8 +160,8 @@ export function mount(root, store) {
   }
 
   // ---- steps ---------------------------------------------------------------------------
-  const installSteps = [start, terms, edition, account, appearance, target, installing];
-  const welcomeSteps = [connect, drivers, editionApps, vara, tour, done];
+  const installSteps = [start, check, terms, edition, account, appearance, target, installing];
+  const welcomeSteps = [check, connect, drivers, editionApps, vara, tour, done];
   const steps = live ? installSteps : welcomeSteps;
   let step = 0;
 
@@ -760,6 +760,41 @@ export function mount(root, store) {
     }
     return [...head('Get connected', 'Connect to the internet for drivers, apps and updates.'), body,
       nav(h('button.su-link', { onclick: () => go(step + 1) }, 'Skip'), next())];
+  }
+
+  // The hardware check: is this PC a good fit, and if it's on the slower side, a lighter PolyOS for it.
+  let hardware = null;
+  let profile = null; // what the person picked; null = what the check recommends
+  function check() {
+    const box = h('div.su-drivers.su-hw', h('div.su-wait', h('img.su-spin', { src: '/img/logo-white.svg', alt: '' }), 'Checking your processor, memory and graphics…'));
+    const verdict = h('div');
+    const PART_ICONS = { cpu: 'chip', ram: 'memory', gpu: 'monitor' };
+    const badge = (status) => (status === 'good' ? h('span.su-ok', icon('check'))
+      : h('span.su-badge', { class: status === 'low' ? 'warn' : '' }, status === 'low' ? 'Light mode' : 'OK'));
+    function render() {
+      const chosen = profile || hardware.profile;
+      fill(box, hardware.items.map((it) => h('div.su-driver',
+        h('span.su-driver-ico', icon(PART_ICONS[it.id] || 'chip')),
+        h('span.su-driver-text', h('b', `${it.label}: ${it.value}`), h('small', it.note)), badge(it.status))));
+      const choices = hardware.profile === 'full' ? null : h('div.su-chips', { role: 'radiogroup', 'aria-label': 'How PolyOS runs' },
+        [[hardware.profile, hardware.profile === 'light' ? 'Light mode (recommended)' : 'Smooth mode (recommended)'], ['full', 'Everything on']]
+          .map(([id, label]) => h('button.su-chip', { role: 'radio', 'aria-checked': String(chosen === id), class: chosen === id ? 'on' : '',
+            onclick: () => { profile = id; render(); } }, label)));
+      fill(verdict, h('div.su-status', { class: hardware.supported ? '' : 'warn' },
+        icon(hardware.supported ? (hardware.profile === 'full' ? 'check' : 'bolt') : 'info'),
+        h('span', h('b', hardware.summary), h('br'), h('small', chosen === 'full' && hardware.profile !== 'full'
+          ? 'Everything on: blur, glass and animations. It may feel slower on this computer.' : hardware.profileText))), choices);
+    }
+    const load = hardware ? Promise.resolve(hardware) : Promise.all([api.get('/api/hardware'), sleep(900)]).then(([r]) => r);
+    load.then((r) => { hardware = r; render(); }, (err) => fill(box, h('div.su-error', err.message)));
+    // Carry on: set PolyOS up for this PC (on the USB too, so trying it out is smooth as well).
+    const apply = () => {
+      const chosen = profile || hardware?.profile;
+      const same = hardware && chosen === hardware.current;
+      (chosen && !same ? api.post('/api/hardware', { profile: chosen }) : Promise.resolve()).catch(() => {}).finally(() => go(step + 1));
+    };
+    return [...head('Checking your computer', live ? 'PolyOS looks at this PC to make sure it runs well here.'
+      : 'PolyOS sets itself up for this PC’s processor, memory and graphics.'), box, verdict, nav(next('Next', apply))];
   }
 
   function drivers() {

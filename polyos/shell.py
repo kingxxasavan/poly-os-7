@@ -36,6 +36,7 @@ except ValueError:
 from gi.repository import Gdk, GdkPixbuf, GdkX11, Gio, GLib, Gtk, WebKit2, Wnck  # noqa: E402
 
 from . import __version__, gaming, paths, power, system, theme  # noqa: E402
+from .fsbar import FullscreenBar  # noqa: E402
 from .backend import (CAMERA_APP, DISPLAY_NAMES, DOCK_HEIGHT, DOCK_MARGIN, HIDDEN_APPS, PANEL_HEIGHT,  # noqa: E402
                       Backend, dock_geometry, panel_margin)
 from .core import IMAGE_TYPES, ApiError, EventBus, Settings, bundled_icon, icon_names, letter_icon  # noqa: E402
@@ -121,6 +122,7 @@ class DesktopShell(Backend):
         except Exception:  # noqa: BLE001 - a screen setting must never stop the desktop starting
             log.exception("couldn't apply the saved display settings")
         self._load_apps()
+        self._fsbar = FullscreenBar(self._x_time)
         self._app_monitor = Gio.AppInfoMonitor.get()
         self._app_monitor.connect("changed", lambda *_: self._schedule_apps_reload())
         self._init_wnck()
@@ -281,10 +283,12 @@ class DesktopShell(Backend):
         theme.set_openbox_margin(paths.runtime_dir() / "openbox-rc.xml", panel_margin(settings) * scale)
 
     def _sync_fullscreen(self) -> None:
-        """Full-screen apps (videos, games, F11 in a browser) cover the taskbar completely."""
+        """Full-screen apps (the title bar's full-screen button, Win+F, videos, games, F11 in a
+        browser) show only the app: no title bar, no taskbar. The top edge brings a bar to leave."""
         active = self.wscreen.get_active_window()
         full = bool(active is not None and active.is_fullscreen()
                     and active.get_class_group_name() != "PolyOS")
+        self._fsbar.track(active if full else None)
         if full == self._fullscreen_app:
             return
         self._fullscreen_app = full
@@ -658,6 +662,7 @@ class DesktopShell(Backend):
                 "appId": app_id,
                 "active": xid == active_xid,
                 "minimized": win.is_minimized(),
+                "fullscreen": win.is_fullscreen(),
                 "icon": f"/icon/app/{quote(app_id)}" if app_id else f"/icon/window/{xid}",
             })
         return out
@@ -681,6 +686,11 @@ class DesktopShell(Backend):
             win.activate(ts)
         elif action == "minimize":
             win.minimize()
+        elif action == "fullscreen":  # toggle: only the app, no title bar or taskbar
+            if win.is_minimized():
+                win.unminimize(ts)
+            win.activate(ts)
+            win.set_fullscreen(not win.is_fullscreen())
         elif action == "close":
             win.close(ts)
         elif action == "kill":  # "Force close": for apps that stopped responding

@@ -82,6 +82,7 @@ DEFAULTS: dict = {
     "editionSetup": True,  # False until the edition's apps were offered at first sign-in
     "developerMode": False,  # ~/.config/polyos/ui overrides the interface; Settings > Developer
     "devInspector": False,  # right-click > Inspect Element on PolyOS screens (after reloading the interface)
+    "performanceProfile": "full",  # "full" | "balanced" | "light": set by the hardware check (hwcheck.py)
     "gameMode": True,  # full-screen games get the performance mode; PolyOS pauses its background work
 }
 POWER_MODES = ("saver", "balanced", "performance", "maximum")
@@ -214,6 +215,7 @@ VALIDATORS = {
     "micAccess": _bool,
     "keepRecent": _bool,
     "edition": _choice("regular", "developer", "gaming"),
+    "performanceProfile": _choice("full", "balanced", "light"),
     "editionSetup": _bool,
     "developerMode": _bool,
     "devInspector": _bool,

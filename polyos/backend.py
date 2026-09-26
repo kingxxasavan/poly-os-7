@@ -530,6 +530,25 @@ class Backend:
                 continue
             system.run(display.command(name, cfg.get("size"), cfg.get("rate"), cfg.get("rotation"), cfg.get("primary")), 15)
 
+    # ---- the hardware check (first start, and Settings > Power & Performance) ----------------
+    def hardware_check(self) -> dict:
+        from . import hwcheck, system
+        renderer = ""
+        if system.have("glxinfo"):
+            rc, out = system.run(["glxinfo", "-B"], 8)
+            renderer = hwcheck.parse_renderer(out) if rc == 0 else ""
+        result = hwcheck.assess(self._hardware_facts(hwcheck.gather(self.graphics_info(), renderer)))
+        return result | {"current": self.settings.get("performanceProfile")}
+
+    def _hardware_facts(self, facts: dict) -> dict:
+        return facts
+
+    def hardware_profile(self, profile: str) -> dict:
+        """Set PolyOS up for this computer: "full", "balanced" or the "light" optimized version."""
+        from . import hwcheck
+        self.update_settings(dict(hwcheck.PROFILE_SETTINGS[profile]))
+        return self.hardware_check()
+
     def graphics_info(self) -> list[dict]:
         """Graphics cards and the driver each uses (from lspci)."""
         from . import drivers, system

@@ -52,6 +52,7 @@ export function applyTheme(state) {
   root.style.setProperty('--dock-m', `${state.env.dockMargin}px`);
   root.classList.toggle('composited', !!state.env.composited);
   root.classList.toggle('dev', !!state.env.dev);
+  root.classList.toggle('lite', state.settings.performanceProfile === 'light'); // the hardware check's light mode
 }
 
 export function fmtTime(date, settings, seconds = settings.showSeconds) {

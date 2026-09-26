@@ -101,6 +101,8 @@
       <action name="PreviousWindow"><finalactions><action name="Focus"/><action name="Raise"/><action name="Unshade"/></finalactions></action>
     </keybind>
     <keybind key="W-Up"><action name="Maximize"/></keybind>
+    <keybind key="W-f"><action name="ToggleFullscreen"/></keybind>
+    <keybind key="W-F11"><action name="ToggleFullscreen"/></keybind>
     <keybind key="W-Down">
       <action name="If">
         <maximized>yes</maximized>
@@ -176,9 +178,13 @@
       <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
       <mousebind button="Left" action="Click"><action name="Iconify"/></mousebind>
     </context>
+    <!-- The middle title-bar button is PolyOS's full screen: only the app shows (no title bar or
+         taskbar); the pointer at the top edge brings back a bar to leave it. Its middle click, a
+         double click on the title bar and Win+Up still maximize. -->
     <context name="Maximize">
       <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
-      <mousebind button="Left" action="Click"><action name="ToggleMaximize"/></mousebind>
+      <mousebind button="Left" action="Click"><action name="ToggleFullscreen"/></mousebind>
+      <mousebind button="Middle" action="Click"><action name="ToggleMaximize"/></mousebind>
     </context>
     <context name="Close">
       <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>

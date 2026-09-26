@@ -1,4 +1,4 @@
-// Taskbar right-click menu: new window, pin/unpin, add to the desktop, close.
+// Taskbar right-click menu: new window, pin/unpin, add to the desktop, full screen, close.
 
 import { api, closePopup, launch, saveSettings, windowAction, withToken } from '../api.js';
 import { h, icon } from '../ui.js';
@@ -31,6 +31,10 @@ export default function taskmenu(root, store, data) {
         })),
       }, icon(onDesktop ? 'close' : 'monitor'), onDesktop ? 'Remove from desktop' : 'Add to desktop'),
     );
+  }
+  if (wins.length === 1) {
+    items.push(h('button.menu-item', { onclick: () => done(windowAction(wins[0].xid, 'fullscreen')) },
+      icon('maximize'), wins[0].fullscreen ? 'Exit full screen' : 'Full screen'));
   }
   if (wins.length) {
     items.push(

@@ -477,11 +477,26 @@ const pages = {
       ['lock', 'Lock', 'lock'], ['logout', 'Sign out', 'logout'], ['moon', 'Sleep', 'suspend'],
       ['restart', 'Restart', 'reboot'], ['power', 'Shut down', 'poweroff'],
     ];
+    // The hardware check from setup: how well this PC fits, and the full / smooth / light version of PolyOS.
+    const pcBox = h('div');
+    const PROFILE_NAMES = [['full', 'Everything on'], ['balanced', 'Smooth'], ['light', 'Light']];
+    const profileSeg = seg('How PolyOS runs', PROFILE_NAMES, (v) => api.post('/api/hardware', { profile: v }).then(showPc, (e) => errorText(err, e.message)));
+    function showPc(r) {
+      const worst = r.items.find((it) => it.status === 'low') || r.items.find((it) => it.status === 'ok');
+      fill(pcBox, group('This computer',
+        ...r.items.map((it) => row(`${it.label}: ${it.value}`, it.note)),
+        row(r.summary, r.profile === 'full' ? 'Recommended: Everything on' : `Recommended: ${PROFILE_NAMES.find((p) => p[0] === r.profile)[1]}${worst ? ` (${worst.label.toLowerCase()})` : ''}`,
+          h('button.btn', { onclick: () => api.get('/api/hardware').then(showPc, (e) => errorText(err, e.message)) }, icon('refresh'), 'Check again')),
+        row('How PolyOS runs', 'Light turns off blur, shadows and see-through glass, and shortens animations. Blur changes apply at next sign-in.', profileSeg)));
+      profileSeg.set(r.current);
+    }
+    api.get('/api/hardware').then(showPc, (e) => errorText(err, e.message));
     page.append(
       pageHead('Power & Performance', 'Power modes, battery, screen and sleep.'),
       err,
       battery,
       group('Power mode', modes, modeNote),
+      pcBox,
       timers,
       maxNote,
       group('Session', h('div.power-grid', actions.map(([ico, label, action]) =>

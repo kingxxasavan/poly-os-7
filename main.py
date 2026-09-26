@@ -55,7 +55,7 @@ PACKAGES = {
             "pkexec", "libpam0g",
         ],
         "recommends": [
-            "picom", "xcape", "wireplumber | pulseaudio-utils", "network-manager", "brightnessctl",
+            "picom", "xcape", "wireplumber | pulseaudio-utils", "network-manager", "brightnessctl", "mesa-utils",
             "papirus-icon-theme", "fonts-inter | fonts-noto-core", "lxpolkit | mate-polkit", "pciutils", "flatpak",
             "playerctl", "libxss1", "power-profiles-daemon", "gstreamer1.0-plugins-good",
         ],

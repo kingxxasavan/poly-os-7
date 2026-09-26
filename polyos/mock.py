@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import random
 import shutil
 import threading
@@ -134,6 +135,8 @@ class MockBackend(Backend):
                 win["minimized"] = False
             elif action == "minimize":
                 win.update(minimized=True, active=False)
+            elif action == "fullscreen":
+                win["fullscreen"] = not win.get("fullscreen")
             elif action in ("close", "kill"):
                 self._windows.remove(win)
         self._publish_windows()
@@ -338,6 +341,18 @@ DP-1 disconnected (normal left inverted right x axis y axis)
         saved[name] = {"size": size, "rate": rate, "rotation": rotation or "normal", "primary": primary}
         self.update_settings({"displays": saved})
         return self.displays_list()
+
+    def _hardware_facts(self, facts):
+        """A made-up computer; POLYOS_MOCK_HW=light (or balanced) previews the other results."""
+        kind = os.environ.get("POLYOS_MOCK_HW", "full")
+        if kind == "light":
+            return {**facts, "cpu": "Intel Celeron N4020 CPU @ 1.10GHz", "cores": 2, "ram": 2 * 1024 ** 3 - 180 * 1024 ** 2,
+                    "graphics": [{"name": "Intel Corporation UHD Graphics 600", "driver": "i915"}], "renderer": ""}
+        if kind == "balanced":
+            return {**facts, "cpu": "AMD Ryzen 5 5600X 6-Core Processor", "cores": 4, "ram": 4 * 1024 ** 3,
+                    "graphics": [], "renderer": "llvmpipe (LLVM 15.0.6, 256 bits)"}
+        return {**facts, "cpu": "Intel Core i7-1165G7 @ 2.80GHz", "cores": 8, "ram": 16 * 1024 ** 3 - 400 * 1024 ** 2,
+                "graphics": self.graphics_info(), "renderer": "Mesa Intel Xe Graphics (TGL GT2)"}
 
     def graphics_info(self):
         return [{"name": "Intel Corporation Iris Xe Graphics [8086:9a49]", "driver": "i915"},
