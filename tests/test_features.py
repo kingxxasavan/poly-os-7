@@ -679,58 +679,124 @@ class ComputerModelTests(unittest.TestCase):
 
 
 class OnlineUpdateTests(unittest.TestCase):
-    """Settings > About > Update now: the release's packages, checked before installing."""
+    """Settings > Updates: signed releases only, checked before anything installs."""
 
-    def release(self, version, manifest=True):
-        assets = [{"name": "polyos-amd64.iso", "browser_download_url": "https://x/iso"},
-                  {"name": f"polyos-shell_{version}_all.deb", "browser_download_url": "https://x/shell.deb"}]
-        if manifest:
-            assets.append({"name": "polyos-update.json", "browser_download_url": "https://x/manifest"})
-        return {"tag_name": f"v{version}", "body": "notes", "assets": assets}
+    @classmethod
+    def setUpClass(cls):
+        import subprocess
 
-    def fake_get(self, version, data=b"deb-bytes", manifest=True, name=None):
+        cls.tmp = tempfile.TemporaryDirectory()
+        key = Path(cls.tmp.name) / "key.pem"
+        subprocess.run(["openssl", "genpkey", "-algorithm", "ed25519", "-out", str(key)], check=True, capture_output=True)
+        cls.private = key.read_text()
+        cls.public = subprocess.run(["openssl", "pkey", "-in", str(key), "-pubout"], check=True, capture_output=True, text=True).stdout
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def setUp(self):
+        from polyos import updates
+
+        self.updates = updates
+        self.saved = updates.TRUSTED_KEYS
+        updates.TRUSTED_KEYS = [self.public]
+
+    def tearDown(self):
+        self.updates.TRUSTED_KEYS = self.saved
+
+    def fake_get(self, version, data=b"deb-bytes", signed=True, sign_with=None, name=None, server_up=True, tamper=False):
         import hashlib
 
-        files = {
-            "https://api.github.com/repos/kingxxasavan/poly-os-7-debain-receration/releases/latest":
-                json.dumps(self.release(version, manifest)).encode(),
-            "https://x/manifest": json.dumps({"version": version, "packages": [
-                {"name": "polyos-shell", "file": name or f"polyos-shell_{version}_all.deb", "size": len(data),
-                 "sha256": hashlib.sha256(b"deb-bytes").hexdigest()}]}).encode(),
-            "https://x/shell.deb": data,
-        }
-        return lambda url, **_kw: files[url]
+        base = "https://example.test/rel/"
+        manifest = json.dumps({"version": version, "packages": [
+            {"name": "polyos-shell", "file": name or f"polyos-shell_{version}_all.deb", "size": len(data),
+             "sha256": hashlib.sha256(b"deb-bytes").hexdigest()}]}).encode()
+        sig = self.updates.sign(manifest, sign_with or self.private) if signed else None
+        if tamper:
+            manifest = manifest.replace(b"polyos-shell_", b"polyos-shell_")[:-1] + b" }"
+        files = {base + "polyos-update.json": manifest, base + "polyos-shell_" + version + "_all.deb": data}
+        if sig:
+            files[base + "polyos-update.json.sig"] = sig
+
+        def get(url, **_kw):
+            if "/api/v1/updates/check" in url:
+                if not server_up:
+                    raise OSError("website down")
+                return json.dumps({"version": version, "notes": "Faster.", "manifest": base + "polyos-update.json",
+                                   "signature": base + "polyos-update.json.sig" if signed else None}).encode()
+            if url.startswith("https://github.com/") and url.endswith("/releases/latest/download/polyos-update.json"):
+                return manifest
+            if url.startswith("https://github.com/") and url.endswith("/releases/latest/download/polyos-update.json.sig"):
+                return sig
+            if url not in files:
+                raise OSError(f"404 {url}")
+            return files[url]
+        return get
 
     def test_versions(self):
-        from polyos import updates
+        self.assertTrue(self.updates.newer("0.10.0", "0.9.9"))
+        self.assertFalse(self.updates.newer("v0.7.0", "0.7.0"))
+        self.assertEqual(self.updates.version_tuple("junk"), (0, 0, 0))
 
-        self.assertTrue(updates.newer("0.10.0", "0.9.9"))
-        self.assertFalse(updates.newer("v0.7.0", "0.7.0"))
-        self.assertEqual(updates.version_tuple("junk"), (0, 0, 0))
+    def test_signatures(self):
+        data = b'{"version": "1.0.0"}'
+        sig = self.updates.sign(data, self.private)
+        self.assertTrue(self.updates.verify(data, sig))
+        self.assertFalse(self.updates.verify(data + b" ", sig))
+        self.assertFalse(self.updates.verify(data, sig[:-1] + bytes([sig[-1] ^ 1])))
+        self.assertFalse(self.updates.verify(data, b"short"))
 
     def test_check_and_download(self):
-        from polyos import updates
-
-        latest = self.fake_get("99.0.0")
-        result = updates.check(get=latest)
-        self.assertTrue(result["available"])
+        good = self.fake_get("99.0.0")
+        result = self.updates.check(get=good)
+        self.assertTrue(result["available"], result)
         self.assertEqual(result["packages"], ["polyos-shell"])
-        self.assertFalse(updates.check(get=self.fake_get(updates.__version__))["available"])
-        self.assertIn("ISO", updates.check(get=self.fake_get("99.0.0", manifest=False))["reason"])
+        self.assertFalse(self.updates.check(get=self.fake_get(self.updates.__version__))["available"])
         with tempfile.TemporaryDirectory() as tmp:
-            version, files = updates.download(lambda _e: None, get=latest, cache=Path(tmp))
+            version, files = self.updates.download(lambda _e: None, get=good, cache=Path(tmp))
             self.assertEqual((version, [f.name for f in files]), ("99.0.0", ["polyos-shell_99.0.0_all.deb"]))
+            again = self.updates.download(lambda _e: self.fail("downloaded twice"), get=good, cache=Path(tmp))  # kept from before
+            self.assertEqual(again[0], "99.0.0")
             with self.assertRaises(ValueError):  # a damaged download is refused
-                updates.download(lambda _e: None, get=self.fake_get("99.0.0", data=b"tampered"), cache=Path(tmp))
+                self.updates.download(lambda _e: None, get=self.fake_get("98.0.0", data=b"tampered"), cache=Path(tmp))
             with self.assertRaises(ValueError):  # only PolyOS's own packages, of that version
-                updates.download(lambda _e: None, get=self.fake_get("99.0.0", name="evil_99.0.0_all.deb"), cache=Path(tmp))
+                self.updates.download(lambda _e: None, get=self.fake_get("99.0.0", name="evil_99.0.0_all.deb"), cache=Path(tmp))
+
+    def test_unsigned_or_wrongly_signed_is_refused(self):
+        import subprocess
+
+        other = Path(self.tmp.name) / "other.pem"
+        subprocess.run(["openssl", "genpkey", "-algorithm", "ed25519", "-out", str(other)], check=True, capture_output=True)
+        for get, why in ((self.fake_get("99.0.0", signed=False), "isn’t signed"),
+                         (self.fake_get("99.0.0", sign_with=other.read_text()), "signature"),
+                         (self.fake_get("99.0.0", tamper=True), "signature")):
+            result = self.updates.check(get=get)
+            self.assertFalse(result["available"])
+            self.assertIn(why, result["reason"])
+            with tempfile.TemporaryDirectory() as tmp, self.assertRaises(ValueError):
+                self.updates.download(lambda _e: None, get=get, cache=Path(tmp))
+
+    def test_works_without_the_website(self):
+        result = self.updates.check(get=self.fake_get("99.0.0", server_up=False))
+        self.assertTrue(result["available"], result)
+        with self.assertRaises(OSError):  # beta and developer need the update server
+            self.updates.check("beta", get=self.fake_get("99.0.0", server_up=False))
 
     def test_manifest(self):
-        from polyos import updates
-
         with tempfile.TemporaryDirectory() as tmp:
             deb = Path(tmp) / "polyos-shell_1.2.3_all.deb"
             deb.write_bytes(b"x")
             (Path(tmp) / "other.txt").write_text("y")
-            m = updates.build_manifest("1.2.3", list(Path(tmp).iterdir()))
+            m = self.updates.build_manifest("1.2.3", list(Path(tmp).iterdir()))
             self.assertEqual([p["file"] for p in m["packages"]], ["polyos-shell_1.2.3_all.deb"])
+
+    def test_built_in_key_is_valid(self):
+        import subprocess
+
+        for pem in self.saved:
+            with tempfile.NamedTemporaryFile("w", suffix=".pem") as f:
+                f.write(pem)
+                f.flush()
+                out = subprocess.run(["openssl", "pkey", "-pubin", "-in", f.name, "-text", "-noout"], capture_output=True, text=True)
+                self.assertIn("ED25519", out.stdout.upper())

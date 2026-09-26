@@ -53,7 +53,7 @@ PACKAGES = {
         "depends": [
             "python3 (>= 3.11)", "python3-gi", "gir1.2-gtk-3.0", "gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0",
             "gir1.2-wnck-3.0", "librsvg2-common", "openbox", "x11-utils", "x11-xserver-utils", "xdg-utils", "sudo",
-            "pkexec", "libpam0g",
+            "pkexec", "libpam0g", "openssl",
         ],
         "recommends": [
             "picom", "xcape", "wireplumber | pulseaudio-utils", "network-manager", "brightnessctl", "mesa-utils",
@@ -450,8 +450,18 @@ def cmd_deb(args) -> None:
     if args.manifest:  # for online updates: the release lists its packages and their checksums
         from polyos import updates
         path = out / updates.MANIFEST
-        path.write_text(json.dumps(updates.build_manifest(VERSION, debs), indent=2) + "\n", "utf-8")
+        data = (json.dumps(updates.build_manifest(VERSION, debs), indent=2) + "\n").encode()
+        path.write_bytes(data)
         print(f"  wrote {path}")
+        key = os.environ.get("POLYOS_UPDATE_KEY", "")
+        if key:  # Poly's release key (a GitHub Actions secret): PolyOS only installs signed updates
+            signature = updates.sign(data, key)
+            if not updates.verify(data, signature):
+                sys.exit("The signing key doesn't match the public key in polyos/updates.py (TRUSTED_KEYS).")
+            (out / updates.SIGNATURE).write_bytes(signature)
+            print(f"  signed {path.name}")
+        else:
+            print("  not signed (POLYOS_UPDATE_KEY isn't set): PolyOS won't install this release as an online update")
 
 
 def cmd_install(args) -> None:

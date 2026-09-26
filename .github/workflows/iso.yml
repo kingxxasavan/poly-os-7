@@ -8,6 +8,13 @@
 # By hand: the Actions tab ("Run workflow") makes a test build with 14-day downloads on the run, or,
 # with "Publish as a GitHub Release" ticked, publishes the current version. Pushing a tag like
 # v0.7.0 also publishes a release.
+#
+# Settings for this repository (Settings > Secrets and variables > Actions):
+#   secret POLYOS_UPDATE_KEY  Poly's release key; signs polyos-update.json so PolyOS installs the
+#                             release as an online update (without it, only the ISOs are usable)
+#   variable RELEASES_REPO    e.g. kingxxasavan/polyos-releases: a public repository that holds the
+#                             releases, so this one can be private (the website reads the same name)
+#   secret RELEASES_TOKEN     a token that can create releases in RELEASES_REPO
 name: Build PolyOS ISO
 
 on:
@@ -36,6 +43,7 @@ permissions:
 
 env:
   DIST: ${{ inputs.dist || 'trixie' }}
+  RELEASES_REPO: ${{ vars.RELEASES_REPO || github.repository }}
 
 jobs:
   setup:
@@ -44,6 +52,7 @@ jobs:
       build: ${{ steps.kind.outputs.build }}
       publish: ${{ steps.kind.outputs.publish }}
       tag: ${{ steps.kind.outputs.tag }}
+      prerelease: ${{ steps.kind.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,12 +65,15 @@ jobs:
           RELEASE_INPUT: ${{ inputs.release }}
         run: |
           version="v$(python3 -c 'import polyos; print(polyos.__version__)')"
+          channel="$(python3 -c 'import polyos; print(polyos.__channel__)')"
+          prerelease=false
+          [ "$channel" = "stable" ] || prerelease=true
           build=true publish=false tag=""
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             publish=true tag="$GITHUB_REF_NAME"
           elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
             # polyos/__init__.py changed on main: a new version is released, the same one isn't rebuilt
-            if git ls-remote --exit-code --tags origin "refs/tags/$version" > /dev/null; then
+            if git ls-remote --exit-code --tags "https://github.com/$RELEASES_REPO.git" "refs/tags/$version" > /dev/null; then
               echo "::notice::$version is already released; nothing to build."
               build=false
             else
@@ -72,8 +84,8 @@ jobs:
           elif [ "$RELEASE_INPUT" = "true" ]; then
             publish=true tag="$version"
           fi
-          { echo "build=$build"; echo "publish=$publish"; echo "tag=$tag"; } >> "$GITHUB_OUTPUT"
-          echo "version $version: build=$build publish=$publish tag=$tag"
+          { echo "build=$build"; echo "publish=$publish"; echo "tag=$tag"; echo "prerelease=$prerelease"; } >> "$GITHUB_OUTPUT"
+          echo "version $version ($channel): build=$build publish=$publish tag=$tag, releases in $RELEASES_REPO"
 
   iso:
     needs: setup
@@ -133,8 +145,14 @@ jobs:
 
       # Online updates: PolyOS's own packages and polyos-update.json (their checksums), which
       # Settings > About on installed computers reads to update without a new ISO.
-      - name: PolyOS packages for online updates
-        run: python3 main.py deb --out dist --manifest
+      - name: PolyOS packages for online updates (signed with Poly's release key)
+        env:
+          POLYOS_UPDATE_KEY: ${{ secrets.POLYOS_UPDATE_KEY }}
+        run: |
+          if [ -z "$POLYOS_UPDATE_KEY" ]; then
+            echo "::warning::POLYOS_UPDATE_KEY isn't set, so this release isn't signed and PolyOS won't install it as an online update."
+          fi
+          python3 main.py deb --out dist --manifest
 
       - name: Checksums (and parts, if an ISO is over GitHub's 2 GB per-file limit)
         run: |
@@ -158,8 +176,12 @@ jobs:
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
+          repository: ${{ env.RELEASES_REPO }}
+          token: ${{ secrets.RELEASES_TOKEN || github.token }}
+          prerelease: ${{ needs.setup.outputs.prerelease == 'true' }}
           tag_name: ${{ needs.setup.outputs.tag }}
-          target_commitish: ${{ github.sha }}
+          # a separate releases repository has none of this repository's commits: tag its own default branch
+          target_commitish: ${{ env.RELEASES_REPO == github.repository && github.sha || '' }}
           name: PolyOS ${{ needs.setup.outputs.tag }}
           files: |
             dist/*.iso
@@ -167,6 +189,7 @@ jobs:
             dist/SHA256SUMS
             dist/*.deb
             dist/polyos-update.json
+            dist/polyos-update.json.sig
           body: |
             **PolyOS 7 for Debian ${{ needs.setup.outputs.tag }}** (Debian ${{ env.DIST }})
 
@@ -179,7 +202,7 @@ jobs:
             2. Write it to a USB drive (8 GB or more) with balenaEtcher, or Rufus in DD mode, or start it in a virtual machine.
             3. Start the computer from it, try PolyOS, and choose **Install PolyOS 7**.
 
-            **Already on PolyOS?** Open Settings › About › *Check for updates* to install this version without a new USB drive.
+            **Already on PolyOS?** Settings › Updates installs this version without a new USB drive (it's signed with Poly's release key).
 
             Check the download against `SHA256SUMS`.
-          generate_release_notes: true
+          generate_release_notes: ${{ env.RELEASES_REPO == github.repository }}
