@@ -1,0 +1,12 @@
+[Unit]
+Description=PolyOS updates: check, download and install on the schedule in Settings > Updates
+Documentation=file:///usr/lib/polyos/polyos/autoupdate.py
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/run/live/medium
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/polyos/polyos-admin auto-update timer
+Nice=10
+IOSchedulingClass=idle

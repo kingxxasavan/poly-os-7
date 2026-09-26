@@ -1,0 +1,14 @@
+// PolyOS: the person at the computer may check for PolyOS updates, schedule the waiting one for
+// tonight, or install it now, without the administrator password. Only these three units, which
+// install nothing but signed PolyOS releases (polyos/updates.py). Changing the update settings
+// still needs the password (polyos-admin update-policy).
+polkit.addRule(function (action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" && subject.local && subject.active) {
+        var unit = action.lookup("unit");
+        var verb = action.lookup("verb");
+        if (verb == "start" && (unit == "polyos-update-check.service" || unit == "polyos-update-tonight.service" ||
+                                unit == "polyos-update-now.service")) {
+            return polkit.Result.YES;
+        }
+    }
+});

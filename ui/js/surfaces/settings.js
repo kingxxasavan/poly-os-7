@@ -18,6 +18,7 @@ const PAGES = [
   ['vara', 'Vara', 'chat'],
   ['apps', 'Apps', 'apps'],
   ['power', 'Power & Performance', 'bolt'],
+  ['updates', 'Updates', 'download'],
   ['developer', 'Developer', 'code'],
   ['about', 'About', 'info'],
 ];
@@ -943,78 +944,110 @@ const pages = {
     return null;
   },
 
+  updates(page, store) {
+    const err = h('div.error-text', { hidden: true });
+    const statusBox = h('div');
+    const autoBox = h('div');
+    const channelBox = h('div');
+    const debianBox = h('div');
+    let st = null;
+    let poll = null;
+    let debian = '';
+    const fail = (x) => { if (!x.cancelled) errorText(err, x.message); };
+    const ago = (t) => {
+      if (!t) return 'never';
+      const mins = Math.round((Date.now() / 1000 - t) / 60);
+      return mins < 1 ? 'just now' : mins < 60 ? `${mins} minutes ago` : mins < 1440 ? `${Math.round(mins / 60)} hours ago` : `${Math.round(mins / 1440)} days ago`;
+    };
+    const action = (kind) => api.post('/api/updates/action', { kind }).then(show, fail);
+    const setPolicy = (patch) => withAdmin(() => api.post('/api/updates/policy', { policy: patch }),
+      { title: 'Change update settings', text: 'Enter your password to change how PolyOS updates.' }).then(show, (x) => { fail(x); load(); });
+    const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
+    const label = (t) => new Date(`2000-01-01T${t}:00`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+    function renderStatus() {
+      let main;
+      const busy = { checking: 'Checking for updates…', downloading: `Downloading PolyOS ${st.latest}…`, installing: `Installing PolyOS ${st.latest}…` }[st.state];
+      if (st.live) main = row('Updates', 'Install PolyOS first. After that, updates install here on your schedule.');
+      else if (st.restartNeeded) {
+        main = row(`PolyOS ${st.installed} is installed`, 'Restart PolyOS to finish. Your apps and files stay as they are.',
+          h('button.btn.primary', { onclick: () => api.post('/api/shell/restart') }, icon('restart'), 'Restart PolyOS'));
+      } else if (busy) main = row(busy, 'You can keep working.', h('span.spinner', { 'aria-hidden': 'true' }));
+      else if (st.available) {
+        const when = st.tonight || st.policy.autoInstall ? `Installs at ${label(st.policy.time)}.` : '';
+        const size = st.size ? `${formatBytes(st.size)}${st.downloaded === st.latest ? ', downloaded' : ''}. ` : '';
+        main = row(`PolyOS ${st.latest} is ready`, `${size}${when}`,
+          h('div.btn-row.tight',
+            st.tonight || st.policy.autoInstall ? null : h('button.btn', { onclick: () => action('tonight') }, 'Install tonight'),
+            h('button.btn.primary', { onclick: () => action('now') }, 'Install now')));
+      } else {
+        main = row('PolyOS is up to date', `Version ${st.current} · Last checked ${ago(st.lastCheck)}${st.reason ? ` · ${st.reason}` : ''}`,
+          h('button.btn', { onclick: () => action('check') }, icon('refresh'), 'Check now'));
+      }
+      const notes = st.available && st.notes && !st.restartNeeded ? h('details.upd-notes', h('summary', 'What’s new'), h('p.prose', st.notes.slice(0, 2000))) : null;
+      fill(statusBox, group('PolyOS', main, notes), st.error ? h('p.small.warn-text', st.error) : null);
+    }
+    function renderPolicy() {
+      const p = st.policy;
+      const time = h('select.select', { 'aria-label': 'Preferred update time', disabled: st.live }, hours.map((t) => h('option', { value: t }, label(t))));
+      time.value = hours.includes(p.time) ? p.time : '02:00';
+      time.addEventListener('change', () => setPolicy({ time: time.value }));
+      const sw = (key, text, sub) => row(text, sub, Object.assign(toggle(p[key], (v) => setPolicy({ [key]: v }), text), { disabled: st.live }));
+      fill(autoBox, group('Automatic updates',
+        sw('autoCheck', 'Check for updates automatically', 'Every few hours, in the background'),
+        sw('autoDownload', 'Download updates automatically', 'So they’re ready when you are'),
+        sw('autoInstall', 'Install updates automatically', 'At your preferred time, when the computer is on'),
+        row('Preferred update time', 'When waiting updates install', time),
+        sw('askRestart', 'Ask before restarting', 'Off: PolyOS restarts itself while you’re away (never while locked)')));
+      const channel = seg('Update channel', [['stable', 'Stable'], ['beta', 'Beta'], ['developer', 'Developer']], (v) => setPolicy({ channel: v }));
+      channel.set(p.channel);
+      fill(channelBox, group('Update channel', row('Channel', 'Stable for most people. Beta and Developer get new versions sooner, with more surprises.', channel)));
+    }
+    function renderDebian() {
+      fill(debianBox, group('Debian updates', row('Security fixes and newer app versions', debian || 'For everything that comes with Debian. Security fixes also install by themselves.',
+        h('button.btn', { disabled: !!debian || st?.live, onclick: () => withAdmin(() => api.post('/api/updates/install', { what: 'system' }),
+          { title: 'Install updates', text: 'Enter your password to install updates.' }).catch(fail) }, 'Update everything'))));
+    }
+    function show(r) {
+      st = r;
+      errorText(err, '');
+      renderStatus();
+      renderPolicy();
+      renderDebian();
+      clearTimeout(poll);
+      if (['checking', 'downloading', 'installing'].includes(st.state)) poll = setTimeout(load, 1500);
+    }
+    function load() { api.get('/api/updates').then(show, fail); }
+    const { off: offJobs } = watchJobs((job) => {
+      if (job.kind !== 'update') return;
+      debian = job.state === 'running' ? `${job.message || ''} ${Math.round((job.progress || 0) * 100)}%` : job.state === 'failed' ? (job.error || 'The updates didn’t install.') : '';
+      if (st) renderDebian();
+    });
+    const offUpdates = on('updates', load);
+    page.append(pageHead('Updates', 'PolyOS updates itself, on your schedule.'), err, statusBox, autoBox, channelBox, debianBox,
+      h('p.muted.small.pad', 'Every PolyOS update is signed by Poly and checked before it installs. Checking sends only PolyOS’s version, channel and architecture; no account needed.'));
+    load();
+    return { close: () => { clearTimeout(poll); offJobs(); offUpdates?.(); } };
+  },
+
   about(page, store) {
     const { version, hostname } = store.state;
     const specs = h('div');
     const devMode = toggle(store.state.settings.developerMode, (v) => save({ developerMode: v }), 'Developer mode');
     const edition = { regular: 'Regular', developer: 'Developer', gaming: 'Gaming' }[store.state.settings.edition] || 'Regular';
 
-    // Online updates: a new PolyOS installs from here (no new USB drive), and Debian's updates too.
-    const updBox = h('div');
-    const updErr = h('div.error-text', { hidden: true });
-    let upd = null;         // /api/updates
-    let running = null;     // 'polyos' | 'system' while a job runs
-    let progress = '';
-    let finished = false;   // PolyOS was updated: restart to use it
-    const install = async (what) => {
-      errorText(updErr, '');
-      try {
-        running = what;
-        progress = 'Starting…';
-        renderUpd();
-        await withAdmin(() => api.post('/api/updates/install', { what }),
-          { title: what === 'polyos' ? 'Update PolyOS' : 'Install updates', text: 'Enter your password to install updates.' });
-      } catch (x) {
-        running = null;
-        if (!x.cancelled) errorText(updErr, x.message);
-        renderUpd();
-      }
-    };
-    function renderUpd() {
-      const btn = (label, onclick, primary) => h(primary ? 'button.btn.primary' : 'button.btn', { onclick, disabled: !!running }, label);
-      let main;
-      if (!upd) main = row('Checking for updates…', null);
-      else if (upd.live) main = row('Updates', 'Install PolyOS first. After that, updates install from here.');
-      else if (finished) {
-        main = row(`PolyOS ${upd.latest} is installed`, 'Restart PolyOS to start using it. Your apps and files stay as they are.',
-          h('button.btn.primary', { onclick: () => api.post('/api/shell/restart') }, icon('restart'), 'Restart PolyOS'));
-      } else if (running === 'polyos') main = row(`Updating to PolyOS ${upd.latest}…`, progress);
-      else if (upd.available) {
-        main = row(`PolyOS ${upd.latest} is available`, `You have ${upd.current}. ${upd.size ? `${formatBytes(upd.size)} download. ` : ''}No new USB drive needed.`,
-          btn('Update now', () => install('polyos'), true));
-      } else {
-        main = row('PolyOS is up to date', `Version ${upd.current}${upd.reason ? ` · ${upd.reason}` : ''}`,
-          btn('Check again', () => check(true)));
-      }
-      const notes = upd && upd.available && upd.notes && !finished
-        ? h('details.upd-notes', h('summary', 'What’s new'), h('p.prose', upd.notes.slice(0, 2000))) : null;
-      const system = upd && !upd.live ? row('Debian updates', running === 'system' ? progress
-        : 'Security fixes and newer versions of the apps that come with Debian', btn('Update everything', () => install('system'))) : null;
-      fill(updBox, group('Updates', main, notes, system));
-    }
-    function check(force) {
-      upd = upd && force ? { ...upd } : upd;
-      api.get(`/api/updates${force ? '?force=1' : ''}`).then((r) => { upd = r; errorText(updErr, ''); renderUpd(); },
-        (x) => { upd = upd || { current: version, latest: version, available: false }; errorText(updErr, x.message); renderUpd(); });
-    }
-    const { off: offJobs } = watchJobs((job) => {
-      if (job.kind !== 'update') return;
-      running = job.state === 'running' ? job.target : null;
-      progress = job.state === 'running' ? `${job.message || ''} ${Math.round((job.progress || 0) * 100)}%` : '';
-      if (job.state === 'done' && job.target === 'polyos') finished = true;
-      if (job.state === 'failed') errorText(updErr, job.error || 'The update didn’t install.');
-      if (job.state === 'done' && job.target === 'system') progress = '';
-      renderUpd();
-    });
-    renderUpd();
-    check(false);
+    // Updates live on their own page; About shows where things stand.
+    const updRow = row('Updates', 'Checking…', h('button.btn', { onclick: () => navigate('updates') }, 'Open', icon('chevronRight')));
+    api.get('/api/updates').then((u) => {
+      updRow.querySelector('small').textContent = u.restartNeeded ? `PolyOS ${u.installed} is installed; restart PolyOS to finish`
+        : u.available ? `PolyOS ${u.latest} is ready to install` : u.live ? 'After PolyOS is installed' : 'PolyOS is up to date';
+    }, () => { updRow.querySelector('small').textContent = 'Signed updates on your schedule'; });
 
     page.append(
       h('div.about-hero',
         h('img', { src: '/img/logo.svg', alt: '' }),
         h('div', h('h1', 'PolyOS'), h('p.muted', `Version ${version} · ${edition} edition`))),
-      updErr,
-      updBox,
+      group('Updates', updRow),
       specs,
       group('Tools',
         row('Task Manager', 'See what’s running and end apps that stopped responding (Ctrl+Shift+Esc)',
@@ -1040,7 +1073,7 @@ const pages = {
         row('Kernel', null, h('span.value', `${info.kernel} (${info.arch})`)),
         row('Uptime', null, h('span.value', uptime))));
     }, (e) => specs.replaceChildren(h('div.error-text', e.message)));
-    return { close: offJobs };
+    return null;
   },
 };
 

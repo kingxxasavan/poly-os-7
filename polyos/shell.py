@@ -14,6 +14,7 @@ import logging
 import os
 import secrets
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -814,6 +815,14 @@ class DesktopShell(Backend):
         if minutes < 1:
             self._idle_slept = False
             return True
+        # An update installed with "Ask before restarting" off: restart PolyOS (not the computer)
+        # while nobody is using it. Never while locked, so the lock screen can't be skipped.
+        if getattr(self, "_restart_when_idle", False) and minutes >= 10 and self.lock_window is None \
+                and not self._fullscreen_app and self.jobs.running() is None:
+            self._restart_when_idle = False
+            log.info("restarting PolyOS to finish an update")
+            self.restart_shell()
+            return True
         if screen_off and minutes >= screen_off and settings["lockOnSleep"] and self.lock_window is None \
                 and not self.env()["live"]:
             self.lock()
@@ -825,6 +834,63 @@ class DesktopShell(Backend):
             except (ApiError, RuntimeError) as exc:
                 log.warning("idle sleep failed: %s", exc)
         return True
+
+    # ---- update notices -----------------------------------------------------------------------
+    def start_update_watch(self):
+        path = paths.config_dir() / "update-notices.json"
+        try:
+            seen = json.loads(path.read_text("utf-8"))
+        except (OSError, ValueError):
+            seen = {}
+
+        def loop():
+            while True:
+                try:
+                    notice = self.update_notice(seen)
+                    if notice:
+                        path.write_text(json.dumps(seen), "utf-8")
+                        self._show_update_notice(notice)
+                except Exception:  # noqa: BLE001 - never let a notice take the shell down
+                    log.exception("update notice failed")
+                time.sleep(600)
+        threading.Thread(target=loop, name="polyos-updates", daemon=True).start()
+        return False
+
+    def _notify(self, title: str, body: str, actions: list[tuple[str, str]]) -> str:
+        """A desktop notification with buttons; the chosen button's id, or "" (dismissed, or no buttons)."""
+        base = ["notify-send", "-a", "PolyOS", "-i", "polyos", title, body]
+        if not system.have("notify-send"):
+            return ""
+        try:
+            proc = subprocess.run([*base, *[f"--action={k}={v}" for k, v in actions], "--wait"], capture_output=True,
+                                  text=True, timeout=6 * 3600)
+            if proc.returncode == 0:
+                return proc.stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            return ""
+        system.spawn(base)  # an older notify-send without buttons
+        return ""
+
+    def _show_update_notice(self, n: dict) -> None:
+        if n["kind"] == "restart":
+            if not n["ask"]:
+                self._restart_when_idle = True
+                return
+            if self._notify(f"PolyOS {n['version']} is installed", "Restart PolyOS to finish. Your apps and files stay as they are.",
+                            [("restart", "Restart PolyOS"), ("later", "Later")]) == "restart":
+                self.restart_shell()
+            return
+        first = next((line.strip(" -*•#") for line in (n.get("notes") or "").splitlines() if len(line.strip(" -*•#|")) > 12), "")
+        summary = (first[:117] + "…") if len(first) > 120 else first or "Security improvements and fixes."
+        if n["autoInstall"] or n["tonight"]:
+            self._notify(f"PolyOS {n['version']} is ready", f"{summary} It installs at {n['time']}.", [])
+            return
+        choice = self._notify(f"PolyOS {n['version']} is ready", summary,
+                              [("tonight", "Install tonight"), ("schedule", "Schedule"), ("later", "Later")])
+        if choice == "tonight":
+            self.updates_action("tonight")
+        elif choice == "schedule":
+            self.open_app("settings", "updates")
 
     def power(self, action: str):
         self.popup_closed()
@@ -1182,8 +1248,8 @@ def main(argv: list[str] | None = None) -> int:
         shell.open_app("setup")  # live USB: the installer; first sign-in: PolyOS's welcome
     if args.autostart:
         GLib.timeout_add_seconds(2, shell.run_autostart)
-    if not shell._live:  # look for a new PolyOS two minutes after signing in
-        GLib.timeout_add_seconds(120, lambda: (threading.Thread(target=shell.notify_updates, daemon=True).start(), False)[1])
+    if not shell._live:  # the update service's news: "ready" and "installed" notices
+        GLib.timeout_add_seconds(90, shell.start_update_watch)
     for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signum, shell.quit, EXIT_LOGOUT)
     try:

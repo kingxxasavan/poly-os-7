@@ -12,6 +12,8 @@
     polyos-admin pack NAME ID...           an edition's apps (gaming, developer), only ids in its catalog pack
     polyos-admin security firewall|updates on|off   the firewall (ufw) and automatic security updates
     polyos-admin update polyos|system      online updates: the newest PolyOS release, or Debian's updates
+    polyos-admin auto-update timer|check|tonight|now   the update service (systemd runs these)
+    polyos-admin update-policy JSON        Settings > Updates: automatic checks, downloads, installs, time, channel
 
 Every command prints JSON lines: {"progress": 0..1, "message": "..."} while it works,
 {"result": ...} for data, and {"error": "..."} (exit status 1) when it fails.
@@ -333,25 +335,41 @@ def account(path: Path) -> None:
 
 
 def update(what: str) -> None:
-    """Online updates: "polyos" installs the newest PolyOS release's packages (checksums checked);
+    """Online updates: "polyos" installs the newest signed PolyOS release now (the update service);
     "system" installs Debian's updates for everything else."""
-    from . import updates
     if what == "polyos":
-        apt_update()
-        try:
-            version, files = updates.download(emit)
-        except ValueError as exc:
-            raise AdminError(str(exc)) from None
-        except OSError as exc:
-            raise AdminError(f"Couldn't download the update ({exc}). Check your internet connection.") from None
-        apt(["install", *[str(f) for f in files]], start=0.5)
-        emit({"progress": 1.0, "message": f"PolyOS {version} is installed.", "result": {"version": version}})
+        auto_update("now")
     elif what == "system":
         apt_update()
         apt(["full-upgrade"], start=0.1)
         emit({"progress": 1.0, "message": "Everything is up to date."})
     else:
         raise AdminError("Choose PolyOS or system updates.")
+
+
+def auto_update(mode: str) -> None:
+    """The update service's runs (from systemd: polyos-update*.service; see autoupdate.py)."""
+    from . import autoupdate
+    service = autoupdate.Service(emit, install=lambda files: autoupdate.apt_install(files, apt), apt_update=apt_update)
+    try:
+        status = service.run(mode)
+    except ValueError as exc:
+        raise AdminError(str(exc)) from None
+    except OSError as exc:
+        raise AdminError(f"Couldn't download the update ({exc}). Check your internet connection.") from None
+    message = {"check": "Checked for updates.", "tonight": f"PolyOS {status.get('latest', '')} installs tonight.",
+               "now": f"PolyOS {status.get('installed', '')} is installed."}.get(mode, "Done.")
+    emit({"progress": 1.0, "message": message, "result": {k: status.get(k) for k in ("latest", "available", "installed", "downloaded")}})
+
+
+def update_policy(raw: str) -> None:
+    """Settings > Updates: when to check, download and install, the time and the channel."""
+    from . import autoupdate
+    try:
+        policy = autoupdate.save_policy(json.loads(raw))
+    except (ValueError, TypeError) as exc:
+        raise AdminError(f"Those update settings aren't valid: {exc}") from None
+    emit({"progress": 1.0, "message": "Saved.", "result": policy})
 
 
 def reboot() -> None:
@@ -412,6 +430,10 @@ def main(argv: list[str] | None = None) -> int:
             pack_install(rest[0], rest[1:])
         elif cmd == "update" and len(rest) == 1:
             update(rest[0])
+        elif cmd == "auto-update" and len(rest) == 1 and rest[0] in ("timer", "check", "tonight", "now"):
+            auto_update(rest[0])
+        elif cmd == "update-policy" and len(rest) == 1:
+            update_policy(rest[0])
         elif cmd == "security" and len(rest) == 2:
             security(rest[0], rest[1])
         else:

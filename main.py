@@ -104,10 +104,15 @@ SCRIPTS = {
             "#!/bin/sh\nset -e\n"
             "if [ \"$1\" = configure ]; then\n"
             "    python3 -m compileall -q /usr/lib/polyos/polyos >/dev/null 2>&1 || true\n"
+            "    # the update service: hourly, following Settings > Updates\n"
+            "    if [ -d /run/systemd/system ]; then systemctl daemon-reload >/dev/null 2>&1 || true; fi\n"
+            "    systemctl enable polyos-update.timer >/dev/null 2>&1 || true\n"
+            "    if [ -d /run/systemd/system ]; then systemctl start polyos-update.timer >/dev/null 2>&1 || true; fi\n"
             "fi\n"
         ),
         "prerm": (
             "#!/bin/sh\nset -e\n"
+            "if [ \"$1\" = remove ]; then systemctl disable --now polyos-update.timer >/dev/null 2>&1 || true; fi\n"
             "find /usr/lib/polyos -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true\n"
         ),
     },
@@ -187,6 +192,9 @@ def package_files(name: str) -> list[tuple[Path | bytes, str, int]]:
         (data / "bin/polyos-recover", "usr/libexec/polyos/polyos-recover", 0o755),
         (data / "pam/polyos-lock", "etc/pam.d/polyos-lock", 0o644),
         (data / "polkit/50-polyos-recover.rules", "usr/share/polkit-1/rules.d/50-polyos-recover.rules", 0o644),
+        # the update service (polyos/autoupdate.py): an hourly timer, and check/tonight/now on request
+        (data / "polkit/50-polyos-update.rules", "usr/share/polkit-1/rules.d/50-polyos-update.rules", 0o644),
+        *[(p, f"usr/lib/systemd/system/{p.name}", 0o644) for p in sorted((data / "systemd").glob("polyos-update*"))],
         *_tree(data / "store", "usr/share/polyos/store"),
         *_tree(data / "vara", "usr/share/polyos/vara"),
         (data / "xgreeters/polyos-greeter.desktop", "usr/share/xgreeters/polyos-greeter.desktop", 0o644),

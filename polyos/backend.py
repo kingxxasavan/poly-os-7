@@ -534,53 +534,77 @@ class Backend:
                 continue
             system.run(display.command(name, cfg.get("size"), cfg.get("rate"), cfg.get("rotation"), cfg.get("primary")), 15)
 
-    # ---- online updates (Settings > About) -----------------------------------------------------
+    # ---- updates (Settings > Updates; the update service itself is polyos/autoupdate.py) ----------
     def _is_live(self) -> bool:
         return Path("/run/live/medium").exists()
 
-    def _fetch_updates(self) -> dict:
+    def _update_files(self) -> tuple[dict, dict]:
+        from . import autoupdate
+        return autoupdate.load_policy(), autoupdate.load_status()
+
+    def updates_status(self) -> dict:
+        """What the update service last did, its settings, and whether PolyOS needs a restart."""
         from . import updates
-        return updates.check()
+        policy, st = self._update_files()
+        latest = st.get("latest") or ""
+        installed = st.get("installed") or ""
+        return {
+            "current": __version__, "live": self._is_live(), "policy": policy, "state": st.get("state") or "idle",
+            "latest": latest, "available": bool(st.get("available")) and updates.newer(latest), "notes": st.get("notes") or "",
+            "size": st.get("size") or 0, "downloaded": st.get("downloaded"), "tonight": bool(st.get("tonight")),
+            "lastCheck": st.get("lastCheck"), "error": st.get("error"), "reason": st.get("reason"),
+            "installed": installed, "restartNeeded": bool(installed) and updates.newer(installed),
+        }
 
-    def updates_check(self, force: bool = False) -> dict:
-        """The newest PolyOS release and whether it can be installed from here (cached for an hour)."""
-        import time as _time
-        if self._is_live():
-            return {"current": __version__, "latest": __version__, "available": False, "live": True, "notes": ""}
-        cached = getattr(self, "_updates_cache", None)
-        if cached and not force and _time.time() - cached[0] < 3600:
-            return cached[1]
+    def _start_update_unit(self, kind: str) -> None:
+        from . import autoupdate
         try:
-            result = self._fetch_updates()
-        except (OSError, ValueError) as exc:
-            reason = getattr(exc, "reason", None) or exc
-            raise ApiError(f"Couldn't check for updates: {reason}. Check your internet connection.", 502) from None
-        self._updates_cache = (_time.time(), result)
-        return result
+            autoupdate.start_unit(kind)
+        except Exception as exc:  # noqa: BLE001 - no systemd or polkit here
+            raise ApiError(f"The update service couldn't start ({exc}).") from None
 
-    def notify_updates(self) -> None:
-        """After sign-in: a quiet check, and a notification when a new PolyOS is out."""
-        from . import system
-        try:
-            result = self.updates_check()
-        except ApiError:
-            return  # offline: try again next time
-        if result.get("available") and system.have("notify-send"):
-            system.spawn(["notify-send", "-a", "PolyOS", "-i", "polyos", f"PolyOS {result['latest']} is available",
-                          "Open Settings › About to update. No new USB drive needed."])
-        self.bus.publish("updates")
-
-    def updates_install(self, what: str) -> dict:
+    def updates_action(self, kind: str) -> dict:
+        """check, tonight (install at the preferred time) or now: no password (data/polkit/50-polyos-update.rules)."""
         if self._is_live():
             raise ApiError("Install PolyOS first; updates install on the installed system.")
-        if what == "polyos" and not self.updates_check().get("available"):
-            raise ApiError("PolyOS is already up to date.")
-        title = "Updating PolyOS" if what == "polyos" else "Installing Debian updates"
+        self._start_update_unit(kind)
+        self.bus.publish("updates")
+        return self.updates_status()
 
-        def done(job):
-            self._updates_cache = None
-            self.bus.publish("updates")
-        return self.jobs.start("update", title, ["update", what], target=what, on_done=done)
+    def updates_policy(self, policy: dict) -> dict:
+        """Automatic checks, downloads and installs, the time, restarts and the channel (the administrator password)."""
+        from . import autoupdate
+        from .privileged import NeedPassword
+        try:
+            clean = autoupdate.validate_policy({**self._update_files()[0], **policy})
+        except ValueError as exc:
+            raise ApiError(str(exc)) from None
+        if not self.jobs.admin.ready():
+            raise NeedPassword()
+        self.jobs.admin.call(["update-policy", json.dumps(clean)])
+        self.bus.publish("updates")
+        return self.updates_status()
+
+    def updates_install(self, what: str) -> dict:
+        """Debian's updates for everything else (Settings > Updates > Update everything)."""
+        if self._is_live():
+            raise ApiError("Install PolyOS first; updates install on the installed system.")
+        return self.jobs.start("update", "Installing Debian updates", ["update", "system"], target="system",
+                               on_done=lambda _job: self.bus.publish("updates"))
+
+    def update_notice(self, seen: dict) -> dict | None:
+        """The calm notification: once per new version ("ready"), and once when it's installed ("restart")."""
+        st = self.updates_status()
+        if st["live"]:
+            return None
+        if st["restartNeeded"] and seen.get("restart") != st["installed"]:
+            seen["restart"] = st["installed"]
+            return {"kind": "restart", "version": st["installed"], "ask": st["policy"]["askRestart"]}
+        if st["available"] and seen.get("ready") != st["latest"] and st["state"] == "idle":
+            seen["ready"] = st["latest"]
+            return {"kind": "ready", "version": st["latest"], "notes": st["notes"], "tonight": st["tonight"],
+                    "autoInstall": st["policy"]["autoInstall"], "time": st["policy"]["time"]}
+        return None
 
     # ---- trying PolyOS from the USB -----------------------------------------------------------
     def show_install_app(self) -> None:

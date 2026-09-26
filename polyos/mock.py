@@ -686,35 +686,64 @@ DP-1 disconnected (normal left inverted right x axis y axis)
         return self.jobs.start("drivers", "Installing drivers", [], runner=runner,
                                on_done=lambda j: self.bus.publish("drivers"))
 
-    # ---- online updates --------------------------------------------------------------------
+    # ---- updates (a simulated update service) --------------------------------------------------
     def _is_live(self):
         return self.live
 
-    def _fetch_updates(self):
-        time.sleep(0.6)
-        if getattr(self, "_updated", False):
-            return {"current": "0.7.1", "latest": "0.7.1", "available": False, "notes": "", "size": 0}
-        return {"current": __version__, "latest": "0.7.1", "available": True, "size": 2_734_000,
-                "packages": ["polyos-desktop", "polyos-shell"], "published": "2026-10-02T18:00:00Z",
-                "url": "https://github.com/kingxxasavan/poly-os-7-debain-receration/releases",
-                "notes": "Touchscreen and camera drivers, BitLocker help for dual boot, online updates."}
+    def _update_files(self):
+        from . import autoupdate
+        if not hasattr(self, "_upd_policy"):
+            self._upd_policy = dict(autoupdate.DEFAULT_POLICY)
+            self._upd_status = {"state": "idle", "lastCheck": time.time() - 2 * 3600, "latest": __version__, "available": False}
+        return self._upd_policy, self._upd_status
+
+    def _start_update_unit(self, kind):
+        _policy, st = self._update_files()
+
+        def work():
+            if kind == "check":
+                st.update(state="checking")
+                self.bus.publish("updates")
+                time.sleep(1.2)
+                if st.get("installed") != "0.9.0":
+                    st.update(latest="0.9.0", available=True, size=3_012_000, notes="Poly Account: connect this computer, "
+                              "manage it from the website and sync your settings.\nSigned updates and a new Updates page.")
+                st.update(state="idle", lastCheck=time.time(), error=None)
+            elif kind == "tonight":
+                st.update(tonight=True)
+            elif kind == "now":
+                if not st.get("available"):
+                    st.update(error="PolyOS is already up to date.")
+                else:
+                    for state, secs in (("downloading", 1.5), ("installing", 2.0)):
+                        st.update(state=state)
+                        self.bus.publish("updates")
+                        time.sleep(secs)
+                    st.update(state="idle", installed=st["latest"], available=False, tonight=False, downloaded=None)
+            self.bus.publish("updates")
+        threading.Thread(target=work, daemon=True).start()
+
+    def updates_policy(self, policy):
+        from . import autoupdate
+        current, _st = self._update_files()
+        try:
+            clean = autoupdate.validate_policy({**current, **policy})
+        except ValueError as exc:
+            raise ApiError(str(exc)) from None
+        if not self._admin_ready:
+            raise NeedPassword()
+        current.update(clean)
+        self.bus.publish("updates")
+        return self.updates_status()
 
     def updates_install(self, what):
         if self.live:
             raise ApiError("Install PolyOS first; updates install on the installed system.")
         if not self._admin_ready:
             raise NeedPassword()
-
-        def finish():
-            if what == "polyos":
-                self._updated = True
-            self._updates_cache = None
-        steps = (["Checking Debian for the latest versions…", "Downloading polyos-desktop…", "Downloading polyos-shell…",
-                  "Installing…"] if what == "polyos" else ["Checking Debian for the latest versions…", "Downloading…",
-                                                           "Installing updates…", "Configuring…"])
-        runner = self._simulate(steps, 5, finish)
-        return self.jobs.start("update", "Updating PolyOS" if what == "polyos" else "Installing Debian updates", [],
-                               target=what, runner=runner, on_done=lambda j: self.bus.publish("updates"))
+        runner = self._simulate(["Checking Debian for the latest versions…", "Downloading…", "Installing updates…", "Configuring…"], 5, lambda: None)
+        return self.jobs.start("update", "Installing Debian updates", [], target="system", runner=runner,
+                               on_done=lambda j: self.bus.publish("updates"))
 
     # ---- PolyMarket ------------------------------------------------------------------------
     def store_list(self):

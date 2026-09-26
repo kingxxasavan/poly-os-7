@@ -1,5 +1,6 @@
 """Driver Manager, PolyMarket, Task Manager parsers, appearance and the root helper's checks."""
 
+import datetime
 import json
 import tempfile
 import unittest
@@ -800,3 +801,97 @@ class OnlineUpdateTests(unittest.TestCase):
                 f.flush()
                 out = subprocess.run(["openssl", "pkey", "-pubin", "-in", f.name, "-text", "-noout"], capture_output=True, text=True)
                 self.assertIn("ED25519", out.stdout.upper())
+
+class UpdateServiceTests(OnlineUpdateTests):
+    """The hourly update service: checks, downloads and installs on the schedule in Settings > Updates."""
+
+    def service(self, tmp, policy=None, now=None, clock=1_000_000.0, get=None):
+        from polyos import autoupdate
+
+        self.installed = []
+        return autoupdate.Service(install=self.installed.append, policy=autoupdate.validate_policy(policy or {}),
+                                  status_path=Path(tmp) / "status.json", cache=Path(tmp) / "cache",
+                                  get=get or self.fake_get("99.0.0"), clock=lambda: clock, now=now)
+
+    def test_policy(self):
+        from polyos import autoupdate
+
+        p = autoupdate.validate_policy({"autoInstall": True, "time": "23:30", "channel": "beta"})
+        self.assertEqual((p["autoInstall"], p["time"], p["channel"], p["autoDownload"]), (True, "23:30", "beta", True))
+        for bad in ({"time": "25:00"}, {"channel": "nightly"}, {"autoInstall": "yes"}):
+            with self.assertRaises(ValueError):
+                autoupdate.validate_policy(bad)
+        night = datetime.datetime(2026, 9, 27, 2, 30)
+        self.assertTrue(autoupdate.in_window({"time": "02:00"}, night))
+        self.assertFalse(autoupdate.in_window({"time": "02:00"}, night.replace(hour=12)))
+        self.assertTrue(autoupdate.in_window({"time": "23:00"}, night.replace(hour=0, minute=30)))  # across midnight
+
+    def test_timer_downloads_then_waits(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            noon = datetime.datetime(2026, 9, 27, 12, 0)
+            status = self.service(tmp, now=noon).run("timer")
+            self.assertEqual((status["available"], status["downloaded"], status["latest"]), (True, "99.0.0", "99.0.0"))
+            self.assertEqual(self.installed, [])  # not installed: automatic install is off
+            # "Install tonight", then the 2 a.m. run installs it
+            self.service(tmp, now=noon).run("tonight")
+            self.assertEqual(self.installed, [])
+            status = self.service(tmp, now=noon.replace(hour=2, minute=15)).run("timer")
+            self.assertEqual(status["installed"], "99.0.0")
+            self.assertEqual(len(self.installed), 1)
+            self.assertFalse(status["tonight"])
+
+    def test_automatic_install_only_in_the_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            day = datetime.datetime(2026, 9, 27, 15, 0)
+            self.service(tmp, {"autoInstall": True}, now=day).run("timer")
+            self.assertEqual(self.installed, [])
+            self.service(tmp, {"autoInstall": True}, now=day.replace(hour=3)).run("timer")
+            self.assertEqual(len(self.installed), 1)
+
+    def test_checks_are_spaced_and_can_be_off(self):
+        calls = []
+
+        def get(url, **kw):
+            calls.append(url)
+            return self.fake_get("99.0.0")(url, **kw)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.service(tmp, {"autoDownload": False}, get=get).run("timer")
+            first = len(calls)
+            self.service(tmp, {"autoDownload": False}, get=get, clock=1_000_000.0 + 3600).run("timer")  # an hour later: no new check
+            self.assertEqual(len(calls), first)
+        with tempfile.TemporaryDirectory() as tmp:
+            calls.clear()
+            self.service(tmp, {"autoCheck": False}, get=get).run("timer")
+            self.assertEqual(calls, [])
+
+    def test_install_now_and_refusing_unsigned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            status = self.service(tmp).run("now")
+            self.assertEqual(status["installed"], "99.0.0")
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                self.service(tmp, get=self.fake_get("99.0.0", signed=False)).run("now")
+            self.assertEqual(self.installed, [])
+
+
+class UpdateNoticeTests(unittest.TestCase):
+    """The calm update notifications: once per version, and a restart notice after installing."""
+
+    def test_notices(self):
+        from polyos.core import EventBus, Settings
+        from polyos.mock import MockBackend
+
+        with tempfile.TemporaryDirectory() as tmp:
+            be = MockBackend(Settings(Path(tmp) / "s.json"), EventBus(), home=Path(tmp) / "home")
+            _policy, st = be._update_files()
+            seen = {}
+            self.assertIsNone(be.update_notice(seen))
+            st.update(latest="99.0.0", available=True, notes="Faster startup")
+            n = be.update_notice(seen)
+            self.assertEqual((n["kind"], n["version"]), ("ready", "99.0.0"))
+            self.assertIsNone(be.update_notice(seen))  # once per version
+            st.update(installed="99.0.0", available=False)
+            n = be.update_notice(seen)
+            self.assertEqual((n["kind"], n["ask"]), ("restart", True))
+            self.assertIsNone(be.update_notice(seen))
+            self.assertTrue(be.updates_status()["restartNeeded"])

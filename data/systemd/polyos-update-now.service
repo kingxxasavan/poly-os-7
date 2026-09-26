@@ -1,0 +1,10 @@
+[Unit]
+Description=Install the PolyOS update now
+Documentation=file:///usr/lib/polyos/polyos/autoupdate.py
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/polyos/polyos-admin auto-update now
+Nice=5
