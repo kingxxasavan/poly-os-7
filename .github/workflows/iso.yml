@@ -173,6 +173,34 @@ jobs:
           done
           ls -lh
 
+      # The body: RELEASE_NOTES.md first (PolyOS and the website show only that part), then the files.
+      - name: Release notes
+        run: |
+          {
+            if [ -f RELEASE_NOTES.md ]; then cat RELEASE_NOTES.md; echo; fi
+            echo '<!-- files -->'
+            echo
+            echo '**PolyOS 7 for Debian ${{ needs.setup.outputs.tag }}** (Debian ${{ env.DIST }})'
+            echo
+            echo '| File | For |'
+            echo '|---|---|'
+            echo '| `polyos-amd64.iso` | Intel and AMD PCs and laptops (almost every Windows PC) |'
+            echo '| `polyos-arm64.iso` | ARM64: Apple Silicon Macs in UTM, Parallels or VMware Fusion, ARM cloud servers, and ARM64 computers with UEFI firmware (from a USB drive) |'
+            echo
+            if [ -n "${PARTS:-}" ]; then
+              echo '1. Download the `.iso` for your computer (in parts: join them with `cat polyos-*.part* > polyos.iso` on Linux/macOS, or `copy /b part0+part1 polyos.iso` on Windows).'
+            else
+              echo '1. Download the `.iso` for your computer.'
+            fi
+            echo '2. Write it to a USB drive (8 GB or more) with balenaEtcher, or Rufus in DD mode, or start it in a virtual machine.'
+            echo '3. Start the computer from it, try PolyOS, and choose **Install PolyOS 7**.'
+            echo
+            echo "**Already on PolyOS?** Settings › Updates installs this version without a new USB drive (it's signed with Poly's release key)."
+            echo
+            echo 'Check the download against `SHA256SUMS`.'
+          } > dist/RELEASE_BODY.md
+          cat dist/RELEASE_BODY.md
+
       - name: Publish the release
         uses: softprops/action-gh-release@v2
         with:
@@ -190,19 +218,5 @@ jobs:
             dist/*.deb
             dist/polyos-update.json
             dist/polyos-update.json.sig
-          body: |
-            **PolyOS 7 for Debian ${{ needs.setup.outputs.tag }}** (Debian ${{ env.DIST }})
-
-            | File | For |
-            |---|---|
-            | `polyos-amd64.iso` | Intel and AMD PCs and laptops (almost every Windows PC) |
-            | `polyos-arm64.iso` | ARM64: Apple Silicon Macs in UTM, Parallels or VMware Fusion, ARM cloud servers, and ARM64 computers with UEFI firmware (from a USB drive) |
-
-            1. Download the `.iso` for your computer${{ env.PARTS && ' (in parts: join them with `cat polyos-*.part* > polyos.iso` on Linux/macOS, or `copy /b part0+part1 polyos.iso` on Windows)' || '' }}.
-            2. Write it to a USB drive (8 GB or more) with balenaEtcher, or Rufus in DD mode, or start it in a virtual machine.
-            3. Start the computer from it, try PolyOS, and choose **Install PolyOS 7**.
-
-            **Already on PolyOS?** Settings › Updates installs this version without a new USB drive (it's signed with Poly's release key).
-
-            Check the download against `SHA256SUMS`.
+          body_path: dist/RELEASE_BODY.md
           generate_release_notes: ${{ env.RELEASES_REPO == github.repository }}

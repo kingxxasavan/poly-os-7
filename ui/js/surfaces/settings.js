@@ -1181,7 +1181,7 @@ const pages = {
         main = row('PolyOS is up to date', `Version ${st.current} · Last checked ${ago(st.lastCheck)}${st.reason ? ` · ${st.reason}` : ''}`,
           h('button.btn', { onclick: () => action('check') }, icon('refresh'), 'Check now'));
       }
-      const notes = st.available && st.notes && !st.restartNeeded ? h('details.upd-notes', h('summary', 'What’s new'), h('p.prose', st.notes.slice(0, 2000))) : null;
+      const notes = st.available && st.notes && !st.restartNeeded ? h('details.upd-notes', h('summary', 'What’s new'), h('p.prose', st.notes.split('<!-- files -->')[0].replace(/\*\*|`/g, '').trim().slice(0, 2000))) : null;
       fill(statusBox, group('PolyOS', main, notes), st.error ? h('p.small.warn-text', st.error) : null);
     }
     function renderPolicy() {

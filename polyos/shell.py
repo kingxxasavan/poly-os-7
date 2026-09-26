@@ -880,7 +880,7 @@ class DesktopShell(Backend):
                             [("restart", "Restart PolyOS"), ("later", "Later")]) == "restart":
                 self.restart_shell()
             return
-        first = next((line.strip(" -*•#") for line in (n.get("notes") or "").splitlines() if len(line.strip(" -*•#|")) > 12), "")
+        first = next((line.strip(" -*•#") for line in (n.get("notes") or "").replace("**", "").replace("`", "").splitlines() if len(line.strip(" -*•#|")) > 12), "")
         summary = (first[:117] + "…") if len(first) > 120 else first or "Security improvements and fixes."
         if n["autoInstall"] or n["tonight"]:
             self._notify(f"PolyOS {n['version']} is ready", f"{summary} It installs at {n['time']}.", [])

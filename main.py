@@ -458,7 +458,9 @@ def cmd_deb(args) -> None:
     if args.manifest:  # for online updates: the release lists its packages and their checksums
         from polyos import updates
         path = out / updates.MANIFEST
-        data = (json.dumps(updates.build_manifest(VERSION, debs), indent=2) + "\n").encode()
+        notes_file = ROOT / "RELEASE_NOTES.md"  # shown in Settings › Updates before installing
+        notes = notes_file.read_text("utf-8").strip() if notes_file.exists() else ""
+        data = (json.dumps(updates.build_manifest(VERSION, debs, notes), indent=2) + "\n").encode()
         path.write_bytes(data)
         print(f"  wrote {path}")
         key = os.environ.get("POLYOS_UPDATE_KEY", "")

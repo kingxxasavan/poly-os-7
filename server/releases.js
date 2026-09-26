@@ -29,7 +29,7 @@ function summarize(release) {
   return {
     version: String(release.tag_name || '').replace(/^v/, ''),
     name: release.name || release.tag_name,
-    notes: release.body || '',
+    notes: String(release.body || '').split('<!-- files -->')[0].trim(), // the notes, not the download table
     published: release.published_at,
     prerelease: Boolean(release.prerelease),
     assets,

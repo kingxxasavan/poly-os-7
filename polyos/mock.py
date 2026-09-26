@@ -707,9 +707,11 @@ DP-1 disconnected (normal left inverted right x axis y axis)
                 st.update(state="checking")
                 self.bus.publish("updates")
                 time.sleep(1.2)
-                if st.get("installed") != "0.9.0":
-                    st.update(latest="0.9.0", available=True, size=3_012_000, notes="Poly Account: connect this computer, "
-                              "manage it from the website and sync your settings.\nSigned updates and a new Updates page.")
+                major, minor, patch = (int(x) for x in __version__.split(".")[:3])
+                simulated = f"{major}.{minor}.{patch + 1}"  # a pretend next version
+                if st.get("installed") != simulated:
+                    st.update(latest=simulated, available=True, size=3_012_000, notes="Fixes and small improvements.\n"
+                              "Poly Account: a faster sign-in and clearer messages.")
                 st.update(state="idle", lastCheck=time.time(), error=None)
             elif kind == "tonight":
                 st.update(tonight=True)
